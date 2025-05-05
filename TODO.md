@@ -11,7 +11,7 @@
 - [ ] Implement file deletion
 - [ ] Implement file listing
 - [ ] Implement file information retrieval
-- [ ] Support for MPQ format version 0 (classic WoW)
+- [ ] Support for MPQ format version 0 (vanilla WoW)
 - [ ] Support for MPQ format version 1
 - [ ] Support for MPQ format version 2
 - [ ] Support for MPQ format version 3
