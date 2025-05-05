@@ -1,0 +1,148 @@
+---
+name: Pull Request
+
+on:
+    pull_request:
+        branches: [main]
+        paths-ignore:
+            - '**.md'
+            - 'LICENSE*'
+            - '.gitignore'
+            - 'docs/**'
+
+env:
+    CARGO_TERM_COLOR: always
+    RUSTFLAGS: '-D warnings'
+    RUST_BACKTRACE: 1
+
+jobs:
+    build:
+        name: Build and Test
+        runs-on: ubuntu-latest
+        strategy:
+            matrix:
+                rust: [stable, 1.85.0]
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: ${{ matrix.rust }}
+                  override: true
+                  components: rustfmt, clippy
+
+            - name: Cache dependencies
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: ${{ runner.os }}-cargo-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+                  restore-keys: ${{ runner.os }}-cargo-${{ matrix.rust }}-
+
+            - name: Check formatting
+              uses: actions-rs/cargo@v1
+              with:
+                  command: fmt
+                  args: --all -- --check
+
+            - name: Check with clippy
+              uses: actions-rs/cargo@v1
+              with:
+                  command: clippy
+                  args: --all-targets --all-features -- -D warnings
+
+            - name: Build
+              uses: actions-rs/cargo@v1
+              with:
+                  command: build
+                  args: --verbose
+
+            - name: Run tests
+              uses: actions-rs/cargo@v1
+              with:
+                  command: test
+                  args: --verbose
+
+            - name: Run doc tests
+              uses: actions-rs/cargo@v1
+              with:
+                  command: test
+                  args: --doc
+
+    cross-platform:
+        name: Cross-platform Tests
+        runs-on: ${{ matrix.os }}
+        strategy:
+            matrix:
+                os: [windows-latest, macos-latest]
+                rust: [stable]
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: ${{ matrix.rust }}
+                  override: true
+
+            - name: Cache dependencies
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+            - name: Build
+              uses: actions-rs/cargo@v1
+              with:
+                  command: build
+                  args: --verbose
+
+            - name: Run tests
+              uses: actions-rs/cargo@v1
+              with:
+                  command: test
+                  args: --verbose
+
+    benchmarks:
+        name: Run Benchmarks
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+
+            - name: Cache dependencies
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+            - name: Run benchmarks
+              uses: actions-rs/cargo@v1
+              with:
+                  command: bench
+                  args: -- --output-format bencher | tee bench-output.txt
+
+            - name: Upload benchmark results
+              uses: actions/upload-artifact@v3
+              with:
+                  name: benchmark-results
+                  path: bench-output.txt

@@ -1,0 +1,163 @@
+---
+name: Release
+
+on:
+    push:
+        tags:
+            - 'v*'
+
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: 1
+
+jobs:
+    build:
+        name: Build and Test
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+
+            - name: Cache dependencies
+              uses: actions/cache@v3
+              with:
+                  path: |
+                      ~/.cargo/registry
+                      ~/.cargo/git
+                      target
+                  key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+            - name: Build
+              uses: actions-rs/cargo@v1
+              with:
+                  command: build
+                  args: --release --verbose
+
+            - name: Run tests
+              uses: actions-rs/cargo@v1
+              with:
+                  command: test
+                  args: --release --verbose
+
+    publish:
+        name: Publish to crates.io
+        needs: build
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+
+            - name: Login to crates.io
+              uses: actions-rs/cargo@v1
+              with:
+                  command: login
+                  args: ${{ secrets.CRATES_IO_TOKEN }}
+
+            - name: Extract version from tag
+              id: tag
+              run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+            - name: Verify version matches
+              run: |
+                  CARGO_VERSION=$(grep -m 1 'version =' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+                  if [ "$CARGO_VERSION" != "${{ steps.tag.outputs.VERSION }}" ]; then
+                    echo "Version mismatch: Tag is v${{ steps.tag.outputs.VERSION }} but Cargo.toml is $CARGO_VERSION"
+                    exit 1
+                  fi
+
+            - name: Publish to crates.io
+              uses: actions-rs/cargo@v1
+              with:
+                  command: publish
+                  args: --verbose
+
+    github-release:
+        name: Create GitHub Release
+        needs: build
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+
+            - name: Generate changelog
+              id: changelog
+              run: |
+                  CHANGELOG=$(git log --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD^)..HEAD)
+                  echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+                  echo "$CHANGELOG" >> $GITHUB_OUTPUT
+                  echo "EOF" >> $GITHUB_OUTPUT
+
+            - name: Create Release
+              uses: softprops/action-gh-release@v1
+              with:
+                  body: |
+                      ## Changes
+
+                      ${{ steps.changelog.outputs.CHANGELOG }}
+
+                      ## Installation
+
+                      ```toml
+                      [dependencies]
+                      wow_mpq = "${{ github.ref_name }}"
+                      ```
+                  prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+                  generate_release_notes: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    documentation:
+        name: Publish Documentation
+        needs: publish
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Rust
+              uses: actions-rs/toolchain@v1
+              with:
+                  profile: minimal
+                  toolchain: stable
+                  override: true
+
+            - name: Generate documentation
+              uses: actions-rs/cargo@v1
+              with:
+                  command: doc
+                  args: --no-deps
+
+            - name: Create index.html redirect
+              run: |
+                  echo '<meta http-equiv="refresh" content="0; url=wow_mpq/index.html">' > target/doc/index.html
+
+            - name: Deploy to GitHub Pages
+              uses: peaceiris/actions-gh-pages@v3
+              with:
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_branch: gh-pages
+                  publish_dir: ./target/doc
+                  force_orphan: true

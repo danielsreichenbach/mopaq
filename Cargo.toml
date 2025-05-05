@@ -1,0 +1,23 @@
+[package]
+name = "mopaq"
+version = "0.1.0"
+authors = ["Daniel S. Reichenbach <daniel@kogito.network>"]
+edition = "2024"
+rust-version = "1.86"
+description = "MoPaQ implementation in Rust"
+repository = "https://github.com/danielsreichenbach/mopaq"
+license = "MIT OR Apache-2.0"
+keywords = ["archive", "compression", "mpq"]
+
+[dependencies]
+byteorder = "1.5"
+directories = "6.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+criterion = "0.5"
+tempfile = "3.19"
+
+[[bench]]
+name = "header_benchmark"
+harness = false

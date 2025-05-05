@@ -1,0 +1,26 @@
+# TODO List
+
+- [x] Implement MPQ header structures
+- [x] Implement MPQ user header support
+- [x] Basic archive creation and opening
+- [ ] Implement hash table reading and writing
+- [ ] Implement block table reading and writing
+- [ ] Implement file extraction
+- [ ] Implement file compression
+- [ ] Implement file addition
+- [ ] Implement file deletion
+- [ ] Implement file listing
+- [ ] Implement file information retrieval
+- [ ] Support for MPQ format version 0 (classic WoW)
+- [ ] Support for MPQ format version 1
+- [ ] Support for MPQ format version 2
+- [ ] Support for MPQ format version 3
+- [ ] Support for MPQ format version 4
+- [ ] Implement extended block table support
+- [ ] Implement HET/BET table support
+- [ ] Implement encryption/decryption
+- [ ] Implement signature verification
+- [ ] Add comprehensive documentation
+- [ ] Add more examples
+- [ ] Add more tests
+- [ ] Add more benchmarks
