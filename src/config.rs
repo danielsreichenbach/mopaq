@@ -142,7 +142,7 @@ impl MpqConfig {
 
     /// Get the standard XDG config path
     pub fn config_path() -> Option<PathBuf> {
-        if let Some(proj_dirs) = ProjectDirs::from("rs", "", "wow_mpq") {
+        if let Some(proj_dirs) = ProjectDirs::from("rs", "", "mopaq") {
             Some(proj_dirs.config_dir().join("config.txt"))
         } else {
             None

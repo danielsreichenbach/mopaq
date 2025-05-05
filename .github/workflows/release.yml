@@ -122,7 +122,7 @@ jobs:
 
                       ```toml
                       [dependencies]
-                      wow_mpq = "${{ github.ref_name }}"
+                      mopaq = "${{ github.ref_name }}"
                       ```
                   prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
                   generate_release_notes: true
@@ -152,7 +152,7 @@ jobs:
 
             - name: Create index.html redirect
               run: |
-                  echo '<meta http-equiv="refresh" content="0; url=wow_mpq/index.html">' > target/doc/index.html
+                  echo '<meta http-equiv="refresh" content="0; url=mopaq/index.html">' > target/doc/index.html
 
             - name: Deploy to GitHub Pages
               uses: peaceiris/actions-gh-pages@v3
