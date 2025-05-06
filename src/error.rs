@@ -1,28 +1,39 @@
 use std::io;
 use thiserror::Error;
 
+/// Errors that can occur when working with MPQ archives
 #[derive(Error, Debug)]
-pub enum MpqError {
+pub enum MopaqError {
     #[error("I/O error: {0}")]
-    IoError(#[from] io::Error),
+    Io(#[from] io::Error),
 
-    #[error("Invalid MPQ header: {0}")]
-    InvalidHeader(String),
+    #[error("Invalid MPQ signature")]
+    InvalidSignature,
 
-    #[error("Invalid MPQ user header")]
-    InvalidUserHeader,
+    #[error("Unsupported format version: {0}")]
+    UnsupportedVersion(u32),
 
-    #[error("Unsupported MPQ version: {0}")]
-    UnsupportedVersion(u16),
+    #[error("Invalid header size: {0}")]
+    InvalidHeaderSize(u32),
 
-    #[error("Archive is corrupted: {0}")]
-    CorruptedArchive(String),
+    #[error("Invalid archive size: {0}")]
+    InvalidArchiveSize(u64),
+
+    #[error("Invalid user data position")]
+    InvalidUserDataPosition,
+
+    #[error("The hash or block table is full")]
+    TableFull,
 
     #[error("File not found: {0}")]
     FileNotFound(String),
 
-    #[error("MPQ feature not implemented: {0}")]
-    NotImplemented(String),
+    #[error("Unsupported feature: {0}")]
+    UnsupportedFeature(String),
+
+    #[error("The file is corrupted")]
+    CorruptedFile,
 }
 
-pub type Result<T> = std::result::Result<T, MpqError>;
+/// A Result type specialized for MPQ operations
+pub type Result<T> = std::result::Result<T, MopaqError>;

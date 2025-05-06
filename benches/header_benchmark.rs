@@ -1,38 +1,83 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use mopaq::header::{MpqHeader, MpqUserDataHeader};
+use mopaq::*;
 use std::io::Cursor;
 
-fn benchmark_header_read_write(c: &mut Criterion) {
-    let mut group = c.benchmark_group("MPQ Headers");
+pub fn header_v1_roundtrip_benchmark(c: &mut Criterion) {
+    let header = MpqHeader::new_v1();
 
-    // Benchmark for MPQ header
-    group.bench_function("mpq_header_write_read", |b| {
+    c.bench_function("header_v1_write", |b| {
         b.iter(|| {
-            let header = MpqHeader::new(1);
-            let mut buffer = Vec::new();
-            let mut writer = Cursor::new(&mut buffer);
-            header.write(&mut writer).unwrap();
-
-            let mut reader = Cursor::new(&buffer);
-            let _read_header = MpqHeader::read(&mut reader).unwrap();
+            let mut buffer = Cursor::new(Vec::new());
+            black_box(&header).write(&mut buffer).unwrap();
         })
     });
 
-    // Benchmark for MPQ user header
-    group.bench_function("mpq_user_header_write_read", |b| {
-        b.iter(|| {
-            let user_header = MpqUserDataHeader::new(1024, 0x200);
-            let mut buffer = Vec::new();
-            let mut writer = Cursor::new(&mut buffer);
-            user_header.write(&mut writer).unwrap();
+    c.bench_function("header_v1_read", |b| {
+        let mut buffer = Cursor::new(Vec::new());
+        header.write(&mut buffer).unwrap();
+        buffer.set_position(0);
 
-            let mut reader = Cursor::new(&buffer);
-            let _read_user_header = MpqUserDataHeader::read(&mut reader).unwrap();
+        b.iter(|| {
+            buffer.set_position(0);
+            black_box(MpqHeader::read(&mut buffer).unwrap());
         })
     });
-
-    group.finish();
 }
 
-criterion_group!(benches, benchmark_header_read_write);
+pub fn header_v4_roundtrip_benchmark(c: &mut Criterion) {
+    let header = MpqHeader::new_v4();
+
+    c.bench_function("header_v4_write", |b| {
+        b.iter(|| {
+            let mut buffer = Cursor::new(Vec::new());
+            black_box(&header).write(&mut buffer).unwrap();
+        })
+    });
+
+    c.bench_function("header_v4_read", |b| {
+        let mut buffer = Cursor::new(Vec::new());
+        header.write(&mut buffer).unwrap();
+        buffer.set_position(0);
+
+        b.iter(|| {
+            buffer.set_position(0);
+            black_box(MpqHeader::read(&mut buffer).unwrap());
+        })
+    });
+}
+
+pub fn user_header_roundtrip_benchmark(c: &mut Criterion) {
+    let user_header = MpqUserHeader::new();
+    let mpq_header = MpqHeader::new_v1();
+
+    c.bench_function("user_header_write", |b| {
+        b.iter(|| {
+            let mut buffer = Cursor::new(Vec::new());
+            write_mpq_header(
+                &mut buffer,
+                Some(black_box(&user_header)),
+                black_box(&mpq_header),
+            )
+            .unwrap();
+        })
+    });
+
+    c.bench_function("user_header_read", |b| {
+        let mut buffer = Cursor::new(Vec::new());
+        write_mpq_header(&mut buffer, Some(&user_header), &mpq_header).unwrap();
+        buffer.set_position(0);
+
+        b.iter(|| {
+            buffer.set_position(0);
+            black_box(read_mpq_header(&mut buffer).unwrap());
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    header_v1_roundtrip_benchmark,
+    header_v4_roundtrip_benchmark,
+    user_header_roundtrip_benchmark
+);
 criterion_main!(benches);

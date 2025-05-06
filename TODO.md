@@ -1,26 +1,37 @@
-# TODO List
+# TODO
 
-- [x] Implement MPQ header structures
-- [x] Implement MPQ user header support
-- [x] Basic archive creation and opening
-- [ ] Implement hash table reading and writing
-- [ ] Implement block table reading and writing
-- [ ] Implement file extraction
-- [ ] Implement file compression
-- [ ] Implement file addition
-- [ ] Implement file deletion
-- [ ] Implement file listing
-- [ ] Implement file information retrieval
-- [ ] Support for MPQ format version 0 (vanilla WoW)
-- [ ] Support for MPQ format version 1
-- [ ] Support for MPQ format version 2
-- [ ] Support for MPQ format version 3
-- [ ] Support for MPQ format version 4
-- [ ] Implement extended block table support
-- [ ] Implement HET/BET table support
-- [ ] Implement encryption/decryption
-- [ ] Implement signature verification
-- [ ] Add comprehensive documentation
-- [ ] Add more examples
-- [ ] Add more tests
-- [ ] Add more benchmarks
+## Core Functionality
+
+- [x] MPQ header implementation
+- [x] User header support
+- [x] Hash table implementation
+- [x] Block table implementation
+- [x] Basic archive operations (create, open)
+- [x] Basic file operations (add, extract)
+- [ ] File compression support (HUFFMAN, ZLIB, PKLIB)
+- [ ] File encryption support
+- [ ] Multi-sector file support
+- [ ] Extended tables (HET/BET)
+- [ ] Support for patch archives
+- [ ] Internal filename management
+
+## Testing
+
+- [x] Unit tests for headers
+- [x] Unit tests for tables
+- [x] Basic archive operation tests
+- [ ] Integration tests with real MPQ files
+- [ ] Benchmark large file operations
+
+## Documentation
+
+- [x] Basic readme with examples
+- [ ] Detailed API documentation
+- [ ] Format documentation
+- [ ] Example applications
+
+## Optimization
+
+- [ ] Optimized memory handling for large files
+- [ ] Parallel processing for multi-file operations
+- [ ] Streaming API for large file extraction

@@ -1,257 +1,402 @@
-use std::fs::File;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use memmap2::{Mmap, MmapOptions};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use crate::config::MpqConfig;
-use crate::error::{MpqError, Result};
-use crate::header::{MPQ_HEADER_MAGIC, MPQ_USER_DATA_MAGIC, MpqHeader, MpqUserDataHeader};
+use crate::block_table::{MpqBlockEntry, MpqBlockTable, block_flags};
+use crate::error::{MopaqError, Result};
+use crate::hash_table::{MpqHashEntry, MpqHashTable, hash};
+use crate::header::{MPQ_HEADER_SIGNATURE, MpqHeader, MpqVersion};
+use crate::user_header::{MpqUserHeader, read_mpq_header, write_mpq_header};
+use crate::utils::{calculate_hash_table_size, get_sector_size};
 
-/// Structure representing an MPQ archive
+/// MPQ archive
 pub struct MpqArchive {
-    /// The file handle for the MPQ archive
+    /// The file handle
     file: File,
 
+    /// Memory mapping of the file (if used)
+    mmap: Option<Mmap>,
+
+    /// The user header, if any
+    user_header: Option<MpqUserHeader>,
+
     /// The MPQ header
-    pub header: MpqHeader,
+    header: MpqHeader,
 
-    /// The MPQ user data header, if present
-    pub user_header: Option<MpqUserDataHeader>,
+    /// The hash table
+    hash_table: MpqHashTable,
 
-    /// The offset of the MPQ header in the file
-    pub header_offset: u64,
-
-    /// Configuration for the archive
-    pub config: MpqConfig,
+    /// The block table
+    block_table: MpqBlockTable,
 }
 
 impl MpqArchive {
-    /// Open an existing MPQ archive for reading with default configuration
+    /// Open an existing MPQ archive
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let config = MpqConfig::load()?;
-        Self::open_with_config(path, config)
-    }
-
-    /// Open an existing MPQ archive for reading with custom configuration
-    pub fn open_with_config<P: AsRef<Path>>(path: P, config: MpqConfig) -> Result<Self> {
+        // Open the file
         let file = File::open(path)?;
-        Self::open_from_file_with_config(file, config)
+
+        // Create a memory mapping
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+
+        // Create a cursor to read from the mapping
+        let mut cursor = std::io::Cursor::new(&mmap[..]);
+
+        // Read the headers
+        let (user_header, header) = read_mpq_header(&mut cursor)?;
+
+        // Read the hash table
+        cursor.seek(SeekFrom::Start(header.hash_table_offset as u64))?;
+        let hash_table = MpqHashTable::read(&mut cursor, header.hash_table_entries as usize)?;
+
+        // Read the block table
+        cursor.seek(SeekFrom::Start(header.block_table_offset as u64))?;
+        let block_table = MpqBlockTable::read(&mut cursor, header.block_table_entries as usize)?;
+
+        Ok(Self {
+            file,
+            mmap: Some(mmap),
+            user_header,
+            header,
+            hash_table,
+            block_table,
+        })
     }
 
-    /// Open an MPQ archive from an already opened file with default configuration
-    pub fn open_from_file(file: File) -> Result<Self> {
-        let config = MpqConfig::load()?;
-        Self::open_from_file_with_config(file, config)
+    /// Create a new MPQ archive
+    pub fn create<P: AsRef<Path>>(path: P, version: MpqVersion) -> Result<Self> {
+        // Create the file
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+
+        // Create the header based on the requested version
+        let header = match version {
+            MpqVersion::Version1 => MpqHeader::new_v1(),
+            MpqVersion::Version2 => MpqHeader::new_v2(),
+            MpqVersion::Version3 => MpqHeader::new_v3(),
+            MpqVersion::Version4 => MpqHeader::new_v4(),
+        };
+
+        // Create empty tables
+        let hash_table = MpqHashTable::new(4); // Minimum size
+        let block_table = MpqBlockTable::new(0);
+
+        // Create the archive
+        let mut archive = Self {
+            file,
+            mmap: None,
+            user_header: None,
+            header,
+            hash_table,
+            block_table,
+        };
+
+        // Initialize the file structure
+        archive.initialize()?;
+
+        Ok(archive)
     }
 
-    /// Open an MPQ archive from an already opened file with custom configuration
-    pub fn open_from_file_with_config(mut file: File, config: MpqConfig) -> Result<Self> {
-        // Check for user header first
-        let mut header_offset = 0;
-        let mut user_header = None;
+    /// Initialize a new MPQ archive
+    fn initialize(&mut self) -> Result<()> {
+        // Calculate the offset of the hash table
+        let mut offset = self.header.header_size as u64;
 
-        // Read the first 4 bytes to check for a signature
-        let mut signature = [0u8; 4];
-        file.read_exact(&mut signature)?;
-        file.seek(SeekFrom::Start(0))?;
+        // Update the header
+        self.header.hash_table_offset = offset as u32;
+        self.header.hash_table_entries = self.hash_table.entries.len() as u32;
 
-        let magic = u32::from_le_bytes(signature);
+        // Calculate the offset of the block table
+        offset += (self.hash_table.entries.len() * 16) as u64;
+        self.header.block_table_offset = offset as u32;
+        self.header.block_table_entries = self.block_table.entries.len() as u32;
 
-        if magic == MPQ_USER_DATA_MAGIC {
-            // We found a user header
-            let user_data_header = MpqUserDataHeader::read(&mut file)?;
-            header_offset = user_data_header.header_offset as u64;
-            user_header = Some(user_data_header);
+        // Calculate the total size of the archive
+        offset += (self.block_table.entries.len() * 16) as u64;
+        self.header.archive_size = offset as u32;
+        if let Some(size_64) = self.header.archive_size_64.as_mut() {
+            *size_64 = offset;
+        }
 
-            // Skip user data and position at the main header
-            file.seek(SeekFrom::Start(header_offset))?;
-        } else if magic != MPQ_HEADER_MAGIC {
-            // Try some common offsets
-            // MPQ archives often start at offset 0x200 or other common offsets
-            for &offset in &[0x200, 0x400, 0x800, 0x1000] {
-                file.seek(SeekFrom::Start(offset))?;
-                let mut sig = [0u8; 4];
-                if file.read_exact(&mut sig).is_ok() && u32::from_le_bytes(sig) == MPQ_HEADER_MAGIC
-                {
-                    header_offset = offset;
-                    file.seek(SeekFrom::Start(header_offset))?;
-                    break;
+        // Seek to the beginning of the file
+        self.file.seek(SeekFrom::Start(0))?;
+
+        // Write the header
+        write_mpq_header(&mut self.file, self.user_header.as_ref(), &self.header)?;
+
+        // Write the hash table
+        self.file
+            .seek(SeekFrom::Start(self.header.hash_table_offset as u64))?;
+        self.hash_table.write(&mut self.file)?;
+
+        // Write the block table
+        self.file
+            .seek(SeekFrom::Start(self.header.block_table_offset as u64))?;
+        self.block_table.write(&mut self.file)?;
+
+        Ok(())
+    }
+
+    /// Get the MPQ header
+    pub fn header(&self) -> &MpqHeader {
+        &self.header
+    }
+
+    /// Get the user header, if any
+    pub fn user_header(&self) -> Option<&MpqUserHeader> {
+        self.user_header.as_ref()
+    }
+
+    /// Get the hash table
+    pub fn hash_table(&self) -> &MpqHashTable {
+        &self.hash_table
+    }
+
+    /// Get the block table
+    pub fn block_table(&self) -> &MpqBlockTable {
+        &self.block_table
+    }
+
+    /// Find a file in the archive by name
+    pub fn find_file(&self, filename: &str) -> Option<usize> {
+        // Hash the filename
+        let (_, name_a, name_b) = hash::hash_filename(filename);
+
+        // Look up the file in the hash table
+        self.hash_table
+            .find_entry(name_a, name_b, 0)
+            .map(|(_, entry)| (entry.block_index & 0x0FFFFFFF) as usize)
+            .filter(|&idx| idx < self.block_table.entries.len())
+    }
+
+    /// Get the sector size for this archive
+    pub fn sector_size(&self) -> u32 {
+        get_sector_size(self.header.sector_size_shift)
+    }
+
+    /// Add a file to the archive
+    pub fn add_file<P: AsRef<Path>>(&mut self, filepath: P, internal_name: &str) -> Result<()> {
+        // If memory mapping is active, drop it as we'll be modifying the file
+        self.mmap = None;
+
+        // Open the file to add
+        let mut file = File::open(&filepath)?;
+        let file_size = file.metadata()?.len() as u32;
+
+        // Hash the internal name
+        let (offset_hash, name_a, name_b) = hash::hash_filename(internal_name);
+
+        // Read the file content
+        let mut file_data = Vec::new();
+        file.read_to_end(&mut file_data)?;
+
+        // For simplicity, store uncompressed for now
+        let block_entry = MpqBlockEntry {
+            file_pos: self.header.archive_size,
+            c_size: file_size,
+            f_size: file_size,
+            flags: block_flags::EXISTS | block_flags::SINGLE_UNIT,
+        };
+
+        // Add the block entry
+        let block_index = self.block_table.entries.len();
+        self.block_table.entries.push(block_entry);
+
+        // Add the hash entry
+        self.hash_table
+            .add_entry(name_a, name_b, 0, 0, block_index as u32)?;
+
+        // Seek to the end of the file and write the file data
+        self.file
+            .seek(SeekFrom::Start(self.header.archive_size as u64))?;
+        self.file.write_all(&file_data)?;
+
+        // Update the header
+        self.header.archive_size += file_size;
+        if let Some(size_64) = self.header.archive_size_64.as_mut() {
+            *size_64 += file_size as u64;
+        }
+        self.header.block_table_entries = self.block_table.entries.len() as u32;
+
+        // Update the tables
+        self.file.seek(SeekFrom::Start(0))?;
+        write_mpq_header(&mut self.file, self.user_header.as_ref(), &self.header)?;
+
+        self.file
+            .seek(SeekFrom::Start(self.header.hash_table_offset as u64))?;
+        self.hash_table.write(&mut self.file)?;
+
+        self.file
+            .seek(SeekFrom::Start(self.header.block_table_offset as u64))?;
+        self.block_table.write(&mut self.file)?;
+
+        // Flush to ensure all data is written
+        self.file.flush()?;
+
+        Ok(())
+    }
+
+    /// Extract a file from the archive by name
+    pub fn extract_file<P: AsRef<Path>>(&self, internal_name: &str, output_path: P) -> Result<()> {
+        // Find the file
+        let block_index = self
+            .find_file(internal_name)
+            .ok_or_else(|| MopaqError::FileNotFound(internal_name.to_string()))?;
+
+        // Get the block entry
+        let block_entry = &self.block_table.entries[block_index];
+
+        // Check if the file exists
+        if !block_entry.exists() {
+            return Err(MopaqError::FileNotFound(internal_name.to_string()));
+        }
+
+        // For simplicity, we'll only support single unit files for now
+        if !block_entry.is_single_unit() {
+            return Err(MopaqError::UnsupportedFeature(
+                "Multi-sector files".to_string(),
+            ));
+        }
+
+        // Check for unsupported features
+        if block_entry.is_encrypted() {
+            return Err(MopaqError::UnsupportedFeature(
+                "Encrypted files".to_string(),
+            ));
+        }
+        if block_entry.is_compressed() {
+            return Err(MopaqError::UnsupportedFeature(
+                "Compressed files".to_string(),
+            ));
+        }
+
+        // Create the output file
+        let mut output_file = File::create(output_path)?;
+
+        // Prepare to read the data
+        let data_offset = block_entry.file_pos as u64;
+        let data_size = block_entry.c_size as usize;
+
+        // Buffer to hold the file data
+        let mut buffer = vec![0u8; data_size];
+
+        match &self.mmap {
+            Some(mmap) => {
+                // Use memory mapping
+                if data_offset as usize + data_size <= mmap.len() {
+                    let data = &mmap[data_offset as usize..(data_offset as usize + data_size)];
+                    output_file.write_all(data)?;
+                } else {
+                    return Err(MopaqError::InvalidArchiveSize(
+                        data_offset + data_size as u64,
+                    ));
+                }
+            }
+            None => {
+                // Use file I/O
+                let mut file = &self.file;
+                let mut file_clone = file.try_clone()?; // Clone to avoid borrowing issues
+                file_clone.seek(SeekFrom::Start(data_offset))?;
+                file_clone.read_exact(&mut buffer)?;
+                output_file.write_all(&buffer)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// List all files in the archive
+    pub fn list_files(&self) -> Vec<String> {
+        let mut result = Vec::new();
+
+        // Since the hash table doesn't store filenames, we can only return
+        // entries that are marked as valid and exist
+        for (i, entry) in self.hash_table.entries.iter().enumerate() {
+            if entry.is_valid() {
+                let block_idx = entry.block_index as usize;
+                if block_idx < self.block_table.entries.len() {
+                    let block = &self.block_table.entries[block_idx];
+                    if block.exists() {
+                        // We don't have actual filenames, so we'll use a placeholder
+                        // In a real implementation, we would need to store file names separately
+                        result.push(format!("File#{}", i));
+                    }
                 }
             }
         }
 
-        // At this point, we should be positioned at the MPQ header
-        let header = match MpqHeader::read(&mut file) {
-            Ok(header) => header,
-            Err(e) => return Err(MpqError::InvalidHeader(e.to_string())),
-        };
-
-        Ok(MpqArchive {
-            file,
-            header,
-            user_header,
-            header_offset,
-            config,
-        })
-    }
-
-    /// Create a new MPQ archive with default configuration
-    pub fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let config = MpqConfig::load()?;
-        Self::create_with_config(path, config)
-    }
-
-    /// Create a new MPQ archive with custom configuration
-    pub fn create_with_config<P: AsRef<Path>>(path: P, config: MpqConfig) -> Result<Self> {
-        let file = File::create(path)?;
-        Self::create_from_file_with_config(file, config)
-    }
-
-    /// Create an MPQ archive from an already created file with default configuration
-    pub fn create_from_file(file: File) -> Result<Self> {
-        let config = MpqConfig::load()?;
-        Self::create_from_file_with_config(file, config)
-    }
-
-    /// Create an MPQ archive from an already created file with custom configuration
-    pub fn create_from_file_with_config(mut file: File, config: MpqConfig) -> Result<Self> {
-        // Create a new header with default values from the config
-        let mut header = MpqHeader::new(config.default_format_version);
-        header.sector_size_shift = config.default_sector_size_shift;
-
-        // Write the header
-        file.seek(SeekFrom::Start(0))?;
-        header.write(&mut file)?;
-
-        Ok(MpqArchive {
-            file,
-            header,
-            user_header: None,
-            header_offset: 0,
-            config,
-        })
-    }
-
-    /// Create a new MPQ archive with user data and default configuration
-    pub fn create_with_user_data<P: AsRef<Path>>(path: P, user_data: &[u8]) -> Result<Self> {
-        let config = MpqConfig::load()?;
-        Self::create_with_user_data_and_config(path, user_data, config)
-    }
-
-    /// Create a new MPQ archive with user data and custom configuration
-    pub fn create_with_user_data_and_config<P: AsRef<Path>>(
-        path: P,
-        user_data: &[u8],
-        config: MpqConfig,
-    ) -> Result<Self> {
-        let mut file = File::create(path)?;
-
-        // Calculate the header offset (user header size + user data size, aligned to 512 bytes)
-        let user_data_size = user_data.len() as u32;
-        let header_offset = ((16 + user_data_size + 511) / 512) * 512;
-
-        // Create the user header
-        let user_header = MpqUserDataHeader::new(user_data_size, header_offset);
-
-        // Write the user header
-        user_header.write(&mut file)?;
-
-        // Write the user data
-        file.write_all(user_data)?;
-
-        // Pad to align to 512 bytes
-        let padding_size = header_offset as usize - 16 - user_data.len();
-        let padding = vec![0u8; padding_size];
-        file.write_all(&padding)?;
-
-        // Create and write the main header
-        let mut header = MpqHeader::new(config.default_format_version);
-        header.sector_size_shift = config.default_sector_size_shift;
-        header.write(&mut file)?;
-
-        Ok(MpqArchive {
-            file,
-            header,
-            user_header: Some(user_header),
-            header_offset: header_offset as u64,
-            config,
-        })
-    }
-
-    /// Get the sector size in bytes
-    pub fn sector_size(&self) -> u32 {
-        1 << self.header.sector_size_shift
-    }
-
-    /// Flush any changes to disk
-    pub fn flush(&mut self) -> Result<()> {
-        self.file.flush()?;
-        Ok(())
-    }
-
-    /// Update the header in the file
-    pub fn update_header(&mut self) -> Result<()> {
-        self.file.seek(SeekFrom::Start(self.header_offset))?;
-        self.header.write(&mut self.file)?;
-        Ok(())
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Cursor, Read, Write};
+    use std::io::{Seek, Write};
     use tempfile::tempdir;
 
     #[test]
-    fn test_create_and_open_archive() {
-        // Create a temporary directory for the test
+    fn test_create_archive() {
         let dir = tempdir().unwrap();
-        let archive_path = dir.path().join("test.mpq");
+        let path = dir.path().join("test.mpq");
 
         // Create a new archive
-        {
-            let archive = MpqArchive::create(&archive_path).unwrap();
-            assert_eq!(archive.header.format_version, 1);
-            assert!(archive.user_header.is_none());
-        }
+        let archive = MpqArchive::create(&path, MpqVersion::Version1).unwrap();
 
-        // Open the archive
-        {
-            let archive = MpqArchive::open(&archive_path).unwrap();
-            assert_eq!(archive.header.format_version, 1);
-            assert!(archive.user_header.is_none());
-        }
+        // Verify the header
+        assert_eq!(archive.header.signature, MPQ_HEADER_SIGNATURE);
+        assert_eq!(archive.header.format_version, 0);
+        assert_eq!(archive.header.sector_size_shift, 3);
+
+        // Verify the hash table
+        assert_eq!(archive.hash_table.entries.len(), 4);
+
+        // Verify the block table
+        assert_eq!(archive.block_table.entries.len(), 0);
     }
 
     #[test]
-    fn test_create_and_open_archive_with_user_data() {
-        // Create a temporary directory for the test
+    fn test_add_and_extract_file() {
         let dir = tempdir().unwrap();
-        let archive_path = dir.path().join("test_user_data.mpq");
+        let archive_path = dir.path().join("test.mpq");
+        let test_file_path = dir.path().join("test.txt");
+        let output_path = dir.path().join("output.txt");
 
-        // Create a new archive with user data
-        let user_data = b"This is some user data for testing";
+        // Create a test file with known content
+        let test_content = b"This is a test file";
         {
-            let archive = MpqArchive::create_with_user_data(&archive_path, user_data).unwrap();
-
-            assert_eq!(archive.header.format_version, 1);
-            assert!(archive.user_header.is_some());
-            assert_eq!(
-                archive.user_header.as_ref().unwrap().user_data_size,
-                user_data.len() as u32
-            );
+            let mut test_file = File::create(&test_file_path).unwrap();
+            test_file.write_all(test_content).unwrap();
+            test_file.flush().unwrap();
         }
 
-        // Open the archive and check the user data
+        // Step 1: Create a new archive and add the file
+        {
+            let mut archive = MpqArchive::create(&archive_path, MpqVersion::Version1).unwrap();
+            archive.add_file(&test_file_path, "test.txt").unwrap();
+            // Archive is dropped here, closing the file
+        }
+
+        // Step 2: Reopen the archive for extraction
         {
             let archive = MpqArchive::open(&archive_path).unwrap();
-            assert_eq!(archive.header.format_version, 1);
-            assert!(archive.user_header.is_some());
-
-            let user_header = archive.user_header.as_ref().unwrap();
-            assert_eq!(user_header.user_data_size, user_data.len() as u32);
-
-            // We could also read the user data here, but we'll leave that for a more complete implementation
+            archive.extract_file("test.txt", &output_path).unwrap();
         }
+
+        // Read the extracted file
+        let mut output_content = Vec::new();
+        {
+            let mut output_file = File::open(&output_path).unwrap();
+            output_file.read_to_end(&mut output_content).unwrap();
+        }
+
+        // Verify the content
+        assert_eq!(output_content, test_content);
     }
 }

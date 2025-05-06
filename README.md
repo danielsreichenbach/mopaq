@@ -7,7 +7,7 @@ A Rust library for reading and writing World of Warcraft MPQ archives, designed 
 
 ## ✨ What is this?
 
-MPQ (Mo'PQ or Mike O'Brien Pack) is the archive format used by Blizzard Entertainment's games including World of Warcraft, Diablo, and StarCraft. This library allows you to:
+MPQ (Mo'PaQ or Mike O'Brien Pack) is the archive format used by Blizzard Entertainment's games including World of Warcraft, Diablo, and StarCraft. This library allows you to:
 
 - Read existing MPQ archives
 - Create new MPQ archives

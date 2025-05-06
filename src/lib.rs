@@ -1,19 +1,23 @@
-//! A Rust library for reading and writing World of Warcraft MPQ archives
+//! # Mopaq
 //!
-//! This library implements the MPQ (Mo'PQ or Mike O'Brien Pack) archive format
-//! used by Blizzard Entertainment games, including World of Warcraft.
+//! `mopaq` is a Rust library for handling World of Warcraft MPQ archives.
+//! It provides functionality to read and write MPQ archives, including
+//! support for user headers.
 
-pub mod archive;
-pub mod config;
-pub mod error;
-pub mod hash_table;
-pub mod header;
+mod archive;
+mod block_table;
+mod error;
+mod hash_table;
+mod header;
+mod user_header;
+mod utils;
 
 pub use archive::MpqArchive;
-pub use config::MpqConfig;
-pub use error::{MpqError, Result};
-pub use hash_table::{MpqHashEntry, MpqHashTable};
-pub use header::{MpqHeader, MpqUserDataHeader};
-
-/// Version of the library
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub use block_table::{MpqBlockEntry, MpqBlockTable, block_flags, compression_type};
+pub use error::{MopaqError, Result};
+pub use hash_table::{MpqHashEntry, MpqHashTable, hash};
+pub use header::{MPQ_HEADER_SIGNATURE, MPQ_USER_DATA_SIGNATURE, MpqHeader, MpqVersion};
+pub use user_header::{MpqUserHeader, read_mpq_header, write_mpq_header};
+pub use utils::{
+    calculate_hash_table_size, calculate_sector_count, calculate_table_size, get_sector_size,
+};
