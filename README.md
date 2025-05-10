@@ -98,7 +98,7 @@ Full documentation is available at [docs.rs/mopaq](https://docs.rs/mopaq).
 
 ### <a name="mpq-basics"></a>What are MPQ Archives?
 
-MPQ (Mo'PQ or Mike O'Brien Pack) is an archive format created by Blizzard Entertainment. It's used in many of their games to package game assets like models, textures, sounds, and more.
+MPQ (Mo'PaQ or Mike O'Brien Pack) is an archive format created by Blizzard Entertainment. It's used in many of their games to package game assets like models, textures, sounds, and more.
 
 Key features of the MPQ format:
 
