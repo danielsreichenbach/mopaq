@@ -1,5 +1,5 @@
 use crate::error::Result;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Seek, Write};
 
 /// MPQ block table entry
@@ -159,6 +159,12 @@ impl MpqBlockEntry {
         }
 
         types
+    }
+}
+
+impl Default for MpqBlockEntry {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::error::{MopaqError, Result};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Seek, Write};
 
 /// MPQ header signature: 'MPQ\x1A'

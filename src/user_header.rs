@@ -1,6 +1,6 @@
 use crate::error::{MopaqError, Result};
 use crate::header::{MPQ_USER_DATA_SIGNATURE, MpqHeader};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 /// MPQ user data header
@@ -33,7 +33,7 @@ impl MpqUserHeader {
     /// Read a user header from a reader
     pub fn read<R: Read + Seek>(reader: &mut R) -> Result<Self> {
         // Remember the current position
-        let start_pos = reader.seek(SeekFrom::Current(0))?;
+        let start_pos = reader.stream_position()?;
 
         // Read the signature
         let signature = reader.read_u32::<LittleEndian>()?;
@@ -66,12 +66,18 @@ impl MpqUserHeader {
     }
 }
 
+impl Default for MpqUserHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Helper function to read an MPQ header from a file, handling user headers
 pub fn read_mpq_header<R: Read + Seek>(
     reader: &mut R,
 ) -> Result<(Option<MpqUserHeader>, MpqHeader)> {
     // Remember the current position
-    let start_pos = reader.seek(SeekFrom::Current(0))?;
+    let start_pos = reader.stream_position()?;
 
     // Try to read a user header first
     match MpqUserHeader::read(reader) {
@@ -118,7 +124,7 @@ pub fn write_mpq_header<W: Write + Seek>(
             }
 
             // Seek to the MPQ header position
-            let current_pos = writer.seek(SeekFrom::Current(0))?;
+            let current_pos = writer.stream_position()?;
             let target_pos = current_pos - user_header.user_data_size as u64 - 16
                 + user_header.mpq_header_offset as u64;
             writer.seek(SeekFrom::Start(target_pos))?;
