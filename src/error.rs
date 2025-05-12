@@ -1,39 +1,60 @@
+//! Error types for the MPQ library
+
 use std::io;
+use std::path::PathBuf;
 use thiserror::Error;
 
-/// Errors that can occur when working with MPQ archives
+use crate::compression::CompressionError;
+use crate::crypto::CryptoError;
+use crate::header::HeaderError;
+use crate::tables::TableError;
+
+/// Primary error type for MPQ operations
 #[derive(Error, Debug)]
-pub enum MopaqError {
+pub enum Error {
     #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
+    IoError(#[from] io::Error),
 
-    #[error("Invalid MPQ signature")]
-    InvalidSignature,
+    #[error("Header error: {0}")]
+    HeaderError(#[from] HeaderError),
 
-    #[error("Unsupported format version: {0}")]
-    UnsupportedVersion(u32),
+    #[error("Table error: {0}")]
+    TableError(#[from] TableError),
 
-    #[error("Invalid header size: {0}")]
-    InvalidHeaderSize(u32),
+    #[error("Crypto error: {0}")]
+    CryptoError(#[from] CryptoError),
 
-    #[error("Invalid archive size: {0}")]
-    InvalidArchiveSize(u64),
-
-    #[error("Invalid user data position")]
-    InvalidUserDataPosition,
-
-    #[error("The hash or block table is full")]
-    TableFull,
+    #[error("Compression error: {0}")]
+    CompressionError(#[from] CompressionError),
 
     #[error("File not found: {0}")]
     FileNotFound(String),
 
+    #[error("Invalid archive: {0}")]
+    InvalidArchive(String),
+
+    #[error("Failed to open archive at {0}")]
+    ArchiveOpenError(PathBuf),
+
+    #[error("Failed to read file {0} from archive")]
+    FileReadError(String),
+
     #[error("Unsupported feature: {0}")]
     UnsupportedFeature(String),
 
-    #[error("The file is corrupted")]
-    CorruptedFile,
+    #[error("Invalid sector size: {0}")]
+    InvalidSectorSize(u32),
+
+    #[error("Invalid file sector: {context}")]
+    InvalidSector {
+        context: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    #[error("{0}")]
+    Other(String),
 }
 
-/// A Result type specialized for MPQ operations
-pub type Result<T> = std::result::Result<T, MopaqError>;
+/// Result type for MPQ operations
+pub type Result<T> = std::result::Result<T, Error>;

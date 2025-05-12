@@ -1,23 +1,63 @@
-//! # Mopaq
+//! MPQ library for Rust
+//! Provides functionality for reading MPQ (Mo'PaQ) archives used in Blizzard games
 //!
-//! `mopaq` is a Rust library for handling World of Warcraft MPQ archives.
-//! It provides functionality to read and write MPQ archives, including
-//! support for user headers.
+//! This library allows you to:
+//! - Open and extract files from MPQ archives
+//! - Access file metadata and contents
+//! - Handle encryption and compression
 
-mod archive;
-mod block_table;
-mod error;
-mod hash_table;
-mod header;
-mod user_header;
-mod utils;
+// Public modules
+pub mod archive;
+pub mod compression;
+pub mod crypto;
+pub mod error;
+pub mod file;
+pub mod header;
+pub mod listfile;
+pub mod tables;
 
+// Re-export main types for convenience
 pub use archive::MpqArchive;
-pub use block_table::{MpqBlockEntry, MpqBlockTable, block_flags, compression_type};
-pub use error::{MopaqError, Result};
-pub use hash_table::{MpqHashEntry, MpqHashTable, hash};
-pub use header::{MPQ_HEADER_SIGNATURE, MPQ_USER_DATA_SIGNATURE, MpqHeader, MpqVersion};
-pub use user_header::{MpqUserHeader, read_mpq_header, write_mpq_header};
-pub use utils::{
-    calculate_hash_table_size, calculate_sector_count, calculate_table_size, get_sector_size,
-};
+pub use error::{Error, Result};
+pub use file::MpqFile;
+
+/// Library version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Library information
+pub const LIBRARY_INFO: &str = concat!(
+    "mopaq v",
+    env!("CARGO_PKG_VERSION"),
+    " - ",
+    "Rust MPQ library (",
+    env!("CARGO_PKG_REPOSITORY"),
+    ")"
+);
+
+/// Initialize the library
+/// This is optional but can be used to perform any global setup
+#[allow(unused_variables)]
+pub fn init() -> Result<()> {
+    // No initialization needed currently
+    Ok(())
+}
+
+/// Convenience function to open an MPQ archive
+pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<MpqArchive> {
+    MpqArchive::open(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version() {
+        assert!(!VERSION.is_empty());
+    }
+
+    #[test]
+    fn test_init() {
+        assert!(init().is_ok());
+    }
+}

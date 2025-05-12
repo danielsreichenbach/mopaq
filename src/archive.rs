@@ -1,402 +1,297 @@
-use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
-use memmap2::{Mmap, MmapOptions};
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::Path;
+//! MPQ archive handling
+//! Provides functionality for reading MPQ archives
 
-use crate::block_table::{MpqBlockEntry, MpqBlockTable, block_flags};
-use crate::error::{MopaqError, Result};
-use crate::hash_table::{MpqHashEntry, MpqHashTable, hash};
-use crate::header::{MPQ_HEADER_SIGNATURE, MpqHeader, MpqVersion};
-use crate::user_header::{MpqUserHeader, read_mpq_header, write_mpq_header};
-use crate::utils::{calculate_hash_table_size, get_sector_size};
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
-/// MPQ archive
+use crate::error::{Error, Result};
+use crate::file::MpqFile;
+use crate::header::MpqHeader;
+use crate::listfile::read_listfile;
+use crate::tables::{BlockTable, ExtendedBlockTable, HashTable, find_file, find_file_by_hash};
+
+/// Reader trait for abstracting over different input sources
+pub trait ReadSeek: Read + Seek + Send + Sync {}
+impl<T: Read + Seek + Send + Sync> ReadSeek for T {}
+
+/// An MPQ archive
 pub struct MpqArchive {
-    /// The file handle
-    file: File,
+    /// Path to the archive, if opened from a file
+    path: Option<PathBuf>,
 
-    /// Memory mapping of the file (if used)
-    mmap: Option<Mmap>,
-
-    /// The user header, if any
-    user_header: Option<MpqUserHeader>,
-
-    /// The MPQ header
+    /// The archive header
     header: MpqHeader,
 
+    /// Offset of the header within the file
+    header_offset: u64,
+
     /// The hash table
-    hash_table: MpqHashTable,
+    hash_table: HashTable,
 
     /// The block table
-    block_table: MpqBlockTable,
+    block_table: BlockTable,
+
+    /// The extended block table (v2+ archives)
+    ext_block_table: Option<ExtendedBlockTable>,
+
+    /// Reader for accessing the archive data
+    reader: Arc<Mutex<Box<dyn ReadSeek>>>,
+
+    /// Known filenames from (listfile) if available
+    filenames: Vec<String>,
+
+    /// Filename to hash mapping for quicker lookup
+    filename_map: HashMap<String, (u32, u32)>, // (HashA, HashB)
 }
 
 impl MpqArchive {
-    /// Open an existing MPQ archive
+    /// Opens an MPQ archive from a file path
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        // Open the file
-        let file = File::open(path)?;
+        let file = File::open(path.as_ref())
+            .map_err(|_| Error::ArchiveOpenError(path.as_ref().to_path_buf()))?;
 
-        // Create a memory mapping
-        let mmap = unsafe { MmapOptions::new().map(&file)? };
-
-        // Create a cursor to read from the mapping
-        let mut cursor = std::io::Cursor::new(&mmap[..]);
-
-        // Read the headers
-        let (user_header, header) = read_mpq_header(&mut cursor)?;
-
-        // Read the hash table
-        cursor.seek(SeekFrom::Start(header.hash_table_offset as u64))?;
-        let hash_table = MpqHashTable::read(&mut cursor, header.hash_table_entries as usize)?;
-
-        // Read the block table
-        cursor.seek(SeekFrom::Start(header.block_table_offset as u64))?;
-        let block_table = MpqBlockTable::read(&mut cursor, header.block_table_entries as usize)?;
-
-        Ok(Self {
-            file,
-            mmap: Some(mmap),
-            user_header,
-            header,
-            hash_table,
-            block_table,
-        })
+        let reader = Box::new(BufReader::new(file));
+        Self::from_reader(reader, Some(path.as_ref().to_path_buf()))
     }
 
-    /// Create a new MPQ archive
-    pub fn create<P: AsRef<Path>>(path: P, version: MpqVersion) -> Result<Self> {
-        // Create the file
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
+    /// Creates an MPQ archive from a reader
+    pub fn from_reader<R>(reader: Box<R>, path: Option<PathBuf>) -> Result<Self>
+    where
+        R: ReadSeek + 'static,
+    {
+        let mut reader = reader;
 
-        // Create the header based on the requested version
-        let header = match version {
-            MpqVersion::Version1 => MpqHeader::new_v1(),
-            MpqVersion::Version2 => MpqHeader::new_v2(),
-            MpqVersion::Version3 => MpqHeader::new_v3(),
-            MpqVersion::Version4 => MpqHeader::new_v4(),
+        // Find and read the MPQ header
+        let (header, header_offset) = MpqHeader::find_and_read(&mut reader, None)?;
+
+        // Validate the header
+        header.validate()?;
+
+        // Read the hash table
+        let mut hash_table = HashTable::new(header.hash_table_entries as usize)?;
+        let hash_table_offset = header_offset + header.hash_table_offset_64();
+        hash_table.read_from(
+            &mut reader,
+            hash_table_offset,
+            header.hash_table_entries as usize,
+        )?;
+
+        // Read the block table
+        let mut block_table = BlockTable::new(header.block_table_entries as usize);
+        let block_table_offset = header_offset + header.block_table_offset_64();
+        block_table.read_from(
+            &mut reader,
+            block_table_offset,
+            header.block_table_entries as usize,
+        )?;
+
+        // Read the extended block table if present (v2+)
+        let ext_block_table = if header.format_version >= 2 {
+            let mut ext_table = ExtendedBlockTable::new(header.block_table_entries as usize);
+            let ext_offset = match header.format_version {
+                2 => (header.ext_block_table_offset_high as u64) << 32,
+                _ => 0, // In later versions, we'd need to handle this differently
+            };
+
+            if ext_offset > 0 {
+                ext_table.read_from(
+                    &mut reader,
+                    header_offset + ext_offset,
+                    header.block_table_entries as usize,
+                )?;
+                Some(ext_table)
+            } else {
+                None
+            }
+        } else {
+            None
         };
-
-        // Create empty tables
-        let hash_table = MpqHashTable::new(4); // Minimum size
-        let block_table = MpqBlockTable::new(0);
 
         // Create the archive
         let mut archive = Self {
-            file,
-            mmap: None,
-            user_header: None,
+            path,
             header,
+            header_offset,
             hash_table,
             block_table,
+            ext_block_table,
+            reader: Arc::new(Mutex::new(reader)),
+            filenames: Vec::new(),
+            filename_map: HashMap::new(),
         };
 
-        // Initialize the file structure
-        archive.initialize()?;
+        // Try to load the listfile
+        archive.load_listfile().ok(); // Ignore errors
 
         Ok(archive)
     }
 
-    /// Initialize a new MPQ archive
-    fn initialize(&mut self) -> Result<()> {
-        // Calculate the offset of the hash table
-        let mut offset = self.header.header_size as u64;
-
-        // Update the header
-        self.header.hash_table_offset = offset as u32;
-        self.header.hash_table_entries = self.hash_table.entries.len() as u32;
-
-        // Calculate the offset of the block table
-        offset += (self.hash_table.entries.len() * 16) as u64;
-        self.header.block_table_offset = offset as u32;
-        self.header.block_table_entries = self.block_table.entries.len() as u32;
-
-        // Calculate the total size of the archive
-        offset += (self.block_table.entries.len() * 16) as u64;
-        self.header.archive_size = offset as u32;
-        if let Some(size_64) = self.header.archive_size_64.as_mut() {
-            *size_64 = offset;
-        }
-
-        // Seek to the beginning of the file
-        self.file.seek(SeekFrom::Start(0))?;
-
-        // Write the header
-        write_mpq_header(&mut self.file, self.user_header.as_ref(), &self.header)?;
-
-        // Write the hash table
-        self.file
-            .seek(SeekFrom::Start(self.header.hash_table_offset as u64))?;
-        self.hash_table.write(&mut self.file)?;
-
-        // Write the block table
-        self.file
-            .seek(SeekFrom::Start(self.header.block_table_offset as u64))?;
-        self.block_table.write(&mut self.file)?;
-
-        Ok(())
-    }
-
-    /// Get the MPQ header
+    /// Gets a reference to the archive's header
     pub fn header(&self) -> &MpqHeader {
         &self.header
     }
 
-    /// Get the user header, if any
-    pub fn user_header(&self) -> Option<&MpqUserHeader> {
-        self.user_header.as_ref()
-    }
-
-    /// Get the hash table
-    pub fn hash_table(&self) -> &MpqHashTable {
-        &self.hash_table
-    }
-
-    /// Get the block table
-    pub fn block_table(&self) -> &MpqBlockTable {
-        &self.block_table
-    }
-
-    /// Find a file in the archive by name
-    pub fn find_file(&self, filename: &str) -> Option<usize> {
-        // Hash the filename
-        let (_, name_a, name_b) = hash::hash_filename(filename);
-
-        // Look up the file in the hash table
-        self.hash_table
-            .find_entry(name_a, name_b, 0)
-            .map(|(_, entry)| (entry.block_index & 0x0FFFFFFF) as usize)
-            .filter(|&idx| idx < self.block_table.entries.len())
-    }
-
-    /// Get the sector size for this archive
+    /// Gets the sector size for this archive
     pub fn sector_size(&self) -> u32 {
-        get_sector_size(self.header.sector_size_shift)
+        self.header.sector_size()
     }
 
-    /// Add a file to the archive
-    pub fn add_file<P: AsRef<Path>>(&mut self, filepath: P, internal_name: &str) -> Result<()> {
-        // If memory mapping is active, drop it as we'll be modifying the file
-        self.mmap = None;
+    /// Opens a file from the archive by name
+    pub fn open_file(&self, filename: &str) -> Result<MpqFile> {
+        // Look up the file in the hash and block tables
+        let hash_a;
+        let hash_b;
 
-        // Open the file to add
-        let mut file = File::open(&filepath)?;
-        let file_size = file.metadata()?.len() as u32;
-
-        // Hash the internal name
-        let (offset_hash, name_a, name_b) = hash::hash_filename(internal_name);
-
-        // Read the file content
-        let mut file_data = Vec::new();
-        file.read_to_end(&mut file_data)?;
-
-        // For simplicity, store uncompressed for now
-        let block_entry = MpqBlockEntry {
-            file_pos: self.header.archive_size,
-            c_size: file_size,
-            f_size: file_size,
-            flags: block_flags::EXISTS | block_flags::SINGLE_UNIT,
-        };
-
-        // Add the block entry
-        let block_index = self.block_table.entries.len();
-        self.block_table.entries.push(block_entry);
-
-        // Add the hash entry
-        self.hash_table
-            .add_entry(name_a, name_b, 0, 0, block_index as u32)?;
-
-        // Seek to the end of the file and write the file data
-        self.file
-            .seek(SeekFrom::Start(self.header.archive_size as u64))?;
-        self.file.write_all(&file_data)?;
-
-        // Update the header
-        self.header.archive_size += file_size;
-        if let Some(size_64) = self.header.archive_size_64.as_mut() {
-            *size_64 += file_size as u64;
+        // Try to use cached hash values if available
+        if let Some(&(a, b)) = self.filename_map.get(filename) {
+            hash_a = a;
+            hash_b = b;
+        } else {
+            // Calculate hash values for the filename
+            let (_, a, b) = crate::crypto::hash::compute_file_hashes(filename);
+            hash_a = a;
+            hash_b = b;
         }
-        self.header.block_table_entries = self.block_table.entries.len() as u32;
 
-        // Update the tables
-        self.file.seek(SeekFrom::Start(0))?;
-        write_mpq_header(&mut self.file, self.user_header.as_ref(), &self.header)?;
+        // Find the file in the tables
+        let file_entry = find_file_by_hash(
+            &self.hash_table,
+            &self.block_table,
+            self.ext_block_table.as_ref(),
+            hash_a,
+            hash_b,
+            0, // Default locale
+        )
+        .map_err(|_| Error::FileNotFound(filename.to_string()))?;
 
-        self.file
-            .seek(SeekFrom::Start(self.header.hash_table_offset as u64))?;
-        self.hash_table.write(&mut self.file)?;
-
-        self.file
-            .seek(SeekFrom::Start(self.header.block_table_offset as u64))?;
-        self.block_table.write(&mut self.file)?;
-
-        // Flush to ensure all data is written
-        self.file.flush()?;
-
-        Ok(())
+        // Create the MPQ file
+        MpqFile::new(
+            filename.to_string(),
+            file_entry.block,
+            file_entry.ext,
+            self.header_offset,
+            self.sector_size(),
+            Arc::clone(&self.reader),
+        )
     }
 
-    /// Extract a file from the archive by name
-    pub fn extract_file<P: AsRef<Path>>(&self, internal_name: &str, output_path: P) -> Result<()> {
-        // Find the file
-        let block_index = self
-            .find_file(internal_name)
-            .ok_or_else(|| MopaqError::FileNotFound(internal_name.to_string()))?;
+    /// Loads the (listfile) if present
+    fn load_listfile(&mut self) -> Result<()> {
+        // Try to open the (listfile)
+        match self.open_file("(listfile)") {
+            Ok(file) => {
+                // Read the listfile
+                let data = file.read_data()?;
+                let filenames = read_listfile(&data)?;
 
-        // Get the block entry
-        let block_entry = &self.block_table.entries[block_index];
+                // Build the filename map for quick lookup
+                let mut filename_map = HashMap::new();
+                for filename in &filenames {
+                    let (_, hash_a, hash_b) = crate::crypto::hash::compute_file_hashes(filename);
+                    filename_map.insert(filename.clone(), (hash_a, hash_b));
+                }
 
-        // Check if the file exists
-        if !block_entry.exists() {
-            return Err(MopaqError::FileNotFound(internal_name.to_string()));
+                self.filenames = filenames;
+                self.filename_map = filename_map;
+
+                Ok(())
+            }
+            Err(_) => {
+                // No listfile, which is okay
+                Ok(())
+            }
         }
+    }
 
-        // For simplicity, we'll only support single unit files for now
-        if !block_entry.is_single_unit() {
-            return Err(MopaqError::UnsupportedFeature(
-                "Multi-sector files".to_string(),
-            ));
-        }
+    /// Gets a list of known filenames in the archive
+    pub fn filenames(&self) -> &[String] {
+        &self.filenames
+    }
 
-        // Check for unsupported features
-        if block_entry.is_encrypted() {
-            return Err(MopaqError::UnsupportedFeature(
-                "Encrypted files".to_string(),
-            ));
-        }
-        if block_entry.is_compressed() {
-            return Err(MopaqError::UnsupportedFeature(
-                "Compressed files".to_string(),
-            ));
-        }
-
-        // Create the output file
-        let mut output_file = File::create(output_path)?;
-
-        // Prepare to read the data
-        let data_offset = block_entry.file_pos as u64;
-        let data_size = block_entry.c_size as usize;
-
-        // Buffer to hold the file data
-        let mut buffer = vec![0u8; data_size];
-
-        match &self.mmap {
-            Some(mmap) => {
-                // Use memory mapping
-                if data_offset as usize + data_size <= mmap.len() {
-                    let data = &mmap[data_offset as usize..(data_offset as usize + data_size)];
-                    output_file.write_all(data)?;
-                } else {
-                    return Err(MopaqError::InvalidArchiveSize(
-                        data_offset + data_size as u64,
-                    ));
+    /// Gets the total number of files in the archive
+    pub fn file_count(&self) -> usize {
+        // Count non-empty entries in the block table
+        let mut count = 0;
+        for i in 0..self.block_table.size() {
+            if let Some(entry) = self.block_table.get(i) {
+                if entry.exists() {
+                    count += 1;
                 }
             }
-            None => {
-                // Use file I/O
-                let mut file = &self.file;
-                let mut file_clone = file.try_clone()?; // Clone to avoid borrowing issues
-                file_clone.seek(SeekFrom::Start(data_offset))?;
-                file_clone.read_exact(&mut buffer)?;
-                output_file.write_all(&buffer)?;
+        }
+        count
+    }
+
+    /// Extracts a file to the specified path
+    pub fn extract_file<P: AsRef<Path>>(&self, filename: &str, path: P) -> Result<()> {
+        let file = self.open_file(filename)?;
+        let data = file.read_data()?;
+
+        std::fs::write(path, data).map_err(|e| Error::IoError(e))
+    }
+
+    /// Extracts all files to the specified directory
+    pub fn extract_all<P: AsRef<Path>>(&self, dir: P) -> Result<()> {
+        let dir = dir.as_ref();
+
+        // Create directory if it doesn't exist
+        if !dir.exists() {
+            std::fs::create_dir_all(dir).map_err(|e| Error::IoError(e))?;
+        }
+
+        // Extract each file
+        for filename in &self.filenames {
+            let dest_path = dir.join(filename);
+
+            // Create parent directories if needed
+            if let Some(parent) = dest_path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent).map_err(|e| Error::IoError(e))?;
+                }
             }
+
+            // Extract the file
+            self.extract_file(filename, dest_path)?;
         }
 
         Ok(())
     }
 
-    /// List all files in the archive
-    pub fn list_files(&self) -> Vec<String> {
-        let mut result = Vec::new();
-
-        // Since the hash table doesn't store filenames, we can only return
-        // entries that are marked as valid and exist
-        for (i, entry) in self.hash_table.entries.iter().enumerate() {
-            if entry.is_valid() {
-                let block_idx = entry.block_index as usize;
-                if block_idx < self.block_table.entries.len() {
-                    let block = &self.block_table.entries[block_idx];
-                    if block.exists() {
-                        // We don't have actual filenames, so we'll use a placeholder
-                        // In a real implementation, we would need to store file names separately
-                        result.push(format!("File#{}", i));
-                    }
-                }
-            }
+    /// Checks if a file exists in the archive
+    pub fn has_file(&self, filename: &str) -> bool {
+        if let Some(&(hash_a, hash_b)) = self.filename_map.get(filename) {
+            // Use cached hash values
+            self.hash_table.find_entry(hash_a, hash_b, 0).is_some()
+        } else {
+            // Calculate hash values
+            let (_, hash_a, hash_b) = crate::crypto::hash::compute_file_hashes(filename);
+            self.hash_table.find_entry(hash_a, hash_b, 0).is_some()
         }
-
-        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Seek, Write};
-    use tempfile::tempdir;
+    use std::io::Cursor;
+    use std::path::PathBuf;
 
-    #[test]
-    fn test_create_archive() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.mpq");
-
-        // Create a new archive
-        let archive = MpqArchive::create(&path, MpqVersion::Version1).unwrap();
-
-        // Verify the header
-        assert_eq!(archive.header.signature, MPQ_HEADER_SIGNATURE);
-        assert_eq!(archive.header.format_version, 0);
-        assert_eq!(archive.header.sector_size_shift, 3);
-
-        // Verify the hash table
-        assert_eq!(archive.hash_table.entries.len(), 4);
-
-        // Verify the block table
-        assert_eq!(archive.block_table.entries.len(), 0);
+    // Helper to create a mock archive for testing
+    fn create_mock_archive() -> Vec<u8> {
+        // This would create a minimal valid MPQ archive
+        // For a real test, you'd need a pre-made MPQ file
+        vec![0; 1024]
     }
 
     #[test]
-    fn test_add_and_extract_file() {
-        let dir = tempdir().unwrap();
-        let archive_path = dir.path().join("test.mpq");
-        let test_file_path = dir.path().join("test.txt");
-        let output_path = dir.path().join("output.txt");
-
-        // Create a test file with known content
-        let test_content = b"This is a test file";
-        {
-            let mut test_file = File::create(&test_file_path).unwrap();
-            test_file.write_all(test_content).unwrap();
-            test_file.flush().unwrap();
-        }
-
-        // Step 1: Create a new archive and add the file
-        {
-            let mut archive = MpqArchive::create(&archive_path, MpqVersion::Version1).unwrap();
-            archive.add_file(&test_file_path, "test.txt").unwrap();
-            // Archive is dropped here, closing the file
-        }
-
-        // Step 2: Reopen the archive for extraction
-        {
-            let archive = MpqArchive::open(&archive_path).unwrap();
-            archive.extract_file("test.txt", &output_path).unwrap();
-        }
-
-        // Read the extracted file
-        let mut output_content = Vec::new();
-        {
-            let mut output_file = File::open(&output_path).unwrap();
-            output_file.read_to_end(&mut output_content).unwrap();
-        }
-
-        // Verify the content
-        assert_eq!(output_content, test_content);
+    fn test_archive_from_reader() {
+        // Skip this test until we have a proper mock archive
+        // let data = create_mock_archive();
+        // let reader = Box::new(Cursor::new(data));
+        // let archive = MpqArchive::from_reader(reader, None);
+        // assert!(archive.is_ok());
     }
 }

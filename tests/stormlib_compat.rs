@@ -1,0 +1,1 @@
+//! StormLib compatibility tests
