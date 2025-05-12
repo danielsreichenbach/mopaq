@@ -1,12 +1,10 @@
-//! Cryptography module entry point, exports public API
-
 //! Cryptographic functionality for MPQ archives
 //! Includes hash functions, encryption/decryption, and key generation
 
 mod constants;
 mod encryption;
-pub mod hash;
-pub mod key_derivation;
+mod hash;
+mod key_derivation;
 
 // Re-export public interfaces
 pub use constants::{
@@ -14,7 +12,7 @@ pub use constants::{
 };
 pub use encryption::{decrypt_block, encrypt_block};
 pub use hash::{HashType, compute_file_hashes, hash_string};
-pub use key_derivation::{generate_file_key, generate_sector_key};
+pub use key_derivation::{detect_file_key, generate_file_key, generate_sector_key};
 
 use std::io::Error as IoError;
 use thiserror::Error;

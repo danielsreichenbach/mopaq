@@ -293,3 +293,11 @@ impl MpqFile {
 fn min<T: Ord>(a: T, b: T) -> T {
     if a < b { a } else { b }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Tests would go here - they would require mock data
+    // or a real MPQ archive for integration testing
+}

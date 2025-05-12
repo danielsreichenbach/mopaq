@@ -4,6 +4,15 @@
 /// This table is used for both hashing and encryption
 pub static STORM_BUFFER_CRYPT: [u32; 0x500] = generate_crypt_table();
 
+/// Key for hash table encryption
+pub const HASH_TABLE_KEY: u32 = 0xC3AF3770;
+
+/// Key for block table encryption
+pub const BLOCK_TABLE_KEY: u32 = 0xEC83B3A3;
+
+/// Key for extended block table encryption
+pub const MPQ_EXTENDED_BLOCK_TABLE_KEY: u32 = 0x39525245;
+
 /// Generate the MPQ hashing table
 const fn generate_crypt_table() -> [u32; 0x500] {
     let mut table = [0u32; 0x500];
@@ -28,15 +37,6 @@ const fn generate_crypt_table() -> [u32; 0x500] {
 
     table
 }
-
-/// Key for hash table encryption
-pub const HASH_TABLE_KEY: u32 = 0xC3AF3770;
-
-/// Key for block table encryption
-pub const BLOCK_TABLE_KEY: u32 = 0xEC83B3A3;
-
-/// Key for extended block table encryption
-pub const MPQ_EXTENDED_BLOCK_TABLE_KEY: u32 = 0x39525245;
 
 #[cfg(test)]
 mod tests {
@@ -97,8 +97,8 @@ mod tests {
         // Verify table size
         assert_eq!(
             STORM_BUFFER_CRYPT.len(),
-            1280,
-            "STORM_BUFFER_CRYPT table should have 1280 entries"
+            0x500,
+            "STORM_BUFFER_CRYPT table should have 0x500 entries"
         );
 
         // Calculate a simple checksum of the entire table as an additional validation

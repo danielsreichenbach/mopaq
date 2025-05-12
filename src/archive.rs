@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
 use crate::file::MpqFile;
-use crate::header::MpqHeader;
+use crate::header::{MpqHeader, find_all_headers};
 use crate::listfile::read_listfile;
 use crate::tables::{BlockTable, ExtendedBlockTable, HashTable, find_file, find_file_by_hash};
 

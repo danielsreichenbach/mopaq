@@ -1,4 +1,4 @@
-//! Compression module entry point, unified API
+//! Compression module for MPQ archives
 //! Handles various compression methods used in MPQ files
 
 mod adpcm;

@@ -1,7 +1,7 @@
-//! Hash table
+//! Hash table implementation for MPQ archives
 
 use super::{Table, TableError};
-use crate::crypto::{HASH_TABLE_KEY, decrypt_block, encrypt_block};
+use crate::crypto::{CryptoResult, HASH_TABLE_KEY, decrypt_block, encrypt_block};
 use std::io::{Read, Seek, SeekFrom, Write};
 
 /// Hash table entry in an MPQ archive
@@ -45,12 +45,6 @@ impl HashEntry {
     /// Marks this hash entry as deleted
     pub fn mark_deleted(&mut self) {
         self.block_index = 0xFFFFFFFE;
-    }
-}
-
-impl Default for HashEntry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

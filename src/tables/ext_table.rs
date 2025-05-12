@@ -1,4 +1,4 @@
-//! Extended block table (v2+)
+//! Extended block table implementation for MPQ archives
 
 use super::{Table, TableError};
 use crate::crypto::{MPQ_EXTENDED_BLOCK_TABLE_KEY, decrypt_block, encrypt_block};
@@ -24,12 +24,6 @@ impl ExtBlockEntry {
             compressed_size_high: 0,
             file_size_high: 0,
         }
-    }
-}
-
-impl Default for ExtBlockEntry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

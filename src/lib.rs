@@ -26,7 +26,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Library information
 pub const LIBRARY_INFO: &str = concat!(
-    "mopaq v",
+    "mpq-rs v",
     env!("CARGO_PKG_VERSION"),
     " - ",
     "Rust MPQ library (",

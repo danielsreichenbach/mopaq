@@ -1,4 +1,4 @@
-//! File lookup algorithms
+//! File lookup implementation for MPQ archives
 
 use super::block_table::BlockEntry;
 use super::ext_table::ExtBlockEntry;
@@ -14,7 +14,7 @@ pub struct CombinedEntry<'a> {
     pub ext: Option<&'a ExtBlockEntry>,
 }
 
-impl CombinedEntry<'_> {
+impl<'a> CombinedEntry<'a> {
     /// Get the full 64-bit file offset
     pub fn offset_64(&self) -> u64 {
         if let Some(ext) = self.ext {
@@ -116,8 +116,8 @@ pub fn find_file_entry<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tables::block_table::BlockEntry;
-    use crate::tables::block_table::block_flags;
+    use crate::crypto::hash::compute_file_hashes;
+    use crate::tables::block_table::{BlockEntry, block_flags};
     use crate::tables::hash_table::HashEntry;
 
     #[test]

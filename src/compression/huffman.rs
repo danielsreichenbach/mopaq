@@ -297,8 +297,8 @@ mod tests {
         // Test with various data
         let test_cases = [
             b"This is a test of Huffman compression. It should compress well and decompress back to the original.",
-            b"aaaaaaaaaaaaaaabbbbbbbbbbccccccddddeeeeeffffffffffffffffffffgggggggggghhhhhhhhhhiiiiiiiiiijjjjjjjjj", // Highly compressible
-            &[0u8; 99], // All zeros
+            b"aaaaaaaaaaaaaaabbbbbbbbbbccccccddddeeeee", // Highly compressible
+            &[0u8; 1024], // All zeros
             &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], // Small range
         ];
 

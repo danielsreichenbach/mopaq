@@ -1,4 +1,4 @@
-//! Block table
+//! Block table implementation for MPQ archives
 
 use super::{Table, TableError};
 use crate::crypto::{BLOCK_TABLE_KEY, decrypt_block, encrypt_block};
@@ -95,12 +95,6 @@ impl BlockEntry {
     /// Gets the compression methods used for this file
     pub fn compression_mask(&self) -> u32 {
         self.flags & block_flags::COMPRESSION_MASK
-    }
-}
-
-impl Default for BlockEntry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
