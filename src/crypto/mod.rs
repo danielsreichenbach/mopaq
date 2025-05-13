@@ -3,8 +3,8 @@
 
 mod constants;
 mod encryption;
-mod hash;
-mod key_derivation;
+pub mod hash;
+pub mod key_derivation;
 
 // Re-export public interfaces
 pub use constants::{

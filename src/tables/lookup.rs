@@ -14,7 +14,7 @@ pub struct CombinedEntry<'a> {
     pub ext: Option<&'a ExtBlockEntry>,
 }
 
-impl<'a> CombinedEntry<'a> {
+impl CombinedEntry<'_> {
     /// Get the full 64-bit file offset
     pub fn offset_64(&self) -> u64 {
         if let Some(ext) = self.ext {

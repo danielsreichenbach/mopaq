@@ -98,6 +98,12 @@ impl BlockEntry {
     }
 }
 
+impl Default for BlockEntry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Block table in an MPQ archive
 pub struct BlockTable {
     /// The block entries

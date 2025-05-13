@@ -9,9 +9,11 @@ use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
 use crate::file::MpqFile;
-use crate::header::{MpqHeader, find_all_headers};
+use crate::header::MpqHeader;
 use crate::listfile::read_listfile;
-use crate::tables::{BlockTable, ExtendedBlockTable, HashTable, find_file, find_file_by_hash};
+use crate::tables::{
+    BlockTable, ExtendedBlockTable, HashTable, Table, find_file, find_file_by_hash,
+};
 
 /// Reader trait for abstracting over different input sources
 pub trait ReadSeek: Read + Seek + Send + Sync {}

@@ -140,7 +140,7 @@
 ### Patch Support
 
 - [ ] Implement patch file detection
-- [ ] Create PTCH file handling
+- [ ] Create patch file handling
 - [ ] Implement patch application
 - [ ] Add support for incremental patching
 - [ ] Write unit tests for patch functionality

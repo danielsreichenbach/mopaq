@@ -27,6 +27,12 @@ impl ExtBlockEntry {
     }
 }
 
+impl Default for ExtBlockEntry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Extended block table in an MPQ archive
 pub struct ExtendedBlockTable {
     /// The extended block entries

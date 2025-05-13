@@ -1,7 +1,7 @@
 //! Module for MPQ table structures (hash table, block table, etc.)
 
-mod block_table;
-mod ext_table;
+pub mod block_table;
+pub mod ext_table;
 mod hash_table;
 mod lookup;
 
@@ -62,69 +62,6 @@ pub trait Table {
     fn write_to<W: Write + Seek>(&self, writer: &mut W, offset: u64) -> Result<(), TableError>;
 }
 
-// Locale constants
-pub const LOCALE_NEUTRAL: u16 = 0;
-pub const LOCALE_ENGLISH: u16 = 0x409;
-pub const LOCALE_CHINESE_TRADITIONAL: u16 = 0x0404;
-pub const LOCALE_GERMAN: u16 = 0x0407;
-pub const LOCALE_FRENCH: u16 = 0x040c;
-pub const LOCALE_KOREAN: u16 = 0x0412;
-pub const LOCALE_RUSSIAN: u16 = 0x0419;
-// Add more as needed
-
-// Platform constants
-pub const PLATFORM_NEUTRAL: u16 = 0;
-pub const PLATFORM_WINDOWS: u16 = 0x0100;
-pub const PLATFORM_MAC: u16 = 0x0200;
-pub const PLATFORM_LINUX: u16 = 0x0300;
-// Add more as needed
-
-/// Checks if a locale and platform combination is valid
-pub fn is_valid_locale_platform(locale: u16, platform: u16) -> bool {
-    // Check if locale matches any defined locale constant
-    let valid_locale = match locale {
-        LOCALE_NEUTRAL | LOCALE_ENGLISH => true,
-        // Additional locale constants can be added here as they're defined
-        LOCALE_CHINESE_TRADITIONAL => true,
-        LOCALE_GERMAN => true,
-        LOCALE_FRENCH => true,
-        LOCALE_KOREAN => true,
-        LOCALE_RUSSIAN => true,
-        0x0404 => true, // Chinese Traditional
-        0x0405 => true, // Czech
-        0x0407 => true, // German
-        0x0408 => true, // Greek
-        0x040a => true, // Spanish
-        0x040b => true, // Finnish
-        0x040c => true, // French
-        0x040e => true, // Hungarian
-        0x0410 => true, // Italian
-        0x0411 => true, // Japanese
-        0x0412 => true, // Korean
-        0x0413 => true, // Dutch
-        0x0415 => true, // Polish
-        0x0416 => true, // Portuguese
-        0x0419 => true, // Russian
-        0x041b => true, // Slovak
-        0x041f => true, // Turkish
-        _ => false,     // All other locales are considered invalid
-    };
-
-    // Check if platform matches any defined platform constant
-    let valid_platform = match platform {
-        PLATFORM_NEUTRAL | PLATFORM_WINDOWS => true,
-        // Additional platform constants can be added here
-        PLATFORM_MAC => true,
-        PLATFORM_LINUX => true,
-        0x0200 => true, // macOS
-        0x0300 => true, // Linux
-        _ => false,     // All other platforms are considered invalid
-    };
-
-    // Both locale and platform must be valid
-    valid_locale && valid_platform
-}
-
 /// Creates a properly sized hash table for the given number of files
 /// The hash table size is always a power of 2 and at least double the file count
 pub fn create_hash_table(file_count: usize) -> Result<HashTable, TableError> {
@@ -136,3 +73,71 @@ pub fn create_hash_table(file_count: usize) -> Result<HashTable, TableError> {
 
     HashTable::new(size)
 }
+
+/// Checks if a locale and platform combination is valid
+pub fn is_valid_locale_platform(locale: u16, platform: u16) -> bool {
+    // Check if locale matches any defined locale constant
+    let valid_locale = match locale {
+        LOCALE_NEUTRAL | LOCALE_ENGLISH => true,
+        // Additional locale constants can be added here as they're defined
+        LOCALE_CHINESE_TRADITIONAL => true, // Chinese Traditional
+        LOCALE_CZECH => true,               // Czech
+        LOCALE_GERMAN => true,              // German
+        LOCALE_GREEK => true,               // Greek
+        LOCALE_SPANISH => true,             // Spanish
+        LOCALE_FINNISH => true,             // Finnish
+        LOCALE_FRENCH => true,              // French
+        LOCALE_HUNGARIAN => true,           // Hungarian
+        LOCALE_ITALIAN => true,             // Italian
+        LOCALE_JAPANESE => true,            // Japanese
+        LOCALE_KOREAN => true,              // Korean
+        LOCALE_DUTCH => true,               // Dutch
+        LOCALE_POLISH => true,              // Polish
+        LOCALE_PORTUGUESE => true,          // Portuguese
+        LOCALE_RUSSIAN => true,             // Russian
+        LOCALE_SLOVAK => true,              // Slovak
+        LOCALE_TURKISH => true,             // Turkish
+        _ => false,                         // All other locales are considered invalid
+    };
+
+    // Check if platform matches any defined platform constant
+    let valid_platform = match platform {
+        PLATFORM_NEUTRAL | PLATFORM_WINDOWS => true,
+        // Additional platform constants can be added here
+        PLATFORM_MAC => true,   // macOS
+        PLATFORM_LINUX => true, // Linux
+        _ => false,             // All other platforms are considered invalid
+    };
+
+    // Both locale and platform must be valid
+    valid_locale && valid_platform
+}
+
+// Locale constants
+pub const LOCALE_NEUTRAL: u16 = 0;
+pub const LOCALE_ENGLISH: u16 = 0x409;
+pub const LOCALE_CHINESE_TRADITIONAL: u16 = 0x0404;
+pub const LOCALE_CZECH: u16 = 0x0405;
+pub const LOCALE_GERMAN: u16 = 0x0407;
+pub const LOCALE_GREEK: u16 = 0x0408;
+pub const LOCALE_SPANISH: u16 = 0x040a;
+pub const LOCALE_FINNISH: u16 = 0x040b;
+pub const LOCALE_FRENCH: u16 = 0x040c;
+pub const LOCALE_HUNGARIAN: u16 = 0x040e;
+pub const LOCALE_ITALIAN: u16 = 0x0410;
+pub const LOCALE_JAPANESE: u16 = 0x0411;
+pub const LOCALE_KOREAN: u16 = 0x0412;
+pub const LOCALE_DUTCH: u16 = 0x0413;
+pub const LOCALE_POLISH: u16 = 0x0415;
+pub const LOCALE_PORTUGUESE: u16 = 0x0416;
+pub const LOCALE_RUSSIAN: u16 = 0x0419;
+pub const LOCALE_SLOVAK: u16 = 0x041b;
+pub const LOCALE_TURKISH: u16 = 0x041f;
+// Add more as needed
+
+// Platform constants
+pub const PLATFORM_NEUTRAL: u16 = 0;
+pub const PLATFORM_WINDOWS: u16 = 0x0100;
+pub const PLATFORM_MAC: u16 = 0x0200;
+pub const PLATFORM_LINUX: u16 = 0x0300;
+// Add more as needed

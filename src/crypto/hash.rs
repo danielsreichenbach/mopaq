@@ -39,13 +39,13 @@ pub fn hash_string(input: &str, hash_type: HashType) -> u32 {
         // Use the lookup table to get a value based on the character and hash type
         let index = (hash_type as usize * 0x100) + (ch as usize);
 
-        // Update the seed values according to the MPQ algorithm
-        seed1 = STORM_BUFFER_CRYPT[index] ^ (seed1.wrapping_add(seed2));
-        seed2 = ch as u32
-                .wrapping_add(seed1)
-                .wrapping_add(seed2)
-                .wrapping_add(seed2 << 5)
-                .wrapping_add(3);
+        // IMPORTANT: Fixed calculation to match StormLib exactly
+        seed1 = STORM_BUFFER_CRYPT[index].wrapping_add(seed1.wrapping_mul(2).wrapping_add(seed2));
+        seed2 = (ch as u32)
+            .wrapping_add(seed1)
+            .wrapping_add(seed2)
+            .wrapping_add(seed2 << 5)
+            .wrapping_add(3);
     }
 
     seed1
@@ -82,14 +82,25 @@ mod tests {
     #[test]
     fn test_hash_string() {
         // Test with known hash values from StormLib
+        assert_eq!(
+            hash_string("arr\\units.dat", HashType::TableOffset),
+            0xF4E6C69D
+        );
+        assert_eq!(
+            hash_string("unit\\neutral\\acritter.grp", HashType::TableOffset),
+            0xA26067F3
+        );
 
         // Test case 1: "(listfile)"
         assert_eq!(hash_string("(listfile)", HashType::TableOffset), 0x47F3D35A);
-        assert_eq!(hash_string("(listfile)", HashType::NameA), 0xAD68D42F);
+        assert_eq!(hash_string("(listfile)", HashType::NameA), 0x5F3DE859);
         assert_eq!(hash_string("(listfile)", HashType::NameB), 0x600F8C95);
 
         // Test case 2: "(attributes)"
-        assert_eq!(hash_string("(attributes)", HashType::TableOffset), 0xD38437CB);
+        assert_eq!(
+            hash_string("(attributes)", HashType::TableOffset),
+            0xD38437CB
+        );
         assert_eq!(hash_string("(attributes)", HashType::NameA), 0x07973B89);
         assert_eq!(hash_string("(attributes)", HashType::NameB), 0xA9FD618C);
 

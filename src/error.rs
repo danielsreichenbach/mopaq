@@ -1,6 +1,5 @@
 //! Error types for the MPQ library
 
-use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;

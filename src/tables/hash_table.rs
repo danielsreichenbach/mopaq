@@ -48,6 +48,12 @@ impl HashEntry {
     }
 }
 
+impl Default for HashEntry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Hash table in an MPQ archive
 pub struct HashTable {
     /// The hash entries

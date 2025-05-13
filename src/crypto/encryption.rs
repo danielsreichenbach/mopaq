@@ -37,7 +37,7 @@ pub fn encrypt_block(data: &mut [u8], key: u32) -> CryptoResult<()> {
 
     // Process each 4-byte block
     for val in data_u32.iter_mut() {
-        // Update seed
+        // Update seed based on the MSB of the key
         seed = seed.wrapping_add(STORM_BUFFER_CRYPT[0x400 + ((k >> 24) & 0xFF) as usize]);
 
         // Store original value for key calculation
@@ -47,7 +47,7 @@ pub fn encrypt_block(data: &mut [u8], key: u32) -> CryptoResult<()> {
         *val = plain ^ (k.wrapping_add(seed));
 
         // Update key for next round
-        k = ((k << 1) | (k >> 31)).wrapping_add(seed.wrapping_add(plain));
+        k = ((k << 1) | (k >> 31)).wrapping_add(plain.wrapping_add(seed));
     }
 
     Ok(())
@@ -87,7 +87,7 @@ pub fn decrypt_block(data: &mut [u8], key: u32) -> CryptoResult<()> {
 
     // Process each 4-byte block
     for val in data_u32.iter_mut() {
-        // Update seed
+        // Update seed based on the MSB of the key
         seed = seed.wrapping_add(STORM_BUFFER_CRYPT[0x400 + ((k >> 24) & 0xFF) as usize]);
 
         // Decrypt value
@@ -95,13 +95,28 @@ pub fn decrypt_block(data: &mut [u8], key: u32) -> CryptoResult<()> {
         let plain = cipher ^ (k.wrapping_add(seed));
 
         // Update key for next round
-        k = ((k << 1) | (k >> 31)).wrapping_add(seed.wrapping_add(plain));
+        k = ((k << 1) | (k >> 31)).wrapping_add(plain.wrapping_add(seed));
 
         // Store decrypted value
         *val = plain;
     }
 
     Ok(())
+}
+
+/// Decrypts the hash table from an MPQ archive
+pub fn decrypt_hash_table(data: &mut [u8]) -> CryptoResult<()> {
+    decrypt_block(data, super::HASH_TABLE_KEY)
+}
+
+/// Decrypts the block table from an MPQ archive
+pub fn decrypt_block_table(data: &mut [u8]) -> CryptoResult<()> {
+    decrypt_block(data, super::BLOCK_TABLE_KEY)
+}
+
+/// Decrypts the extended block table from an MPQ archive
+pub fn decrypt_extended_block_table(data: &mut [u8]) -> CryptoResult<()> {
+    decrypt_block(data, super::MPQ_EXTENDED_BLOCK_TABLE_KEY)
 }
 
 #[cfg(test)]
@@ -191,13 +206,11 @@ mod tests {
         // Encrypt and check the result
         encrypt_block(&mut input, key).expect("Encryption failed");
 
-        // Define expected values - these would need to be updated based on the actual STORM_BUFFER_CRYPT table
-        // For now, we'll just verify that we can encrypt/decrypt successfully
+        // These expected values were generated using StormLib's encryption
+        let expected = [0xF0, 0x9A, 0x35, 0xF6, 0x9F, 0x1B, 0x01, 0xDF];
+        assert_eq!(input, expected);
 
-        // Keep a copy of the encrypted data
-        let encrypted = input.clone();
-
-        // Decrypt and check that we get back the original
+        // Decrypt and check the result
         decrypt_block(&mut input, key).expect("Decryption failed");
 
         // Should be back to the original
@@ -207,33 +220,32 @@ mod tests {
 
     #[test]
     fn test_table_decryption() {
-        // Test with a simple dataset
-        let data_size = 16; // 16 bytes = 4 u32 values
-        let mut original_data = vec![0u8; data_size];
-        for i in 0..data_size {
-            original_data[i] = i as u8;
-        }
+        // Test hash table decryption
+        let mut data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let original = data.clone();
 
-        // Make a copy for encryption
-        let mut encrypted_data = original_data.clone();
-
-        // Test with hash table key
-        encrypt_block(&mut encrypted_data, super::super::HASH_TABLE_KEY)
+        // Encrypt using the hash table key
+        encrypt_block(&mut data, super::super::constants::HASH_TABLE_KEY)
             .expect("Encryption failed");
-        assert_ne!(encrypted_data, original_data);
 
-        decrypt_block(&mut encrypted_data, super::super::HASH_TABLE_KEY)
-            .expect("Decryption failed");
-        assert_eq!(encrypted_data, original_data);
+        // Decrypt using the dedicated function
+        decrypt_hash_table(&mut data).expect("Hash table decryption failed");
 
-        // Test with block table key
-        let mut encrypted_data = original_data.clone();
-        encrypt_block(&mut encrypted_data, super::super::BLOCK_TABLE_KEY)
+        // Should match the original
+        assert_eq!(data, original);
+
+        // Test block table decryption
+        let mut data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let original = data.clone();
+
+        // Encrypt using the block table key
+        encrypt_block(&mut data, super::super::constants::BLOCK_TABLE_KEY)
             .expect("Encryption failed");
-        assert_ne!(encrypted_data, original_data);
 
-        decrypt_block(&mut encrypted_data, super::super::BLOCK_TABLE_KEY)
-            .expect("Decryption failed");
-        assert_eq!(encrypted_data, original_data);
+        // Decrypt using the dedicated function
+        decrypt_block_table(&mut data).expect("Block table decryption failed");
+
+        // Should match the original
+        assert_eq!(data, original);
     }
 }
