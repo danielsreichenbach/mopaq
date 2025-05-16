@@ -2,7 +2,7 @@
 
 ## Project Setup
 
-- [ ] Create project structure with Cargo, named `mopaq`
+- [ ] Create project structure with Cargo and name it `mopaq`
 - [ ] Set up module organization (header, tables, crypto, compression)
 - [ ] Configure Cargo.toml with dependencies and features
 - [ ] Set up CI/CD for testing
@@ -92,8 +92,8 @@
 
 #### Compression Methods
 
-- [ ] Implement/wrap PKWARE DCL compression (priority)
-- [ ] Implement/wrap Huffman compression
+- [ ] Implement/wrap PKWARE DCL compression (stub)
+- [ ] Implement Huffman compression
 - [ ] Implement/wrap zlib compression
 - [ ] Implement/wrap bzip2 compression
 - [ ] Implement/wrap LZMA compression
