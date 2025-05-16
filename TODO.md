@@ -2,128 +2,128 @@
 
 ## Project Setup
 
-- [X] Create project structure with Cargo
-- [X] Set up module organization (header, tables, crypto, compression)
-- [X] Configure Cargo.toml with dependencies and features
-- [X] Set up CI/CD for testing
-- [X] Create initial README.md with project overview
+- [ ] Create project structure with Cargo, named `mopaq`
+- [ ] Set up module organization (header, tables, crypto, compression)
+- [ ] Configure Cargo.toml with dependencies and features
+- [ ] Set up CI/CD for testing
+- [ ] Create initial README.md with project overview
 
 ## Core Implementation
 
 ### Header Module
 
-- [X] Implement MpqHeader struct for format versions 1-4
-- [X] Create header parsing functions
-- [X] Implement user data detection
-- [X] Add header validation
-- [X] Write unit tests for header parsing
+- [ ] Implement MpqHeader struct for format versions 1-4
+- [ ] Create header parsing functions
+- [ ] Implement user data detection
+- [ ] Add header validation
+- [ ] Write unit tests for header parsing
 
 ### Tables Module
 
 #### Hash Table
 
-- [X] Implement HashEntry struct
-- [X] Create HashTable container
-- [X] Implement table reading from archive
-- [X] Add hash table validation
-- [X] Implement table decryption (with crypto module)
-- [X] Write unit tests for hash table
+- [ ] Implement HashEntry struct
+- [ ] Create HashTable container
+- [ ] Implement table reading from archive
+- [ ] Add hash table validation
+- [ ] Implement table decryption (with crypto module)
+- [ ] Write unit tests for hash table
 
 #### Block Table
 
-- [X] Implement BlockEntry struct
-- [X] Create BlockTable container
-- [X] Implement table reading from archive
-- [X] Add block table validation
-- [X] Implement table decryption (with crypto module)
-- [X] Write unit tests for block table
+- [ ] Implement BlockEntry struct
+- [ ] Create BlockTable container
+- [ ] Implement table reading from archive
+- [ ] Add block table validation
+- [ ] Implement table decryption (with crypto module)
+- [ ] Write unit tests for block table
 
 #### Extended Block Table
 
-- [X] Implement ExtBlockEntry struct
-- [X] Create ExtendedBlockTable container
-- [X] Implement table reading for v2+ archives
-- [X] Add extended block table validation
-- [X] Implement table decryption
-- [X] Write unit tests for extended block table
+- [ ] Implement ExtBlockEntry struct
+- [ ] Create ExtendedBlockTable container
+- [ ] Implement table reading for v2+ archives
+- [ ] Add extended block table validation
+- [ ] Implement table decryption
+- [ ] Write unit tests for extended block table
 
 #### File Lookup
 
-- [X] Implement file lookup functions using hash table
-- [X] Add support for locale and platform specific lookups
-- [X] Implement efficient search strategies
-- [X] Write benchmarks for file lookup algorithms
-- [X] Write unit tests for lookup functionality
+- [ ] Implement file lookup functions using hash table
+- [ ] Add support for locale and platform specific lookups
+- [ ] Implement efficient search strategies
+- [ ] Write benchmarks for file lookup algorithms
+- [ ] Write unit tests for lookup functionality
 
 ### Crypto Module
 
 #### Constants
 
-- [X] Implement STORM_BUFFER_CRYPT table
-- [X] Define encryption constants (hash table key, block table key)
-- [X] Create helper functions for key usage
+- [ ] Implement STORM_BUFFER_CRYPT table
+- [ ] Define encryption constants (hash table key, block table key)
+- [ ] Create helper functions for key usage
 
 #### Hashing
 
-- [X] Implement HashType enum
-- [X] Create hash_string function for different hash types
-- [X] Implement compute_file_hashes function
-- [X] Add path normalization for hashing
-- [X] Write unit tests for hashing functions
-- [X] Add StormLib compatibility tests
+- [ ] Implement HashType enum
+- [ ] Create hash_string function for different hash types
+- [ ] Implement compute_file_hashes function
+- [ ] Add path normalization for hashing
+- [ ] Write unit tests for hashing functions
+- [ ] Add StormLib compatibility tests
 
 #### Encryption
 
-- [X] Implement encrypt_block function
-- [X] Implement decrypt_block function
-- [X] Create key derivation functions
-- [X] Add helpers for table encryption/decryption
-- [X] Write unit tests for encryption
-- [X] Add StormLib compatibility tests
+- [ ] Implement encrypt_block function
+- [ ] Implement decrypt_block function
+- [ ] Create key derivation functions
+- [ ] Add helpers for table encryption/decryption
+- [ ] Write unit tests for encryption
+- [ ] Add StormLib compatibility tests
 
 ### Compression Module
 
 #### Module Framework
 
-- [X] Define CompressionType enum
-- [X] Implement Compressor and Decompressor traits
-- [X] Create compression error types
-- [X] Implement multi-compression handling
+- [ ] Define CompressionType enum
+- [ ] Implement Compressor and Decompressor traits
+- [ ] Create compression error types
+- [ ] Implement multi-compression handling
 
 #### Compression Methods
 
-- [X] Implement/wrap PKWARE DCL compression (priority)
-- [X] Implement/wrap Huffman compression
-- [X] Implement/wrap zlib compression
-- [X] Implement/wrap bzip2 compression
-- [X] Implement/wrap LZMA compression
+- [ ] Implement/wrap PKWARE DCL compression (priority)
+- [ ] Implement/wrap Huffman compression
+- [ ] Implement/wrap zlib compression
+- [ ] Implement/wrap bzip2 compression
+- [ ] Implement/wrap LZMA compression
 - [ ] Implement sparse compression
 - [ ] Implement IMA ADPCM compression
 - [ ] Implement WAVE compression
-- [X] Write unit tests for each compression method
+- [ ] Write unit tests for each compression method
 - [ ] Write benchmarks comparing compression methods
 
 ### Archive and File Handling
 
 #### Archive Operations
 
-- [X] Implement MpqArchive struct
-- [X] Create archive opening function
-- [X] Implement header and table loading
-- [X] Add support for listfile parsing
-- [X] Implement file extraction methods
-- [X] Add archive validation
+- [ ] Implement MpqArchive struct
+- [ ] Create archive opening function
+- [ ] Implement header and table loading
+- [ ] Add support for listfile parsing
+- [ ] Implement file extraction methods
+- [ ] Add archive validation
 - [ ] Support for different MPQ versions
 
 #### File Operations
 
-- [X] Implement MpqFile struct
-- [X] Create file reading functions
-- [X] Implement sector reading for large files
-- [X] Add support for single-unit files
-- [x] Implement file attribute handling
-- [X] Support for encrypted files
-- [X] Support for compressed files
+- [ ] Implement MpqFile struct
+- [ ] Create file reading functions
+- [ ] Implement sector reading for large files
+- [ ] Add support for single-unit files
+- [ ] Implement file attribute handling
+- [ ] Support for encrypted files
+- [ ] Support for compressed files
 - [ ] Write unit tests for file operations
 
 ## Advanced Features
