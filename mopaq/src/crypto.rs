@@ -1,36 +1,36 @@
 //! Encryption and decryption algorithms for MPQ files
 
 use crate::Result;
-use once_cell::sync::Lazy;
 
-/// The static encryption table used by all MPQ operations
-pub static ENCRYPTION_TABLE: Lazy<[u32; 0x500]> = Lazy::new(generate_encryption_table);
-
-/// Generate the MPQ encryption table
-///
-/// This table is used for all encryption, decryption, and hashing operations
-/// in the MPQ format. It consists of 1280 (0x500) 32-bit values.
-fn generate_encryption_table() -> [u32; 0x500] {
+/// Generate the MPQ encryption table at compile time
+const fn generate_encryption_table() -> [u32; 0x500] {
     let mut table = [0u32; 0x500];
     let mut seed: u32 = 0x00100001;
 
-    for index1 in 0..0x100 {
-        for index2 in 0..5 {
+    let mut index1 = 0;
+    while index1 < 0x100 {
+        let mut index2 = 0;
+        while index2 < 5 {
             let table_index = index1 + index2 * 0x100;
 
             // Update seed using the algorithm
-            seed = (seed.wrapping_mul(125) + 3) % 0x2AAAAB;
+            seed = seed.wrapping_mul(125).wrapping_add(3) % 0x2AAAAB;
             let temp1 = (seed & 0xFFFF) << 0x10;
 
-            seed = (seed.wrapping_mul(125) + 3) % 0x2AAAAB;
+            seed = seed.wrapping_mul(125).wrapping_add(3) % 0x2AAAAB;
             let temp2 = seed & 0xFFFF;
 
             table[table_index] = temp1 | temp2;
+            index2 += 1;
         }
+        index1 += 1;
     }
 
     table
 }
+
+/// The static encryption table used by all MPQ operations
+pub const ENCRYPTION_TABLE: [u32; 0x500] = generate_encryption_table();
 
 /// Decrypt a block of data
 pub fn decrypt_block(data: &mut [u32], mut key: u32) {

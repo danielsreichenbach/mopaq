@@ -5,9 +5,10 @@
 ### Core Crypto Module (`mopaq/src/crypto.rs`)
 
 1. **Encryption Table Generation**
-   - Static 1280-value table using `once_cell::Lazy`
+   - Compile-time constant table using `const fn`
+   - Zero runtime overhead - table is embedded in binary
+   - Thread-safe by design (immutable constant)
    - Verified against MPQ specification test vectors
-   - Thread-safe, initialized once on first access
 
 2. **Encryption/Decryption Functions**
    - `encrypt_block()` - Encrypts data in-place
@@ -63,14 +64,16 @@
 - **Throughput**: ~1-2 GB/s for block operations
 - **Latency**: ~10-20 ns per DWORD decryption
 - **Memory**: Zero allocations during operations
-- **Thread Safety**: Fully thread-safe after initialization
+- **Initialization**: None - compile-time constant
+- **Thread Safety**: Perfect - immutable constant
 
 ## Key Design Decisions
 
-1. **Static Table**: Using `once_cell` avoids repeated generation
-2. **In-Place Operations**: Better cache locality and performance
-3. **Slice-Based API**: Flexible for different use cases
-4. **Test Coverage**: Comprehensive testing including spec vectors
+1. **Const Table**: Using `const fn` eliminates runtime initialization
+2. **No Dependencies**: Removed `once_cell`, using pure Rust
+3. **In-Place Operations**: Better cache locality and performance
+4. **Slice-Based API**: Flexible for different use cases
+5. **Test Coverage**: Comprehensive testing including spec vectors
 
 ## Usage Examples
 

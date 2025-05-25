@@ -157,11 +157,6 @@ pub fn crypto() -> Result<()> {
     println!("  [0x202]: 0x{:08X}", ENCRYPTION_TABLE[0x202]);
     println!("  [0x20F]: 0x{:08X}", ENCRYPTION_TABLE[0x20F]);
 
-    println!("  [0x200]: 0x{:08X}", ENCRYPTION_TABLE[0x200]);
-    println!("  [0x201]: 0x{:08X}", ENCRYPTION_TABLE[0x201]);
-    println!("  [0x202]: 0x{:08X}", ENCRYPTION_TABLE[0x202]);
-    println!("  [0x20F]: 0x{:08X}", ENCRYPTION_TABLE[0x20F]);
-
     println!("  [0x300]: 0x{:08X}", ENCRYPTION_TABLE[0x300]);
     println!("  [0x301]: 0x{:08X}", ENCRYPTION_TABLE[0x301]);
     println!("  [0x302]: 0x{:08X}", ENCRYPTION_TABLE[0x302]);

@@ -29,10 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - CLI binary renamed from `storm` to `storm-cli` to avoid naming conflicts with the library crate
 - Core library renamed from `storm` to `mopaq` to avoid conflicts with FFI output
+- Encryption table generation changed from `once_cell::Lazy` to `const fn` for compile-time generation
 
 ### Technical Details
 
 - Using Rust edition 2021 with MSRV 1.86
 - Dual-licensed under MIT and Apache 2.0
 - StormLib-compatible FFI interface planned
-- Crypto implementation uses once_cell for lazy static initialization
+- Crypto implementation uses const fn for compile-time table generation

@@ -11,23 +11,32 @@ The MPQ format uses a custom encryption algorithm based on a pre-generated table
 
 ## Encryption Table
 
-The encryption table is generated once using a specific algorithm:
+The encryption table is generated at compile time using a `const fn`:
 
 ```rust
-let mut seed: u32 = 0x00100001;
+const fn generate_encryption_table() -> [u32; 0x500] {
+    let mut table = [0u32; 0x500];
+    let mut seed: u32 = 0x00100001;
 
-for index1 in 0..0x100 {
-    for index2 in 0..5 {
-        let table_index = index1 + index2 * 0x100;
+    let mut index1 = 0;
+    while index1 < 0x100 {
+        let mut index2 = 0;
+        while index2 < 5 {
+            let table_index = index1 + index2 * 0x100;
 
-        seed = (seed * 125 + 3) % 0x2AAAAB;
-        let temp1 = (seed & 0xFFFF) << 0x10;
+            seed = seed.wrapping_mul(125).wrapping_add(3) % 0x2AAAAB;
+            let temp1 = (seed & 0xFFFF) << 0x10;
 
-        seed = (seed * 125 + 3) % 0x2AAAAB;
-        let temp2 = seed & 0xFFFF;
+            seed = seed.wrapping_mul(125).wrapping_add(3) % 0x2AAAAB;
+            let temp2 = seed & 0xFFFF;
 
-        table[table_index] = temp1 | temp2;
+            table[table_index] = temp1 | temp2;
+            index2 += 1;
+        }
+        index1 += 1;
     }
+
+    table
 }
 ```
 
@@ -54,13 +63,14 @@ The encryption algorithm processes data in 32-bit chunks:
 
 ### Performance Optimizations
 
-1. **Static Table**: The encryption table is generated once using `once_cell::Lazy`
-2. **In-place Operations**: Both encrypt and decrypt operate on data in-place
-3. **No Allocations**: The algorithms don't allocate memory during operation
+1. **Compile-Time Table**: The encryption table is generated at compile time using `const fn`
+2. **Zero Runtime Cost**: No initialization overhead, table is embedded in the binary
+3. **In-place Operations**: Both encrypt and decrypt operate on data in-place
+4. **No Allocations**: The algorithms don't allocate memory during operation
 
 ### Thread Safety
 
-The encryption table is immutable after initialization and can be safely accessed from multiple threads.
+The encryption table is a compile-time constant and can be safely accessed from multiple threads without any synchronization.
 
 ### Test Vectors
 
@@ -118,7 +128,7 @@ Benchmarks on typical hardware show:
 
 - Encryption/Decryption: ~1-2 GB/s throughput
 - Single DWORD decryption: ~10-20 ns per operation
-- Table access: ~1 ns (after initial generation)
+- Table access: ~0 ns (compile-time constant)
 
 ## Security Notes
 

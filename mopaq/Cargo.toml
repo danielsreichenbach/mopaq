@@ -21,7 +21,6 @@ thiserror = { workspace = true }
 bytes = { workspace = true }
 byteorder = { workspace = true }
 bitflags = { workspace = true }
-once_cell = { workspace = true }
 
 # Hashing and cryptography
 sha1 = { workspace = true }
