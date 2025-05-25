@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Verify that the StormLib-rs project builds correctly.
+Verify that the mopaq project builds correctly.
 
 Author: Daniel S. Reichenbach <daniel@kogito.network>
 """
@@ -31,7 +31,7 @@ def main():
     project_root = Path(__file__).parent.parent
     os.chdir(project_root)
 
-    print("StormLib-rs Build Verification")
+    print("mopaq Build Verification")
     print("=" * 50)
 
     # Check Rust installation

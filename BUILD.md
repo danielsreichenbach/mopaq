@@ -1,4 +1,4 @@
-# Building StormLib-rs
+# Building mopaq
 
 ## Prerequisites
 
@@ -10,8 +10,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/danielsreichenbach/stormlib-rs
-cd stormlib-rs
+git clone https://github.com/danielsreichenbach/mopaq
+cd mopaq
 
 # Build all crates
 cargo build --all

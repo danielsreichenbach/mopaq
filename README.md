@@ -1,11 +1,11 @@
-# StormLib-rs
+# mopaq
 
 A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format used by Blizzard Entertainment games.
 
 [![Crates.io](https://img.shields.io/crates/v/mopaq.svg)](https://crates.io/crates/mopaq)
 [![Documentation](https://docs.rs/mopaq/badge.svg)](https://docs.rs/mopaq)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
-[![CI Status](https://github.com/danielsreichenbach/stormlib-rs/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/stormlib-rs/actions)
+[![CI Status](https://github.com/danielsreichenbach/mopaq/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/mopaq/actions)
 
 ## Features
 
@@ -175,7 +175,7 @@ Tables:
 
 ## Performance
 
-StormLib-rs is designed for high performance:
+mopaq is designed for high performance:
 
 - Memory-mapped I/O for large archives
 - Parallel decompression support
@@ -202,8 +202,8 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ```bash
 # Clone the repository
-git clone https://github.com/danielsreichenbach/stormlib-rs
-cd stormlib-rs
+git clone https://github.com/danielsreichenbach/mopaq
+cd mopaq
 
 # Run tests
 cargo test --all

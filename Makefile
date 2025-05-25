@@ -1,4 +1,4 @@
-# Makefile for StormLib-rs development
+# Makefile for mopaq development
 
 .PHONY: all build test check fmt clippy doc clean bench release help
 
@@ -72,7 +72,7 @@ test-data:
 
 # Help target
 help:
-	@echo "StormLib-rs Development Makefile"
+	@echo "mopaq Development Makefile"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  all         - Run format, lint, and test (default)"

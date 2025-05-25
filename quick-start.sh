@@ -1,7 +1,7 @@
 #!/bin/bash
-# Quick start script for StormLib-rs
+# Quick start script for mopaq
 
-echo "StormLib-rs Quick Start"
+echo "mopaq Quick Start"
 echo "======================"
 echo ""
 

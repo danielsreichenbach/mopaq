@@ -1,11 +1,11 @@
 # Project Layout
 
-This document describes the structure of the StormLib-rs project.
+This document describes the structure of the mopaq project.
 
 ## Directory Structure
 
 ```
-stormlib-rs/
+mopaq/
 ├── mopaq/                   # Core MPQ library (Mo'PaQ)
 │   ├── src/
 │   │   ├── lib.rs           # Library entry point

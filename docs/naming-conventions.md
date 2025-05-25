@@ -1,6 +1,6 @@
 # Naming Conventions
 
-This document describes the naming conventions used in the StormLib-rs project.
+This document describes the naming conventions used in the mopaq project.
 
 ## Crate Names
 
@@ -80,7 +80,7 @@ MPQ format versions use consistent naming:
 - **storm-ffi/storm-cli**: Maintains "Storm" branding for StormLib compatibility
 - **libstorm**: Output library name for drop-in StormLib replacement# Naming Conventions
 
-This document describes the naming conventions used in the StormLib-rs project.
+This document describes the naming conventions used in the mopaq project.
 
 ## Crate Names
 
