@@ -68,6 +68,7 @@ test-ffi: build
 # Create test data directory
 test-data:
 	@mkdir -p test-data/{v1,v2,v3,v4}
+	@chmod +x scripts/*.py scripts/*.sh 2>/dev/null || true
 
 # Help target
 help:

@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Header location algorithm (512-byte aligned scanning)
 - CLI debug info command to display archive information
 - Test MPQ file generator script
+- Complete encryption table generation (1280 values)
+- Encryption and decryption algorithms with test vectors
+- CLI debug crypto command for testing crypto functions
+- Comprehensive crypto benchmarks and tests
 
 ### Changed
 
@@ -31,3 +35,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Using Rust edition 2021 with MSRV 1.86
 - Dual-licensed under MIT and Apache 2.0
 - StormLib-compatible FFI interface planned
+- Crypto implementation uses once_cell for lazy static initialization

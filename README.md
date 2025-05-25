@@ -74,6 +74,22 @@ fn main() -> mopaq::Result<()> {
 }
 ```
 
+### Crypto Example
+
+```rust
+use mopaq::crypto::{encrypt_block, decrypt_block};
+
+// Encrypt some data
+let mut data = vec![0x12345678, 0x9ABCDEF0];
+let key = 0xDEADBEEF;
+
+encrypt_block(&mut data, key);
+println!("Encrypted: {:08X?}", data);
+
+decrypt_block(&mut data, key);
+println!("Decrypted: {:08X?}", data);
+```
+
 ### CLI Usage
 
 ```bash
@@ -121,6 +137,30 @@ Tables:
     Position: 0x00011000
     Entries: 256
 ```
+
+## Current Status
+
+### Implemented
+
+- ✅ MPQ header parsing (all versions)
+- ✅ Header location with 512-byte alignment
+- ✅ User data header support
+- ✅ Encryption table generation
+- ✅ Encryption/decryption algorithms
+- ✅ Debug CLI commands (info, crypto)
+
+### In Progress
+
+- 🚧 Hash functions
+- 🚧 Table parsing (hash, block)
+- 🚧 File extraction
+
+### Planned
+
+- 📋 File compression/decompression
+- 📋 Archive creation
+- 📋 Digital signature verification
+- 📋 Full StormLib API compatibility
 
 ## Supported Games
 

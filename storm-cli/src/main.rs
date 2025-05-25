@@ -55,6 +55,8 @@ enum DebugCommands {
         /// Path to the MPQ archive
         archive: String,
     },
+    /// Test crypto functions
+    Crypto,
 }
 
 fn main() -> Result<()> {
@@ -82,6 +84,9 @@ fn main() -> Result<()> {
         Commands::Debug(debug_cmd) => match debug_cmd {
             DebugCommands::Info { archive } => {
                 commands::debug::info(&archive)?;
+            }
+            DebugCommands::Crypto => {
+                commands::debug::crypto()?;
             }
         },
     }

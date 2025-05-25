@@ -122,6 +122,105 @@ pub fn info(archive_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Test crypto functions
+pub fn crypto() -> Result<()> {
+    use mopaq::crypto::{decrypt_block, encrypt_block, ENCRYPTION_TABLE};
+
+    println!("MPQ Crypto Test");
+    println!("===============");
+    println!();
+
+    // Show some encryption table values
+    println!("Encryption Table Sample Values:");
+    println!("  [0x000]: 0x{:08X}", ENCRYPTION_TABLE[0x000]);
+    println!("  [0x001]: 0x{:08X}", ENCRYPTION_TABLE[0x001]);
+    println!("  [0x002]: 0x{:08X}", ENCRYPTION_TABLE[0x002]);
+    println!("  [0x010]: 0x{:08X}", ENCRYPTION_TABLE[0x010]);
+
+    println!("  [0x080]: 0x{:08X}", ENCRYPTION_TABLE[0x080]);
+    println!("  [0x081]: 0x{:08X}", ENCRYPTION_TABLE[0x081]);
+    println!("  [0x082]: 0x{:08X}", ENCRYPTION_TABLE[0x082]);
+    println!("  [0x08F]: 0x{:08X}", ENCRYPTION_TABLE[0x08F]);
+
+    println!("  [0x0F0]: 0x{:08X}", ENCRYPTION_TABLE[0x0F0]);
+    println!("  [0x0F1]: 0x{:08X}", ENCRYPTION_TABLE[0x0F1]);
+    println!("  [0x0F2]: 0x{:08X}", ENCRYPTION_TABLE[0x0F2]);
+    println!("  [0x0FF]: 0x{:08X}", ENCRYPTION_TABLE[0x0FF]);
+
+    println!("  [0x100]: 0x{:08X}", ENCRYPTION_TABLE[0x100]);
+    println!("  [0x101]: 0x{:08X}", ENCRYPTION_TABLE[0x101]);
+    println!("  [0x102]: 0x{:08X}", ENCRYPTION_TABLE[0x102]);
+    println!("  [0x10F]: 0x{:08X}", ENCRYPTION_TABLE[0x10F]);
+
+    println!("  [0x200]: 0x{:08X}", ENCRYPTION_TABLE[0x200]);
+    println!("  [0x201]: 0x{:08X}", ENCRYPTION_TABLE[0x201]);
+    println!("  [0x202]: 0x{:08X}", ENCRYPTION_TABLE[0x202]);
+    println!("  [0x20F]: 0x{:08X}", ENCRYPTION_TABLE[0x20F]);
+
+    println!("  [0x200]: 0x{:08X}", ENCRYPTION_TABLE[0x200]);
+    println!("  [0x201]: 0x{:08X}", ENCRYPTION_TABLE[0x201]);
+    println!("  [0x202]: 0x{:08X}", ENCRYPTION_TABLE[0x202]);
+    println!("  [0x20F]: 0x{:08X}", ENCRYPTION_TABLE[0x20F]);
+
+    println!("  [0x300]: 0x{:08X}", ENCRYPTION_TABLE[0x300]);
+    println!("  [0x301]: 0x{:08X}", ENCRYPTION_TABLE[0x301]);
+    println!("  [0x302]: 0x{:08X}", ENCRYPTION_TABLE[0x302]);
+    println!("  [0x30F]: 0x{:08X}", ENCRYPTION_TABLE[0x30F]);
+
+    println!("  [0x400]: 0x{:08X}", ENCRYPTION_TABLE[0x400]);
+    println!("  [0x401]: 0x{:08X}", ENCRYPTION_TABLE[0x401]);
+    println!("  [0x402]: 0x{:08X}", ENCRYPTION_TABLE[0x402]);
+    println!("  [0x40F]: 0x{:08X}", ENCRYPTION_TABLE[0x40F]);
+
+    // Test encryption/decryption
+    println!();
+    println!("Testing Encryption/Decryption:");
+
+    let original_data = vec![
+        0x12345678, 0x9ABCDEF0, 0x13579BDF, 0x2468ACE0, 0xFEDCBA98, 0x76543210, 0xF0DEBC9A,
+        0xE1C3A597,
+    ];
+
+    let key = 0xC1EB1CEF;
+
+    println!("  Key: 0x{:08X}", key);
+    println!();
+    println!("  Original data:");
+    for (i, &val) in original_data.iter().enumerate() {
+        println!("    [{}]: 0x{:08X}", i, val);
+    }
+
+    // Encrypt
+    let mut data = original_data.clone();
+    encrypt_block(&mut data, key);
+
+    println!();
+    println!("  Encrypted data:");
+    for (i, &val) in data.iter().enumerate() {
+        println!("    [{}]: 0x{:08X}", i, val);
+    }
+
+    // Decrypt
+    decrypt_block(&mut data, key);
+
+    println!();
+    println!("  Decrypted data:");
+    for (i, &val) in data.iter().enumerate() {
+        println!("    [{}]: 0x{:08X}", i, val);
+    }
+
+    // Verify round-trip
+    if data == original_data {
+        println!();
+        println!("✓ Encryption/decryption round-trip successful!");
+    } else {
+        println!();
+        println!("✗ Encryption/decryption round-trip failed!");
+    }
+
+    Ok(())
+}
+
 /// Get a human-readable name for the format version
 fn format_version_name(version: FormatVersion) -> &'static str {
     match version {

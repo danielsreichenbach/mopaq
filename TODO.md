@@ -2,7 +2,7 @@
 
 ## Project Setup
 
-- [x] Workspace structure with three crates (storm, storm-ffi, storm-cli)
+- [x] Workspace structure with three crates (mopaq, storm-ffi, storm-cli)
 - [x] Cargo.toml configuration for all crates
 - [x] Basic library structure and module layout
 - [x] Error types definition
@@ -18,6 +18,7 @@
 - [x] Editor configuration (.editorconfig)
 - [x] Fix compilation issues (edition 2021)
 - [x] Rename CLI binary to storm-cli to avoid conflicts
+- [x] Rename core library to mopaq to avoid FFI conflicts
 - [x] Changelog started
 
 ## Core Library (`storm`)
@@ -26,13 +27,14 @@
 
 #### Headers and Version Support
 
-- [ ] MPQ header parsing (v1: 32 bytes)
-- [ ] MPQ header parsing (v2: 44 bytes) - Extended with Hi-block table support
-- [ ] MPQ header parsing (v3: 68 bytes) - Extended with HET/BET support
-- [ ] MPQ header parsing (v4: 208 bytes) - Extended with MD5 checksums
-- [ ] User data header support (`MPQ\x1B` signature)
-- [ ] Header location algorithm (512-byte aligned scanning)
-- [ ] Archive size calculation for v2+ (using 64-bit values)
+- [x] MPQ header parsing (v1: 32 bytes)
+- [x] MPQ header parsing (v2: 44 bytes) - Extended with Hi-block table support
+- [x] MPQ header parsing (v3: 68 bytes) - Extended with HET/BET support
+- [x] MPQ header parsing (v4: 208 bytes) - Extended with MD5 checksums
+- [x] User data header support (`MPQ\x1B` signature)
+- [x] Header location algorithm (512-byte aligned scanning)
+- [x] Archive size calculation for v2+ (using 64-bit values)
+- [ ] Write header support for archive creation
 
 #### Table Implementations
 
@@ -83,10 +85,10 @@
 
 #### Encryption Table
 
-- [ ] Generate static encryption table (1280 values)
-- [ ] Implement encryption algorithm
-- [ ] Implement decryption algorithm
-- [ ] Single DWORD decryption function
+- [x] Generate static encryption table (1280 values)
+- [x] Implement encryption algorithm
+- [x] Implement decryption algorithm
+- [x] Single DWORD decryption function
 
 #### Hash Functions
 
@@ -208,17 +210,17 @@
 ### Testing
 
 - [ ] Unit tests for all hash functions
-- [ ] Unit tests for encryption/decryption
+- [x] Unit tests for encryption/decryption
 - [ ] Unit tests for each compression method
 - [ ] Integration tests with test archives
 - [ ] Fuzzing tests for security
-- [ ] Test vector validation
+- [x] Test vector validation (crypto)
 - [ ] Cross-validation with StormLib
 
 ### Benchmarks
 
 - [ ] Hash function benchmarks
-- [ ] Encryption/decryption benchmarks
+- [x] Encryption/decryption benchmarks
 - [ ] Compression method benchmarks
 - [ ] File extraction benchmarks
 - [ ] Archive creation benchmarks
@@ -279,7 +281,8 @@
 
 ### Debug Commands
 
-- [ ] info - Show archive information
+- [x] info - Show archive information
+- [x] crypto - Test crypto functions
 - [ ] headers - Display all headers
 - [ ] tables - Display table contents
 - [ ] hash - Calculate hashes for filenames
@@ -303,6 +306,10 @@
 - [x] CLI usage guide
 - [x] Naming conventions documentation
 - [x] Binary rename summary
+- [x] Debug info command documentation
+- [x] Implementation summary
+- [x] Crypto implementation documentation
+- [x] Crypto implementation summary
 - [ ] Architecture documentation
 - [ ] Performance guide
 - [ ] Debugging guide
@@ -320,7 +327,8 @@
 
 - [x] Build verification script
 - [x] CLI name test script
-- [ ] Test data generator
+- [x] Test data generator (basic MPQ headers)
+- [ ] Test data generator (full archives)
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts
 - [ ] Performance comparison scripts

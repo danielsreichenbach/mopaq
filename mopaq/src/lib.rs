@@ -60,6 +60,9 @@ pub use archive::{Archive, OpenOptions};
 pub use error::{Error, Result};
 pub use header::{FormatVersion, MpqHeader};
 
+// Re-export crypto for CLI usage
+pub use crypto::{decrypt_block, decrypt_dword, encrypt_block};
+
 /// MPQ signature constants
 pub mod signatures {
     /// Standard MPQ archive signature ('MPQ\x1A')
