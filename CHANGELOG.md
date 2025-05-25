@@ -9,16 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial project structure with three crates: storm, storm-ffi, storm-cli
+- Initial project structure with three crates: mopaq, storm-ffi, storm-cli
 - Basic module structure for MPQ functionality
 - Error types and result aliases
 - CI/CD pipeline with GitHub Actions
 - Documentation structure
 - Development tooling (Makefile, scripts)
+- MPQ header parsing for all versions (v1-v4)
+- User data header support
+- Header location algorithm (512-byte aligned scanning)
+- CLI debug info command to display archive information
+- Test MPQ file generator script
 
 ### Changed
 
 - CLI binary renamed from `storm` to `storm-cli` to avoid naming conflicts with the library crate
+- Core library renamed from `storm` to `mopaq` to avoid conflicts with FFI output
 
 ### Technical Details
 

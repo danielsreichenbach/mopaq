@@ -31,7 +31,7 @@ if [ $? -eq 0 ]; then
     echo "  storm-cli create <mpq> <dir> # Create archive"
     echo ""
     echo "Library usage:"
-    echo "  Add to Cargo.toml: storm = { path = \"storm\" }"
+    echo "  Add to Cargo.toml: mopaq = { path = \"mopaq\" }"
     echo ""
     echo "FFI usage:"
     echo "  Link against: target/*/libstorm.{so,dylib,dll}"

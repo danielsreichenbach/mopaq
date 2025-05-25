@@ -17,6 +17,8 @@
 - [x] Test data directory structure
 - [x] Editor configuration (.editorconfig)
 - [x] Fix compilation issues (edition 2021)
+- [x] Rename CLI binary to storm-cli to avoid conflicts
+- [x] Changelog started
 
 ## Core Library (`storm`)
 
@@ -267,6 +269,7 @@
 ### Basic Commands
 
 - [x] CLI argument parsing structure
+- [x] Basic CLI integration tests
 - [ ] list - List files in archive
 - [ ] extract - Extract files
 - [ ] create - Create new archive
@@ -297,6 +300,9 @@
 - [x] API documentation (inline doc comments)
 - [x] Project layout documentation
 - [x] Build instructions
+- [x] CLI usage guide
+- [x] Naming conventions documentation
+- [x] Binary rename summary
 - [ ] Architecture documentation
 - [ ] Performance guide
 - [ ] Debugging guide
@@ -313,6 +319,7 @@
 ## Python Scripts
 
 - [x] Build verification script
+- [x] CLI name test script
 - [ ] Test data generator
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts

@@ -93,6 +93,35 @@ storm-cli verify WarCraft3.w3m
 storm-cli debug info Diablo2.mpq
 ```
 
+Example output from `debug info`:
+
+```
+MPQ Archive Information
+======================
+
+File: WarCraft3.w3m
+Archive offset: 0x00000200 (512 bytes)
+
+User Data Header:
+  User data size: 512 bytes
+  Header offset: 0x00000200
+  User data header size: 16 bytes
+
+MPQ Header:
+  Format version: 1 (Burning Crusade)
+  Header size: 44 bytes
+  Archive size: 1048576 bytes
+  Block size: 3 (sector size: 4096 bytes)
+
+Tables:
+  Hash table:
+    Position: 0x00001000
+    Entries: 4096 (must be power of 2)
+  Block table:
+    Position: 0x00011000
+    Entries: 256
+```
+
 ## Supported Games
 
 - Diablo (1996)

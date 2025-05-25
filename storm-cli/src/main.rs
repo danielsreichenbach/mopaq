@@ -5,6 +5,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod commands;
+
 #[derive(Parser)]
 #[command(name = "storm-cli")]
 #[command(about = "Command-line tool for working with MPQ archives", long_about = None)]
@@ -41,6 +43,18 @@ enum Commands {
         /// Path to the MPQ archive
         archive: String,
     },
+    /// Debug commands
+    #[command(subcommand)]
+    Debug(DebugCommands),
+}
+
+#[derive(Subcommand)]
+enum DebugCommands {
+    /// Show detailed archive information
+    Info {
+        /// Path to the MPQ archive
+        archive: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -65,6 +79,11 @@ fn main() -> Result<()> {
             println!("Verifying {}", archive);
             // TODO: Implement verification
         }
+        Commands::Debug(debug_cmd) => match debug_cmd {
+            DebugCommands::Info { archive } => {
+                commands::debug::info(&archive)?;
+            }
+        },
     }
 
     Ok(())

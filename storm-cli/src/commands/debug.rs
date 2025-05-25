@@ -1,0 +1,141 @@
+//! Debug commands for MPQ archives
+
+use anyhow::Result;
+use mopaq::{Archive, FormatVersion};
+use std::path::Path;
+
+/// Display detailed information about an MPQ archive
+pub fn info(archive_path: &str) -> Result<()> {
+    println!("MPQ Archive Information");
+    println!("======================");
+    println!();
+
+    // Try to open the archive
+    let archive = Archive::open(archive_path)?;
+    let header = archive.header();
+
+    // Basic information
+    println!("File: {}", archive_path);
+    println!(
+        "Archive offset: 0x{:08X} ({} bytes)",
+        archive.archive_offset(),
+        archive.archive_offset()
+    );
+
+    // User data information
+    if let Some(user_data) = archive.user_data() {
+        println!();
+        println!("User Data Header:");
+        println!("  User data size: {} bytes", user_data.user_data_size);
+        println!("  Header offset: 0x{:08X}", user_data.header_offset);
+        println!(
+            "  User data header size: {} bytes",
+            user_data.user_data_header_size
+        );
+    }
+
+    // Header information
+    println!();
+    println!("MPQ Header:");
+    println!(
+        "  Format version: {} ({})",
+        header.format_version as u16,
+        format_version_name(header.format_version)
+    );
+    println!("  Header size: {} bytes", header.header_size);
+    println!("  Archive size: {} bytes", header.get_archive_size());
+    println!(
+        "  Block size: {} (sector size: {} bytes)",
+        header.block_size,
+        header.sector_size()
+    );
+
+    // Table information
+    println!();
+    println!("Tables:");
+    println!("  Hash table:");
+    println!("    Position: 0x{:08X}", header.get_hash_table_pos());
+    println!(
+        "    Entries: {} (must be power of 2)",
+        header.hash_table_size
+    );
+
+    println!("  Block table:");
+    println!("    Position: 0x{:08X}", header.get_block_table_pos());
+    println!("    Entries: {}", header.block_table_size);
+
+    // Version-specific information
+    if header.format_version as u16 >= 1 {
+        if let Some(hi_pos) = header.hi_block_table_pos {
+            println!("  Hi-block table:");
+            println!("    Position: 0x{:08X}", hi_pos);
+        }
+    }
+
+    if header.format_version as u16 >= 2 {
+        if let Some(het_pos) = header.het_table_pos {
+            if het_pos != 0 {
+                println!("  HET table:");
+                println!("    Position: 0x{:08X}", het_pos);
+            }
+        }
+
+        if let Some(bet_pos) = header.bet_table_pos {
+            if bet_pos != 0 {
+                println!("  BET table:");
+                println!("    Position: 0x{:08X}", bet_pos);
+            }
+        }
+    }
+
+    // Version 4 specific information
+    if let Some(v4_data) = &header.v4_data {
+        println!();
+        println!("Version 4 Extended Data:");
+        println!("  Compressed table sizes:");
+        println!("    Hash table: {} bytes", v4_data.hash_table_size_64);
+        println!("    Block table: {} bytes", v4_data.block_table_size_64);
+        println!(
+            "    Hi-block table: {} bytes",
+            v4_data.hi_block_table_size_64
+        );
+        println!("    HET table: {} bytes", v4_data.het_table_size_64);
+        println!("    BET table: {} bytes", v4_data.bet_table_size_64);
+        println!("  Raw chunk size: {} bytes", v4_data.raw_chunk_size);
+
+        println!();
+        println!("  MD5 Checksums:");
+        println!("    Block table: {}", hex_string(&v4_data.md5_block_table));
+        println!("    Hash table: {}", hex_string(&v4_data.md5_hash_table));
+        println!(
+            "    Hi-block table: {}",
+            hex_string(&v4_data.md5_hi_block_table)
+        );
+        println!("    BET table: {}", hex_string(&v4_data.md5_bet_table));
+        println!("    HET table: {}", hex_string(&v4_data.md5_het_table));
+        println!("    MPQ header: {}", hex_string(&v4_data.md5_mpq_header));
+    }
+
+    // File statistics (once implemented)
+    // TODO: Add file count, compression ratio, etc.
+
+    Ok(())
+}
+
+/// Get a human-readable name for the format version
+fn format_version_name(version: FormatVersion) -> &'static str {
+    match version {
+        FormatVersion::V1 => "Original/Classic",
+        FormatVersion::V2 => "Burning Crusade",
+        FormatVersion::V3 => "Cataclysm Beta",
+        FormatVersion::V4 => "Cataclysm+",
+    }
+}
+
+/// Convert a byte array to a hex string
+fn hex_string(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<String>()
+}

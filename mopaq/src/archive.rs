@@ -1,7 +1,12 @@
 //! MPQ archive handling
 
-use crate::{Error, Result};
-use std::path::Path;
+use crate::{
+    header::{self, MpqHeader, UserDataHeader},
+    Error, Result,
+};
+use std::fs::File;
+use std::io::{BufReader, Read, Seek};
+use std::path::{Path, PathBuf};
 
 /// Options for opening MPQ archives
 #[derive(Debug, Clone)]
@@ -16,7 +21,7 @@ impl OpenOptions {
     }
 
     /// Set the MPQ version for new archives
-    pub fn version(mut self, _version: crate::FormatVersion) -> Self {
+    pub fn version(mut self, _version: crate::header::FormatVersion) -> Self {
         // TODO: Implement
         self
     }
@@ -36,13 +41,55 @@ impl Default for OpenOptions {
 /// An MPQ archive
 #[derive(Debug)]
 pub struct Archive {
-    // TODO: Add fields
+    /// Path to the archive file
+    path: PathBuf,
+    /// Archive file reader
+    reader: BufReader<File>,
+    /// Offset where the MPQ data starts in the file
+    archive_offset: u64,
+    /// Optional user data header
+    user_data: Option<UserDataHeader>,
+    /// MPQ header
+    header: MpqHeader,
 }
 
 impl Archive {
     /// Open an existing MPQ archive
-    pub fn open<P: AsRef<Path>>(_path: P) -> Result<Self> {
-        todo!("Implement archive opening")
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        let file = File::open(&path)?;
+        let mut reader = BufReader::new(file);
+
+        // Find and read the MPQ header
+        let (archive_offset, user_data, header) = header::find_header(&mut reader)?;
+
+        Ok(Archive {
+            path,
+            reader,
+            archive_offset,
+            user_data,
+            header,
+        })
+    }
+
+    /// Get the archive header
+    pub fn header(&self) -> &MpqHeader {
+        &self.header
+    }
+
+    /// Get the user data header if present
+    pub fn user_data(&self) -> Option<&UserDataHeader> {
+        self.user_data.as_ref()
+    }
+
+    /// Get the archive offset in the file
+    pub fn archive_offset(&self) -> u64 {
+        self.archive_offset
+    }
+
+    /// Get the path to the archive
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// List files in the archive

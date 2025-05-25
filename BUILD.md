@@ -23,6 +23,18 @@ cargo test --all
 cargo build --all --release
 ```
 
+## Testing the Implementation
+
+```bash
+# Create test MPQ files
+python3 scripts/create_test_mpq.py
+
+# Test the debug info command
+cargo run --bin storm-cli -- debug info test-data/v1/simple.mpq
+cargo run --bin storm-cli -- debug info test-data/v2/simple.mpq
+cargo run --bin storm-cli -- debug info test-data/v4/simple.mpq
+```
+
 ## Using Make
 
 If you have Make installed, you can use the convenience commands:
@@ -45,7 +57,7 @@ make install-cli
 
 ```bash
 # Build only the core library
-cargo build -p storm
+cargo build -p mopaq
 
 # Build only the FFI library
 cargo build -p storm-ffi

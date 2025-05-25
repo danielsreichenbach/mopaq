@@ -51,26 +51,14 @@ pub mod compression;
 pub mod crypto;
 pub mod error;
 pub mod hash;
+pub mod header;
 pub mod io;
 pub mod tables;
 
 // Re-export commonly used types
 pub use archive::{Archive, OpenOptions};
 pub use error::{Error, Result};
-
-/// MPQ format version constants
-#[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FormatVersion {
-    /// Original MPQ format (32-byte header)
-    V1 = 0,
-    /// The Burning Crusade format (44-byte header)
-    V2 = 1,
-    /// Cataclysm Beta format (68-byte header)
-    V3 = 2,
-    /// Cataclysm+ format (208-byte header)
-    V4 = 3,
-}
+pub use header::{FormatVersion, MpqHeader};
 
 /// MPQ signature constants
 pub mod signatures {
