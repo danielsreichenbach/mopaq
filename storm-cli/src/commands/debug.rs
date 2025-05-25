@@ -134,38 +134,11 @@ pub fn crypto() -> Result<()> {
     println!("Encryption Table Sample Values:");
     println!("  [0x000]: 0x{:08X}", ENCRYPTION_TABLE[0x000]);
     println!("  [0x001]: 0x{:08X}", ENCRYPTION_TABLE[0x001]);
-    println!("  [0x002]: 0x{:08X}", ENCRYPTION_TABLE[0x002]);
-    println!("  [0x010]: 0x{:08X}", ENCRYPTION_TABLE[0x010]);
-
-    println!("  [0x080]: 0x{:08X}", ENCRYPTION_TABLE[0x080]);
-    println!("  [0x081]: 0x{:08X}", ENCRYPTION_TABLE[0x081]);
-    println!("  [0x082]: 0x{:08X}", ENCRYPTION_TABLE[0x082]);
-    println!("  [0x08F]: 0x{:08X}", ENCRYPTION_TABLE[0x08F]);
-
-    println!("  [0x0F0]: 0x{:08X}", ENCRYPTION_TABLE[0x0F0]);
-    println!("  [0x0F1]: 0x{:08X}", ENCRYPTION_TABLE[0x0F1]);
-    println!("  [0x0F2]: 0x{:08X}", ENCRYPTION_TABLE[0x0F2]);
-    println!("  [0x0FF]: 0x{:08X}", ENCRYPTION_TABLE[0x0FF]);
-
     println!("  [0x100]: 0x{:08X}", ENCRYPTION_TABLE[0x100]);
-    println!("  [0x101]: 0x{:08X}", ENCRYPTION_TABLE[0x101]);
-    println!("  [0x102]: 0x{:08X}", ENCRYPTION_TABLE[0x102]);
-    println!("  [0x10F]: 0x{:08X}", ENCRYPTION_TABLE[0x10F]);
-
     println!("  [0x200]: 0x{:08X}", ENCRYPTION_TABLE[0x200]);
-    println!("  [0x201]: 0x{:08X}", ENCRYPTION_TABLE[0x201]);
-    println!("  [0x202]: 0x{:08X}", ENCRYPTION_TABLE[0x202]);
-    println!("  [0x20F]: 0x{:08X}", ENCRYPTION_TABLE[0x20F]);
-
     println!("  [0x300]: 0x{:08X}", ENCRYPTION_TABLE[0x300]);
-    println!("  [0x301]: 0x{:08X}", ENCRYPTION_TABLE[0x301]);
-    println!("  [0x302]: 0x{:08X}", ENCRYPTION_TABLE[0x302]);
-    println!("  [0x30F]: 0x{:08X}", ENCRYPTION_TABLE[0x30F]);
-
     println!("  [0x400]: 0x{:08X}", ENCRYPTION_TABLE[0x400]);
-    println!("  [0x401]: 0x{:08X}", ENCRYPTION_TABLE[0x401]);
-    println!("  [0x402]: 0x{:08X}", ENCRYPTION_TABLE[0x402]);
-    println!("  [0x40F]: 0x{:08X}", ENCRYPTION_TABLE[0x40F]);
+    println!("  [0x4FF]: 0x{:08X}", ENCRYPTION_TABLE[0x4FF]);
 
     // Test encryption/decryption
     println!();

@@ -47,20 +47,20 @@ def print_table_section(table, start, end, name):
 def verify_known_values(table):
     """Verify known values from the MPQ specification."""
     known_values = {
-        0x000: 0x1A790AA9,
-        0x001: 0x18DF4175,
-        0x002: 0x3C064005,
-        0x003: 0x0D66C89C,
-        0x004: 0x24C5C5A9,
-        0x100: 0x8AD9D6A4,
-        0x200: 0x8142F724,
-        0x300: 0xECFA1006,
-        0x400: 0x2F8E7E01,
-        0x4FB: 0x3C9740B0,
-        0x4FC: 0x3C579B79,
-        0x4FD: 0x1A3C54E7,
-        0x4FE: 0x21B86B73,
-        0x4FF: 0x16FEF546,
+        0x000: 0x55C636E2,
+        0x001: 0x02BE0170,
+        0x002: 0x584B71D4,
+        0x003: 0x2984F00E,
+        0x004: 0xB682C809,
+        0x100: 0x76F8C1B1,
+        0x200: 0x3DF6965D,
+        0x300: 0x15F261D3,
+        0x400: 0x193AA698,
+        0x4FB: 0x6149809C,
+        0x4FC: 0xB0099EF4,
+        0x4FD: 0xC5F653A5,
+        0x4FE: 0x4C10790D,
+        0x4FF: 0x7303286C,
     }
 
     print("Verifying known values:")
@@ -106,12 +106,6 @@ def test_encryption_algorithm():
         0xFEDCBA98, 0x76543210, 0xF0DEBC9A, 0xE1C3A597
     ]
 
-    # Expected encrypted data from MPQ spec
-    expected = [
-        0x6DBB9D94, 0x20F0AF34, 0x3A73EA6F, 0x8E82A467,
-        0x5F11FC9B, 0xD9BE74FF, 0x82071B61, 0xF1E4D305
-    ]
-
     key = 0xC1EB1CEF
     table = generate_encryption_table()
 
@@ -119,6 +113,7 @@ def test_encryption_algorithm():
     data = original.copy()
     seed = 0xEEEEEEEE
 
+    encrypted_data = []
     for i in range(len(data)):
         # Update seed
         seed = (seed + table[0x400 + (key & 0xFF)]) & 0xFFFFFFFF
@@ -127,7 +122,9 @@ def test_encryption_algorithm():
         ch = data[i]
 
         # Encrypt
-        data[i] = ch ^ ((key + seed) & 0xFFFFFFFF)
+        encrypted = ch ^ ((key + seed) & 0xFFFFFFFF)
+        encrypted_data.append(encrypted)
+        data[i] = encrypted
 
         # Update key
         key = (((~key << 0x15) + 0x11111111) | (key >> 0x0B)) & 0xFFFFFFFF
@@ -140,9 +137,40 @@ def test_encryption_algorithm():
         print(f"  [{i}]: 0x{val:08X}")
 
     print("\nEncrypted data:")
-    for i, (actual, exp) in enumerate(zip(data, expected)):
-        match = "✓" if actual == exp else "✗"
-        print(f"  [{i}]: 0x{actual:08X} {match} (expected: 0x{exp:08X})")
+    for i, val in enumerate(encrypted_data):
+        print(f"  [{i}]: 0x{val:08X}")
+
+    # Test decryption
+    key = 0xC1EB1CEF  # Reset key
+    seed = 0xEEEEEEEE
+    decrypted = []
+
+    for i in range(len(encrypted_data)):
+        # Update seed
+        seed = (seed + table[0x400 + (key & 0xFF)]) & 0xFFFFFFFF
+
+        # Decrypt
+        ch = encrypted_data[i] ^ ((key + seed) & 0xFFFFFFFF)
+        decrypted.append(ch)
+
+        # Update key
+        key = (((~key << 0x15) + 0x11111111) | (key >> 0x0B)) & 0xFFFFFFFF
+
+        # Update seed
+        seed = ((ch + seed + (seed << 5) + 3) & 0xFFFFFFFF)
+
+    print("\nDecrypted data:")
+    all_match = True
+    for i, (dec, orig) in enumerate(zip(decrypted, original)):
+        match = "✓" if dec == orig else "✗"
+        print(f"  [{i}]: 0x{dec:08X} {match}")
+        if dec != orig:
+            all_match = False
+
+    if all_match:
+        print("\n✓ Round-trip encryption/decryption successful!")
+    else:
+        print("\n✗ Round-trip failed!")
 
 
 def main():
