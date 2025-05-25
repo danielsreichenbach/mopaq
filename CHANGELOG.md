@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Jenkins hash implementation for HET tables
 - Hash function benchmarks
 - Test vector validation for hash functions
+- CLI debug hash command to generate hash values
+- CLI debug hash-compare command to compare hashes between files
 
 ### Changed
 

@@ -1,43 +1,7 @@
-//! Integration tests for storm-cli
+//! Integration tests for hash debug commands
 
 use assert_cmd::Command;
 use predicates::prelude::*;
-
-#[test]
-fn test_cli_help() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "Command-line tool for working with MPQ archives",
-        ));
-}
-
-#[test]
-fn test_cli_version() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("--version")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("storm-cli"));
-}
-
-#[test]
-fn test_list_command_help() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("list")
-        .arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("List files in an archive"));
-}
-
-#[test]
-fn test_missing_archive() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("list").assert().failure();
-}
 
 #[test]
 fn test_debug_hash_help() {
@@ -115,9 +79,9 @@ fn test_debug_hash_listfile() {
         .assert()
         .success()
         // Check for known hash values
-        .stdout(predicate::str::contains("0xFD5F6EEA"))
-        .stdout(predicate::str::contains("0x7E4A7FE4"))
-        .stdout(predicate::str::contains("0xCABC04F6"));
+        .stdout(predicate::str::contains("0x5F3DE859"))
+        .stdout(predicate::str::contains("0xFD657910"))
+        .stdout(predicate::str::contains("0x4E9B98A7"));
 }
 
 #[test]

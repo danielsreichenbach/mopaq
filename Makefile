@@ -65,6 +65,12 @@ test-ffi: build
 	@echo "Testing FFI bindings..."
 	@cargo test --package storm-ffi
 
+# Test debug commands
+test-debug: build
+	@echo "Testing debug commands..."
+	@cargo run --bin storm-cli -- debug crypto
+	@cargo run --bin storm-cli -- debug hash "(listfile)" --all
+
 # Create test data directory
 test-data:
 	@mkdir -p test-data/{v1,v2,v3,v4}
@@ -88,5 +94,6 @@ help:
 	@echo "  audit       - Run security audit"
 	@echo "  install-cli - Install the storm-cli tool"
 	@echo "  test-ffi    - Test FFI bindings"
+	@echo "  test-debug  - Test debug commands"
 	@echo "  test-data   - Create test data directories"
 	@echo "  help        - Show this help message"

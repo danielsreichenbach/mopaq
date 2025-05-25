@@ -1,6 +1,7 @@
 //! Debug commands for MPQ archives
 
 use anyhow::Result;
+use mopaq::hash::{hash_string, hash_type, jenkins_hash};
 use mopaq::{Archive, FormatVersion};
 use std::path::Path;
 
@@ -184,6 +185,183 @@ pub fn crypto() -> Result<()> {
     } else {
         println!();
         println!("✗ Encryption/decryption round-trip failed!");
+    }
+
+    Ok(())
+}
+
+/// Generate hash values for a filename
+pub fn hash(filename: &str, hash_type_name: Option<&str>, all: bool, jenkins: bool) -> Result<()> {
+    if jenkins {
+        // Generate Jenkins hash
+        let hash = jenkins_hash(filename);
+        println!("Jenkins hash for \"{}\":", filename);
+        println!("  0x{:016X} (decimal: {})", hash, hash);
+        return Ok(());
+    }
+
+    if all {
+        // Generate all hash types
+        println!("Hash values for \"{}\":", filename);
+        println!();
+
+        let table_offset = hash_string(filename, hash_type::TABLE_OFFSET);
+        let name_a = hash_string(filename, hash_type::NAME_A);
+        let name_b = hash_string(filename, hash_type::NAME_B);
+        let file_key = hash_string(filename, hash_type::FILE_KEY);
+        let key2_mix = hash_string(filename, hash_type::KEY2_MIX);
+
+        println!(
+            "  TABLE_OFFSET (0): 0x{:08X} (decimal: {})",
+            table_offset, table_offset
+        );
+        println!("  NAME_A       (1): 0x{:08X} (decimal: {})", name_a, name_a);
+        println!("  NAME_B       (2): 0x{:08X} (decimal: {})", name_b, name_b);
+        println!(
+            "  FILE_KEY     (3): 0x{:08X} (decimal: {})",
+            file_key, file_key
+        );
+        println!(
+            "  KEY2_MIX     (4): 0x{:08X} (decimal: {})",
+            key2_mix, key2_mix
+        );
+
+        println!();
+        println!("Hash table lookup:");
+        println!("  For a hash table of size 0x1000 (4096):");
+        println!(
+            "  Initial index: 0x{:04X} ({})",
+            table_offset & 0xFFF,
+            table_offset & 0xFFF
+        );
+        println!();
+        println!("  Hash entry would contain:");
+        println!("    dwName1: 0x{:08X}", name_a);
+        println!("    dwName2: 0x{:08X}", name_b);
+
+        // Show path normalization if relevant
+        if filename.contains('/') {
+            let normalized = filename.replace('/', "\\");
+            println!();
+            println!(
+                "Note: Path normalized from \"{}\" to \"{}\"",
+                filename, normalized
+            );
+        }
+
+        // Show case normalization
+        let has_lowercase = filename.chars().any(|c| c.is_ascii_lowercase());
+        if has_lowercase {
+            println!();
+            println!("Note: Filename is case-insensitive (converted to uppercase for hashing)");
+        }
+    } else {
+        // Generate specific hash type
+        let hash_type_value = match hash_type_name {
+            Some("table-offset") | Some("0") => hash_type::TABLE_OFFSET,
+            Some("name-a") | Some("1") => hash_type::NAME_A,
+            Some("name-b") | Some("2") => hash_type::NAME_B,
+            Some("file-key") | Some("3") => hash_type::FILE_KEY,
+            Some("key2-mix") | Some("4") => hash_type::KEY2_MIX,
+            _ => {
+                println!("Invalid hash type. Valid types are:");
+                println!("  table-offset (0) - Hash table index calculation");
+                println!("  name-a       (1) - First name hash");
+                println!("  name-b       (2) - Second name hash");
+                println!("  file-key     (3) - File encryption key");
+                println!("  key2-mix     (4) - Secondary encryption key");
+                return Ok(());
+            }
+        };
+
+        let hash = hash_string(filename, hash_type_value);
+        let type_name = match hash_type_value {
+            0 => "TABLE_OFFSET",
+            1 => "NAME_A",
+            2 => "NAME_B",
+            3 => "FILE_KEY",
+            4 => "KEY2_MIX",
+            _ => "UNKNOWN",
+        };
+
+        println!("Hash value for \"{}\" (type: {}):", filename, type_name);
+        println!("  0x{:08X} (decimal: {})", hash, hash);
+    }
+
+    Ok(())
+}
+
+/// Compare hash values for two filenames
+pub fn hash_compare(filename1: &str, filename2: &str) -> Result<()> {
+    println!("Comparing hash values:");
+    println!("  File 1: \"{}\"", filename1);
+    println!("  File 2: \"{}\"", filename2);
+    println!();
+
+    // Calculate all hash types for both files
+    let hashes1 = [
+        hash_string(filename1, hash_type::TABLE_OFFSET),
+        hash_string(filename1, hash_type::NAME_A),
+        hash_string(filename1, hash_type::NAME_B),
+        hash_string(filename1, hash_type::FILE_KEY),
+        hash_string(filename1, hash_type::KEY2_MIX),
+    ];
+
+    let hashes2 = [
+        hash_string(filename2, hash_type::TABLE_OFFSET),
+        hash_string(filename2, hash_type::NAME_A),
+        hash_string(filename2, hash_type::NAME_B),
+        hash_string(filename2, hash_type::FILE_KEY),
+        hash_string(filename2, hash_type::KEY2_MIX),
+    ];
+
+    let hash_names = ["TABLE_OFFSET", "NAME_A", "NAME_B", "FILE_KEY", "KEY2_MIX"];
+
+    println!("MPQ Hash comparison:");
+    println!("  Type          File 1        File 2        Match");
+    println!("  ----------    ----------    ----------    -----");
+
+    for i in 0..5 {
+        let match_str = if hashes1[i] == hashes2[i] {
+            "YES"
+        } else {
+            "NO"
+        };
+        println!(
+            "  {:12}  0x{:08X}    0x{:08X}    {}",
+            hash_names[i], hashes1[i], hashes2[i], match_str
+        );
+    }
+
+    // Jenkins hash comparison
+    let jenkins1 = jenkins_hash(filename1);
+    let jenkins2 = jenkins_hash(filename2);
+    let jenkins_match = if jenkins1 == jenkins2 { "YES" } else { "NO" };
+
+    println!();
+    println!("Jenkins hash comparison:");
+    println!("  File 1: 0x{:016X}", jenkins1);
+    println!("  File 2: 0x{:016X}", jenkins2);
+    println!("  Match:  {}", jenkins_match);
+
+    // Check if they would collide in hash table
+    let table_sizes = [0x10, 0x100, 0x1000, 0x10000];
+    println!();
+    println!("Hash table collision check:");
+
+    for &size in &table_sizes {
+        let index1 = hashes1[0] & (size - 1);
+        let index2 = hashes2[0] & (size - 1);
+        let collision = if index1 == index2 {
+            "COLLISION"
+        } else {
+            "No collision"
+        };
+
+        println!(
+            "  Table size 0x{:04X}: {} (indices: 0x{:04X} vs 0x{:04X})",
+            size, collision, index1, index2
+        );
     }
 
     Ok(())
