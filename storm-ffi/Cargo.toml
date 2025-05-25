@@ -11,11 +11,12 @@ description = "StormLib-compatible C API for the storm MPQ archive library"
 readme = "../README.md"
 
 [lib]
+# Output library will be named libstorm.{so,dylib,dll}
 name = "storm"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-storm = { path = "../storm", version = "0.1.0" }
+mopaq = { path = "../mopaq", version = "0.1.0" }
 libc = { workspace = true }
 log = { workspace = true }
 
@@ -26,7 +27,7 @@ cbindgen = "0.27"
 tempfile = { workspace = true }
 
 [features]
-default = ["storm/default"]
+default = ["mopaq/default"]
 
 [package.metadata.capi]
 header_name = "StormLib.h"

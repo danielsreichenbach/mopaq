@@ -1,12 +1,12 @@
-//! Error types for the Storm MPQ library
+//! Error types for the MoPaQ library
 
 use std::io;
 use thiserror::Error;
 
-/// Result type alias for Storm operations
+/// Result type alias for MoPaQ operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Main error type for Storm MPQ operations
+/// Main error type for MoPaQ operations
 #[derive(Error, Debug)]
 pub enum Error {
     /// I/O error occurred

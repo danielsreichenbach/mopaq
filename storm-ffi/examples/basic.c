@@ -3,6 +3,8 @@
  *
  * Compile with:
  * gcc -o basic basic.c -L../../target/debug -lstorm
+ *
+ * Note: The CLI tool is available as 'storm-cli' after installation
  */
 
 #include <stdio.h>

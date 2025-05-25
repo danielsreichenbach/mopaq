@@ -1,10 +1,12 @@
 //! Storm CLI - Command-line tool for working with MPQ archives
+//!
+//! The binary is named `storm-cli` to avoid conflicts with the `storm` library crate.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "storm")]
+#[command(name = "storm-cli")]
 #[command(about = "Command-line tool for working with MPQ archives", long_about = None)]
 #[command(version)]
 struct Cli {
@@ -50,19 +52,19 @@ fn main() -> Result<()> {
         Commands::List { archive } => {
             println!("Listing files in: {}", archive);
             // TODO: Implement listing
-        },
+        }
         Commands::Extract { archive, output } => {
             println!("Extracting {} to {}", archive, output);
             // TODO: Implement extraction
-        },
+        }
         Commands::Create { archive, source } => {
             println!("Creating {} from {}", archive, source);
             // TODO: Implement creation
-        },
+        }
         Commands::Verify { archive } => {
             println!("Verifying {}", archive);
             // TODO: Implement verification
-        },
+        }
     }
 
     Ok(())

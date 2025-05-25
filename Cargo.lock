@@ -803,6 +803,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "mopaq"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "bytes",
+ "bzip2",
+ "criterion",
+ "env_logger",
+ "flate2",
+ "log",
+ "lzma-rs",
+ "md-5",
+ "memmap2",
+ "num-bigint",
+ "num-traits",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "serde",
+ "sha1",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "normalize-line-endings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1278,33 +1305,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
 
 [[package]]
-name = "storm"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "byteorder",
- "bytes",
- "bzip2",
- "criterion",
- "env_logger",
- "flate2",
- "log",
- "lzma-rs",
- "md-5",
- "memmap2",
- "num-bigint",
- "num-traits",
- "parking_lot",
- "pretty_assertions",
- "proptest",
- "serde",
- "sha1",
- "tempfile",
- "thiserror",
- "tokio",
-]
-
-[[package]]
 name = "storm-cli"
 version = "0.1.0"
 dependencies = [
@@ -1314,9 +1314,9 @@ dependencies = [
  "env_logger",
  "indicatif",
  "log",
+ "mopaq",
  "predicates",
  "serde_json",
- "storm",
  "tempfile",
  "time",
 ]
@@ -1328,7 +1328,7 @@ dependencies = [
  "cbindgen",
  "libc",
  "log",
- "storm",
+ "mopaq",
  "tempfile",
 ]
 

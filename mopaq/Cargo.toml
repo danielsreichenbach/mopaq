@@ -1,5 +1,5 @@
 [package]
-name = "storm"
+name = "mopaq"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -7,10 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation.workspace = true
+documentation = "https://docs.rs/mopaq"
 keywords.workspace = true
 categories.workspace = true
-description = "A high-performance, safe Rust implementation of the MPQ archive format"
+description = "A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format"
 readme = "../README.md"
 
 [dependencies]

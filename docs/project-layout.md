@@ -6,7 +6,7 @@ This document describes the structure of the StormLib-rs project.
 
 ```
 stormlib-rs/
-├── storm/                    # Core MPQ library
+├── mopaq/                   # Core MPQ library (Mo'PaQ)
 │   ├── src/
 │   │   ├── lib.rs           # Library entry point
 │   │   ├── archive.rs       # Archive operations
@@ -19,7 +19,7 @@ stormlib-rs/
 │   ├── benches/             # Benchmarks
 │   └── tests/               # Integration tests
 │
-├── storm-ffi/               # C API bindings
+├── storm-ffi/               # C API bindings (StormLib-compatible)
 │   ├── src/
 │   │   └── lib.rs          # FFI exports
 │   ├── build.rs            # Header generation
@@ -46,9 +46,9 @@ stormlib-rs/
 
 ## Module Organization
 
-### Core Library (`storm`)
+### Core Library (`mopaq`)
 
-The core library is organized into modules based on functionality:
+The core library is named after the original Mo'PaQ (Mike O'Brien Pack) format and is organized into modules based on functionality:
 
 - **archive**: High-level archive operations (open, create, list files)
 - **compression**: All compression algorithms (zlib, bzip2, LZMA, etc.)
@@ -65,6 +65,7 @@ Provides StormLib-compatible C API:
 - Exports C functions matching StormLib's API
 - Handles memory management for C compatibility
 - Generates C headers automatically via cbindgen
+- Output library is named `libstorm` for compatibility
 
 ### CLI Tool (`storm-cli`)
 
@@ -73,6 +74,7 @@ Command-line interface for archive operations:
 - Uses clap for argument parsing
 - Provides subcommands for common operations
 - Includes debugging and inspection tools
+- Binary is named `storm-cli` to avoid conflicts
 
 ## Build Artifacts
 
@@ -82,3 +84,10 @@ After building, you'll find:
 - `target/release/` - Release builds
 - `target/doc/` - Generated documentation
 - `storm-ffi/include/StormLib.h` - Generated C header
+
+## Naming Rationale
+
+- **mopaq**: Core library, referencing the original format name
+- **storm-ffi**: Maintains StormLib naming for compatibility
+- **storm-cli**: Command-line tool with storm branding
+- **libstorm**: FFI output library for C/C++ compatibility

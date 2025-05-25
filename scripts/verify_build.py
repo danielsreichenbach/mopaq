@@ -89,10 +89,6 @@ def main():
 
     print("\n" + "=" * 50)
     print("✓ Build verification completed successfully!")
-    print("\nNext steps:")
-    print("- Implement core functionality starting with encryption table")
-    print("- Add more comprehensive tests")
-    print("- Start with TODO.md tasks")
 
     return 0
 

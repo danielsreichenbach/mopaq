@@ -1,5 +1,8 @@
 [workspace]
-members = ["storm", "storm-ffi", "storm-cli"]
+# mopaq: Core MPQ library (named after Mo'PaQ format)
+# storm-ffi: StormLib-compatible FFI bindings
+# storm-cli: Command-line interface tool
+members = ["mopaq", "storm-ffi", "storm-cli"]
 resolver = "2"
 
 [workspace.package]
@@ -10,7 +13,7 @@ rust-version = "1.86"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/danielsreichenbach/stormlib-rs"
 homepage = "https://github.com/danielsreichenbach/stormlib-rs"
-documentation = "https://docs.rs/storm"
+documentation = "https://docs.rs/mopaq"
 keywords = ["mpq", "blizzard", "archive", "stormlib", "gaming"]
 categories = [
   "compression",

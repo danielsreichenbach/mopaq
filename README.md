@@ -2,8 +2,8 @@
 
 A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format used by Blizzard Entertainment games.
 
-[![Crates.io](https://img.shields.io/crates/v/storm.svg)](https://crates.io/crates/storm)
-[![Documentation](https://docs.rs/storm/badge.svg)](https://docs.rs/storm)
+[![Crates.io](https://img.shields.io/crates/v/mopaq.svg)](https://crates.io/crates/mopaq)
+[![Documentation](https://docs.rs/mopaq/badge.svg)](https://docs.rs/mopaq)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 [![CI Status](https://github.com/danielsreichenbach/stormlib-rs/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/stormlib-rs/actions)
 
@@ -18,13 +18,19 @@ A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format 
 - 🛠️ **Rich CLI Tool**: Comprehensive command-line interface with debugging capabilities
 - 📊 **Well Tested**: Extensive test suite with fuzzing and benchmarks
 
+## Project Structure
+
+- **`mopaq`**: Core MPQ library (named after the original Mo'PaQ format)
+- **`storm-ffi`**: StormLib-compatible C API bindings
+- **`storm-cli`**: Command-line tool for MPQ operations
+
 ## Installation
 
 ### As a Rust Library
 
 ```toml
 [dependencies]
-storm = "0.1"
+mopaq = "0.1"
 ```
 
 ### CLI Tool
@@ -42,9 +48,9 @@ The `storm-ffi` crate provides a StormLib-compatible C API. See the [FFI documen
 ### Rust API
 
 ```rust
-use storm::{Archive, OpenOptions};
+use mopaq::{Archive, OpenOptions};
 
-fn main() -> storm::Result<()> {
+fn main() -> mopaq::Result<()> {
     // Open an existing MPQ archive
     let mut archive = Archive::open("StarCraft.mpq")?;
 
@@ -59,7 +65,7 @@ fn main() -> storm::Result<()> {
 
     // Create a new archive
     let mut new_archive = OpenOptions::new()
-        .version(storm::FormatVersion::V2)
+        .version(mopaq::FormatVersion::V2)
         .create("my_archive.mpq")?;
 
     new_archive.add_file("readme.txt", b"Hello, MPQ!")?;
@@ -72,19 +78,19 @@ fn main() -> storm::Result<()> {
 
 ```bash
 # List files in an archive
-storm list StarCraft.mpq
+storm-cli list StarCraft.mpq
 
 # Extract files
-storm extract StarCraft.mpq --output ./extracted
+storm-cli extract StarCraft.mpq --output ./extracted
 
 # Create a new archive
-storm create my_mod.mpq ./mod_files
+storm-cli create my_mod.mpq ./mod_files
 
 # Verify archive integrity
-storm verify WarCraft3.w3m
+storm-cli verify WarCraft3.w3m
 
 # Debug archive structure
-storm debug info Diablo2.mpq
+storm-cli debug info Diablo2.mpq
 ```
 
 ## Supported Games
@@ -113,7 +119,7 @@ See [benchmarks](docs/benchmarks.md) for detailed performance comparisons.
 
 The project consists of three main components:
 
-1. **storm** - Core library with pure Rust implementation
+1. **mopaq** - Core library with pure Rust implementation
 2. **storm-ffi** - C-compatible FFI bindings for StormLib compatibility
 3. **storm-cli** - Feature-rich command-line tool
 

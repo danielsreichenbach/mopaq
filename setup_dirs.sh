@@ -13,13 +13,14 @@ mkdir -p scripts
 
 # Make scripts executable
 chmod +x scripts/*.py 2>/dev/null || true
+chmod +x quick-start.sh 2>/dev/null || true
 
 echo "✓ Project directories created successfully!"
 echo ""
 echo "Project structure:"
 echo "- storm/       - Core library"
 echo "- storm-ffi/   - FFI bindings"
-echo "- storm-cli/   - CLI tool"
+echo "- storm-cli/   - CLI tool (binary: storm-cli)"
 echo "- test-data/   - Test archives"
 echo "- docs/        - Documentation"
 echo "- scripts/     - Utility scripts"

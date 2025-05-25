@@ -1,7 +1,13 @@
-//! # Storm - MPQ Archive Library
+//! # MoPaQ - MPQ Archive Library
 //!
 //! A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format
 //! used by Blizzard Entertainment games.
+//!
+//! ## About the Name
+//!
+//! MoPaQ is named after the original format name "Mo'PaQ" (Mike O'Brien Pack),
+//! which was later shortened to MPQ. This library provides the core MPQ functionality,
+//! while `storm-ffi` provides StormLib compatibility.
 //!
 //! ## Features
 //!
@@ -15,9 +21,9 @@
 //! ## Example
 //!
 //! ```no_run
-//! use storm::{Archive, OpenOptions};
+//! use mopaq::{Archive, OpenOptions};
 //!
-//! # fn main() -> Result<(), storm::Error> {
+//! # fn main() -> Result<(), mopaq::Error> {
 //! // Open an existing MPQ archive
 //! let archive = Archive::open("example.mpq")?;
 //!

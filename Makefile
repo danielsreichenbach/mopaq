@@ -57,7 +57,7 @@ audit:
 
 # Install the CLI tool locally
 install-cli:
-	@echo "Installing storm CLI..."
+	@echo "Installing storm-cli..."
 	@cargo install --path storm-cli
 
 # Run FFI tests with C example
@@ -85,7 +85,7 @@ help:
 	@echo "  bench       - Run benchmarks"
 	@echo "  release     - Build release binaries"
 	@echo "  audit       - Run security audit"
-	@echo "  install-cli - Install the storm CLI tool"
+	@echo "  install-cli - Install the storm-cli tool"
 	@echo "  test-ffi    - Test FFI bindings"
 	@echo "  test-data   - Create test data directories"
 	@echo "  help        - Show this help message"

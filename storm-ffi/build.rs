@@ -54,7 +54,7 @@ extern "C" {
         .with_crate(crate_dir)
         .with_config(config)
         .with_parse_deps(true)
-        .with_parse_include(&["storm"])
+        .with_parse_include(&["mopaq"])
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file(output_dir.join("StormLib.h"));
