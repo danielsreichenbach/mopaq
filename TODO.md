@@ -92,17 +92,17 @@
 
 #### Hash Functions
 
-- [ ] MPQ hash function implementation
-  - [ ] Hash type 0: Table offset
-  - [ ] Hash type 1: Name hash A
-  - [ ] Hash type 2: Name hash B
-  - [ ] Hash type 3: File key
-  - [ ] Hash type 4: Key2 mix
-- [ ] ASCII case conversion tables
-  - [ ] Uppercase conversion table
-  - [ ] Lowercase conversion table
-- [ ] Path separator normalization (/ to \\)
-- [ ] Jenkins hash for HET tables
+- [x] MPQ hash function implementation
+  - [x] Hash type 0: Table offset
+  - [x] Hash type 1: Name hash A
+  - [x] Hash type 2: Name hash B
+  - [x] Hash type 3: File key
+  - [x] Hash type 4: Key2 mix
+- [x] ASCII case conversion tables
+  - [x] Uppercase conversion table
+  - [x] Lowercase conversion table
+- [x] Path separator normalization (/ to \\)
+- [x] Jenkins hash for HET tables
 
 #### File Encryption
 

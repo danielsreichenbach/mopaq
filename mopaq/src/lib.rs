@@ -98,20 +98,159 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sector_size_calculation() {
+    fn test_calculate_sector_size() {
+        // Test standard sector sizes used in MPQ archives
+
+        // Block size 0: 512 bytes (minimum)
         assert_eq!(calculate_sector_size(0), 512);
+
+        // Block size 1: 1024 bytes (1 KB)
+        assert_eq!(calculate_sector_size(1), 1024);
+
+        // Block size 2: 2048 bytes (2 KB)
+        assert_eq!(calculate_sector_size(2), 2048);
+
+        // Block size 3: 4096 bytes (4 KB) - Common default
         assert_eq!(calculate_sector_size(3), 4096);
+
+        // Block size 4: 8192 bytes (8 KB)
+        assert_eq!(calculate_sector_size(4), 8192);
+
+        // Block size 5: 16384 bytes (16 KB)
+        assert_eq!(calculate_sector_size(5), 16384);
+
+        // Block size 6: 32768 bytes (32 KB)
+        assert_eq!(calculate_sector_size(6), 32768);
+
+        // Block size 7: 65536 bytes (64 KB)
+        assert_eq!(calculate_sector_size(7), 65536);
+
+        // Block size 8: 131072 bytes (128 KB)
         assert_eq!(calculate_sector_size(8), 131072);
+
+        // Block size 9: 262144 bytes (256 KB)
+        assert_eq!(calculate_sector_size(9), 262144);
+
+        // Block size 10: 524288 bytes (512 KB)
+        assert_eq!(calculate_sector_size(10), 524288);
+
+        // Block size 11: 1048576 bytes (1 MB)
+        assert_eq!(calculate_sector_size(11), 1048576);
+
+        // Block size 12: 2097152 bytes (2 MB)
+        assert_eq!(calculate_sector_size(12), 2097152);
+
+        // Block size 13: 4194304 bytes (4 MB)
+        assert_eq!(calculate_sector_size(13), 4194304);
+
+        // Block size 14: 8388608 bytes (8 MB)
+        assert_eq!(calculate_sector_size(14), 8388608);
+
+        // Block size 15: 16777216 bytes (16 MB) - Maximum practical size
+        assert_eq!(calculate_sector_size(15), 16777216);
     }
 
     #[test]
-    fn test_power_of_two() {
+    fn test_calculate_sector_size_edge_cases() {
+        // Test with maximum u16 value (though this would be impractical)
+        // This would overflow on 32-bit systems, but Rust handles it gracefully
+        let max_shift = 16; // Reasonable maximum to test
+        let result = calculate_sector_size(max_shift);
+        assert_eq!(result, 512 << 16); // 33,554,432 bytes (32 MB)
+    }
+
+    #[test]
+    fn test_is_power_of_two() {
+        // Valid powers of two
         assert!(is_power_of_two(1));
         assert!(is_power_of_two(2));
         assert!(is_power_of_two(4));
+        assert!(is_power_of_two(8));
+        assert!(is_power_of_two(16));
+        assert!(is_power_of_two(32));
+        assert!(is_power_of_two(64));
+        assert!(is_power_of_two(128));
+        assert!(is_power_of_two(256));
+        assert!(is_power_of_two(512));
         assert!(is_power_of_two(1024));
+        assert!(is_power_of_two(2048));
+        assert!(is_power_of_two(4096));
+        assert!(is_power_of_two(8192));
+        assert!(is_power_of_two(16384));
+        assert!(is_power_of_two(32768));
+        assert!(is_power_of_two(65536));
+        assert!(is_power_of_two(0x100000)); // 1,048,576
+        assert!(is_power_of_two(0x80000000)); // 2^31
+
+        // Not powers of two
         assert!(!is_power_of_two(0));
         assert!(!is_power_of_two(3));
+        assert!(!is_power_of_two(5));
+        assert!(!is_power_of_two(6));
+        assert!(!is_power_of_two(7));
+        assert!(!is_power_of_two(9));
+        assert!(!is_power_of_two(10));
+        assert!(!is_power_of_two(15));
+        assert!(!is_power_of_two(100));
+        assert!(!is_power_of_two(127));
+        assert!(!is_power_of_two(255));
         assert!(!is_power_of_two(1023));
+        assert!(!is_power_of_two(1025));
+        assert!(!is_power_of_two(0xFFFFFFFF));
+    }
+
+    #[test]
+    fn test_hash_table_size_validation() {
+        // Hash table sizes must be powers of two
+        // This test demonstrates how is_power_of_two would be used
+
+        let valid_sizes = [
+            4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536,
+        ];
+
+        for size in &valid_sizes {
+            assert!(
+                is_power_of_two(*size),
+                "Hash table size {} should be valid",
+                size
+            );
+        }
+
+        let invalid_sizes = [0, 3, 5, 7, 9, 15, 100, 1000, 1023, 1025, 4095, 4097];
+
+        for size in &invalid_sizes {
+            assert!(
+                !is_power_of_two(*size),
+                "Hash table size {} should be invalid",
+                size
+            );
+        }
+    }
+
+    #[test]
+    fn test_typical_mpq_configurations() {
+        // Test typical MPQ configurations from various games
+
+        // Diablo II: Often uses block size 3 (4KB sectors)
+        let d2_sector_size = calculate_sector_size(3);
+        assert_eq!(d2_sector_size, 4096);
+
+        // Warcraft III: Typically uses block size 3-4 (4KB-8KB sectors)
+        let wc3_sector_size_small = calculate_sector_size(3);
+        let wc3_sector_size_large = calculate_sector_size(4);
+        assert_eq!(wc3_sector_size_small, 4096);
+        assert_eq!(wc3_sector_size_large, 8192);
+
+        // World of Warcraft: Uses various sizes, often 4-8 (8KB-128KB sectors)
+        let wow_sector_size_min = calculate_sector_size(4);
+        let wow_sector_size_typical = calculate_sector_size(6);
+        let wow_sector_size_max = calculate_sector_size(8);
+        assert_eq!(wow_sector_size_min, 8192);
+        assert_eq!(wow_sector_size_typical, 32768);
+        assert_eq!(wow_sector_size_max, 131072);
+
+        // StarCraft II: Can use larger sectors for HD assets
+        let sc2_sector_size = calculate_sector_size(9);
+        assert_eq!(sc2_sector_size, 262144); // 256 KB
     }
 }

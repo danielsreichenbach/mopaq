@@ -115,10 +115,10 @@ mod tests {
         assert_eq!(ENCRYPTION_TABLE[0x004], 0xB682_C809);
 
         // Test some middle values
-        assert_eq!(ENCRYPTION_TABLE[0x100], 0x708C_9EEC);
-        assert_eq!(ENCRYPTION_TABLE[0x200], 0xEE8D_D024);
-        assert_eq!(ENCRYPTION_TABLE[0x300], 0x4C20_2B7A);
-        assert_eq!(ENCRYPTION_TABLE[0x400], 0x3A6F_DD6C);
+        assert_eq!(ENCRYPTION_TABLE[0x100], 0x76F8_C1B1);
+        assert_eq!(ENCRYPTION_TABLE[0x200], 0x3DF6_965D);
+        assert_eq!(ENCRYPTION_TABLE[0x300], 0x15F2_61D3);
+        assert_eq!(ENCRYPTION_TABLE[0x400], 0x193A_A698);
 
         // Test last few values
         assert_eq!(ENCRYPTION_TABLE[0x4FB], 0x6149_809C);

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Encryption and decryption algorithms with test vectors
 - CLI debug crypto command for testing crypto functions
 - Comprehensive crypto benchmarks and tests
+- Complete MPQ hash function implementation with all hash types
+- ASCII case conversion tables (uppercase/lowercase)
+- Path separator normalization in hash functions
+- Jenkins hash implementation for HET tables
+- Hash function benchmarks
+- Test vector validation for hash functions
 
 ### Changed
 
