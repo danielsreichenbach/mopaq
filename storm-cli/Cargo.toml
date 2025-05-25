@@ -1,0 +1,42 @@
+[package]
+name = "storm-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Command-line tool for working with MPQ archives"
+readme = "../README.md"
+
+[[bin]]
+name = "storm"
+path = "src/main.rs"
+
+[dependencies]
+storm = { path = "../storm", version = "0.1.0", features = ["serde"] }
+
+# CLI framework
+clap = { workspace = true }
+anyhow = { workspace = true }
+
+# Output and formatting
+indicatif = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+serde_json = { workspace = true }
+
+# File operations
+tempfile = { workspace = true }
+
+# Performance measurement
+time = "0.3"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = { workspace = true }
+
+[features]
+default = ["storm/default"]

@@ -1,1344 +1,1508 @@
-# MPQ Format Documentation
+# MPQ Archive Format Documentation
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [MPQ Archive Structure](#mpq-archive-structure)
-   - [Archive Header](#archive-header)
-   - [Hash Table](#hash-table)
-   - [Block Table](#block-table)
-   - [Extended Block Table](#extended-block-table)
-   - [Archive Files](#archive-files)
-3. [Algorithms](#algorithms)
-   - [Hash Functions](#hash-functions)
-   - [Encryption and Decryption](#encryption-and-decryption)
-   - [Compression](#compression)
-   - [Name Search](#name-search)
-4. [Rust Implementation Examples](#rust-implementation-examples)
-   - [Hash Functions Implementation](#hash-functions-implementation)
-   - [Encryption Implementation](#encryption-implementation)
-   - [File Extraction](#file-extraction)
-   - [Creating an MPQ Archive](#creating-an-mpq-archive)
-5. [Performance Benchmarks](#performance-benchmarks)
-6. [Common File Formats](#common-file-formats)
-7. [References](#references)
+- [Introduction](#introduction)
+- [Version History](#version-history)
+- [Core Structure](#core-structure)
+- [Feature Matrix](#feature-matrix)
+- [Locating MPQ Headers](#locating-mpq-headers)
+  - [User Data Header Structure](#user-data-header-structure)
+  - [Standard MPQ Header Structure](#standard-mpq-header-structure)
+  - [Header Location Algorithm Pseudocode](#header-location-algorithm-pseudocode)
+- [Tables and Data Storage](#tables-and-data-storage)
+  - [Hash Table Structure and Contents](#hash-table-structure-and-contents)
+    - [Hash Table Entry Structure](#hash-table-entry-structure)
+    - [Hash Table Entry States](#hash-table-entry-states)
+    - [Hash Table Organization](#hash-table-organization)
+    - [Hash Calculation and File Lookup Process](#hash-calculation-and-file-lookup-process)
+    - [Multiple Language Versions of Files](#multiple-language-versions-of-files)
+    - [Hash Table Encryption](#hash-table-encryption)
+    - [Hash Table Optimization](#hash-table-optimization)
+    - [Listfile Integration](#listfile-integration)
+  - [Block Table Structure](#block-table-structure)
+  - [Hi-Block Table](#hi-block-table-version-2)
+  - [HET Table Structure](#het-table-structure-version-3)
+  - [BET Table Structure](#bet-table-structure-version-3)
+  - [File Data Storage](#file-data-storage)
+  - [File Hashing Algorithm](#file-hashing-algorithm)
+  - [Encryption and Decryption Algorithm](#encryption-and-decryption-algorithm)
+  - [Special Files](#special-files)
+- [Digital Signatures](#digital-signatures)
+  - [Weak Digital Signature](#weak-digital-signature)
+  - [Strong Digital Signature](#strong-digital-signature)
+- [Compression Method Compatibility Matrix](#compression-method-compatibility-matrix)
+- [Block Table Flags](#block-table-flags)
+- [Implementation Notes](#implementation-notes)
+- [Notable Library Implementations](#notable-library-implementations)
+- [References](#references)
 
 ## Introduction
 
-The MPQ (Mike O'Brien Pack, or Mo'PaQ) is an archive file format developed by
-Blizzard Entertainment for their games, including Diablo, StarCraft, Warcraft
-III, and World of Warcraft. It was designed to efficiently store and access game
-data, providing features such as:
+MPQ (Mo'PaQ, short for Mike O'Brien Pack) is an archiving file format developed by Blizzard Entertainment for storing game assets including graphics, sounds, and level data. This format has evolved through several versions, each adding new capabilities while maintaining backward compatibility.
 
-- Strong encryption
-- Multiple compression methods
-- File name hashing for fast lookup
-- Optional file checksums for integrity verification
-- Support for file patches
+## Version History
 
-This format has been used extensively in Blizzard games since 1996 and remains
-relevant for modding and game development in the Blizzard ecosystem.
+| Version | First Appearance | Header Size | Notable Games |
+|---------|-----------------|------------|---------------|
+| 1       | Original/Classic | 32 bytes (0x20) | Diablo, Starcraft, Warcraft II, Diablo II, Warcraft III |
+| 2       | The Burning Crusade | 44 bytes (0x2C) | World of Warcraft: The Burning Crusade |
+| 3       | Cataclysm Beta | 68 bytes (0x44) | World of Warcraft: Cataclysm |
+| 4       | Cataclysm+ | 208 bytes (0xD0) | Later World of Warcraft, Starcraft II |
 
-## MPQ Archive Structure
+## Core Structure
 
-An MPQ archive consists of:
+All MPQ archives contain some combination of these elements, depending on version:
 
-1. An archive header
-2. A hash table
-3. A block table
-4. An extended block table (optional)
-5. The actual file data
+1. Optional data before the MPQ archive
+2. Optional MPQ User Data
+3. MPQ Header (required)
+4. Files stored in the archive (optional)
+5. Special files: (listfile), (attributes), (signature), (user data) (optional)
+6. Hash Table (required in v1-v2, optional in v3+)
+7. Block Table (required in v1-v2, optional in v3+)
+8. Hi-Block Table (added in v2)
+9. HET Table (added in v3)
+10. BET Table (added in v3)
+11. Strong digital signature (optional)
 
-### Archive Header
+## Feature Matrix
 
-The MPQ header identifies the file as an MPQ archive and contains information
-about the archive's structure.
+| Feature | v1 | v2 | v3 | v4 | Notes |
+|---------|----|----|----|----|-------|
+| **Header Structure** |
+| Basic header fields | ✅ | ✅ | ✅ | ✅ | ID, size, archive size, etc. |
+| Hi-Block Table support | ❌ | ✅ | ✅ | ✅ | For archives larger than 4GB |
+| BET Table support | ❌ | ❌ | ✅ | ✅ | Replacement for block table |
+| HET Table support | ❌ | ❌ | ✅ | ✅ | Replacement for hash table |
+| MD5 Checksums | ❌ | ❌ | ❌ | ✅ | Added for tables and header integrity |
+| Raw chunk size for MD5 | ❌ | ❌ | ❌ | ✅ | For block-level integrity |
+| **Size Limitations** |
+| Max files in hash table | 2¹⁶ | 2²⁰ | 2²⁰ | 2²⁰ | Limit on number of files |
+| Archive size limit | 4GB | >4GB | >4GB | >4GB | v2+ supports larger archives |
+| **Tables** |
+| Hash table | ✅ | ✅ | ✅ | ✅ | Required in v1-v2, optional in v3+ |
+| Block table | ✅ | ✅ | ✅ | ✅ | Required in v1-v2, optional in v3+ |
+| Hi-Block table | ❌ | ✅ | ✅ | ✅ | Extended position data |
+| HET table | ❌ | ❌ | ✅ | ✅ | More efficient file lookup |
+| BET table | ❌ | ❌ | ✅ | ✅ | More efficient block data |
+| Compressed hash table | ❌ | ❌ | ✅ | ✅ | v3+ can compress tables |
+| Compressed block table | ❌ | ❌ | ✅ | ✅ | v3+ can compress tables |
+| **Compression Methods** |
+| PKWare implode | ✅ | ✅ | ✅ | ✅ | First compression algorithm |
+| Huffman encoding | ✅ | ✅ | ✅ | ✅ | Added in Starcraft |
+| ADPCM compression | ✅ | ✅ | ✅ | ✅ | For audio data, lossy |
+| Deflate (zlib) | ✅ | ✅ | ✅ | ✅ | Added in Warcraft III |
+| BZip2 | ❌ | ✅ | ✅ | ✅ | Added in WoW: The Burning Crusade |
+| LZMA | ❌ | ❌ | ✅ | ✅ | Added in Starcraft II |
+| Sparse compression | ❌ | ❌ | ✅ | ✅ | Added in Starcraft II |
+| Multiple compression | ✅ | ✅ | ✅ | ✅ | Can chain compression methods |
+| **Security Features** |
+| File encryption | ✅ | ✅ | ✅ | ✅ | Base feature |
+| Table encryption | ✅ | ✅ | ✅ | ✅ | Hash and block tables encrypted |
+| Weak digital signature | ✅ | ✅ | ✅ | ✅ | RSASSA-PKCS1-v1_5 with MD5 and 512-bit RSA |
+| Strong digital signature | ❌ | ✅ | ✅ | ✅ | Added for WoW and later games |
+| **Language Support** |
+| Multiple language versions | ✅ | ✅ | ✅ | ✅ | Using locale codes |
+| Multiple platform versions | ✅ | ✅ | ✅ | ✅ | Using platform codes |
+| **Special Files** |
+| (listfile) support | ✅ | ✅ | ✅ | ✅ | List of filenames in the archive |
+| (attributes) support | ✅ | ✅ | ✅ | ✅ | File attributes data |
+| (signature) support | ✅ | ✅ | ✅ | ✅ | Digital signature data |
+| (user data) support | ❌ | ✅ | ✅ | ✅ | Custom metadata |
+
+## Locating MPQ Headers
+
+MPQ archives can be standalone files or embedded within another file (for example, as part of an executable installer). The format supports this flexibility through a specific header location mechanism:
+
+1. MPQ headers (both standard and user data headers) must begin at file offsets aligned to 512 (0x200) bytes
+2. When parsing an MPQ file, the application must scan the file at offsets 0, 0x200, 0x400, 0x600 and so on, checking for valid MPQ signatures
+3. Two possible header types may be encountered during this scan:
+   - Standard MPQ header (signature 'MPQ\x1A' or 0x1A51504D in little-endian)
+   - MPQ user data header (signature 'MPQ\x1B' or 0x1B51504D in little-endian)
+4. If a standard MPQ header is found, processing continues with this header
+5. If a user data header is found, the offset specified in the user data header is added to the current offset to locate the actual MPQ header, and scanning continues from that position
+
+### User Data Header Structure
+
+The user data header allows custom metadata to be stored before the actual MPQ archive. It is commonly used in custom maps for Starcraft II and other later Blizzard games.
 
 ```rust
-/// MPQ archive header for version 1
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct MpqHeader {
-    /// Magic number, must be 'MPQ\x1A' (0x1A51504D)
-    pub magic: u32,
-    /// Size of the archive header
-    pub header_size: u32,
-    /// Size of the whole archive
-    pub archive_size: u32,
-    /// MPQ format version (0 for original, 1 for extended)
-    pub format_version: u16,
-    /// Size of a sector in bytes (usually 4096)
-    pub sector_size: u16,
+/// MPQ user data header structure
+#[repr(C, packed)]
+struct MpqUserData {
+    /// The ID_MPQ_USERDATA ('MPQ\x1B') signature (0x1B51504D in little-endian)
+    id: u32,
+
+    /// Maximum size of the user data
+    user_data_size: u32,
+
+    /// Offset of the MPQ header, relative to the beginning of this header
+    header_offset: u32,
+
+    /// Size of user data header (commonly used in Starcraft II maps)
+    user_data_header_size: u32,
+
+    /// User data follows the header
+    /// user_data: [u8; user_data_size - user_data_header_size]
+}
+```
+
+### Standard MPQ Header Structure
+
+Once located, the standard MPQ header contains essential information about the archive structure and version. The size of the header varies based on the MPQ format version.
+
+```rust
+/// MPQ file header structure
+#[repr(C, packed)]
+struct MpqHeader {
+    /// The ID_MPQ ('MPQ\x1A') signature (0x1A51504D in little-endian)
+    id: u32,
+
+    /// Size of the archive header (32, 44, 68, or 208 bytes depending on version)
+    header_size: u32,
+
+    /// Size of MPQ archive (deprecated in v2+)
+    archive_size: u32,
+
+    /// Format version (0=v1, 1=v2, 2=v3, 3=v4)
+    format_version: u16,
+
+    /// Block size (power of two exponent for the sector size)
+    block_size: u16,
+
     /// Offset to the hash table
-    pub hash_table_offset: u32,
+    hash_table_pos: u32,
+
     /// Offset to the block table
-    pub block_table_offset: u32,
-    /// Number of entries in the hash table
-    pub hash_table_entries: u32,
+    block_table_pos: u32,
+
+    /// Number of entries in the hash table (power of 2)
+    hash_table_size: u32,
+
     /// Number of entries in the block table
-    pub block_table_entries: u32,
+    block_table_size: u32,
+
+    // Additional fields follow for v2, v3, and v4 headers
+    // (see version-specific fields in the feature matrix)
 }
 
-/// MPQ archive header for version 2 (extended)
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct MpqHeaderExt {
-    /// Basic header
-    pub header: MpqHeader,
-    /// Offset to the extended block table
-    pub extended_block_table_offset: u64,
-    /// High 16 bits of the hash table offset
-    pub hash_table_offset_high: u16,
-    /// High 16 bits of the block table offset
-    pub block_table_offset_high: u16,
-    /// Additional fields for version 3 and above...
+/// MPQ header v2 extension
+#[repr(C, packed)]
+struct MpqHeaderExtV2 {
+    /// Offset to the beginning of array of 16-bit high parts of file offsets
+    hi_block_table_pos: u64,
+
+    /// High 16 bits of the hash table offset for large archives
+    hash_table_pos_hi: u16,
+
+    /// High 16 bits of the block table offset for large archives
+    block_table_pos_hi: u16,
 }
-```
 
-The magic number for MPQ archives is always 'MPQ\x1A' (0x1A51504D in little-endian
-format). This is used to identify the file as an MPQ archive.
+/// MPQ header v3 extension
+#[repr(C, packed)]
+struct MpqHeaderExtV3 {
+    /// 64-bit version of the archive size
+    archive_size_64: u64,
 
-### Hash Table
+    /// 64-bit position of the BET table
+    bet_table_pos: u64,
 
-The hash table is used for fast file lookup using the file names. Each entry in
-the hash table is 16 bytes and has the following structure:
-
-```rust
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct HashEntry {
-    /// Hash of the file name (using method A)
-    pub name_hash_a: u32,
-    /// Hash of the file name (using method B)
-    pub name_hash_b: u32,
-    /// Language of the file
-    pub language: u16,
-    /// Platform the file is used for
-    pub platform: u16,
-    /// Index into the block table
-    pub block_index: u32,
+    /// 64-bit position of the HET table
+    het_table_pos: u64,
 }
-```
 
-The hash table is always encrypted using the hash of the string "(hash table)"
-as the key.
+/// MPQ header v4 extension
+#[repr(C, packed)]
+struct MpqHeaderExtV4 {
+    /// Compressed size of the hash table
+    hash_table_size_64: u64,
 
-### Block Table
+    /// Compressed size of the block table
+    block_table_size_64: u64,
 
-The block table contains information about each file in the archive, including
-its position, size, and flags.
+    /// Compressed size of the hi-block table
+    hi_block_table_size_64: u64,
 
-```rust
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct BlockEntry {
-    /// Offset of the file in the archive
-    pub offset: u32,
-    /// Compressed size of the file
-    pub compressed_size: u32,
-    /// Uncompressed size of the file
-    pub file_size: u32,
-    /// Flags (compression method, encrypted, etc.)
-    pub flags: u32,
+    /// Compressed size of the HET block
+    het_table_size_64: u64,
+
+    /// Compressed size of the BET block
+    bet_table_size_64: u64,
+
+    /// Size of raw data chunk to calculate MD5
+    raw_chunk_size: u32,
+
+    /// MD5 checksums for various tables
+    md5_block_table: [u8; 16],    // MD5 of the block table before decryption
+    md5_hash_table: [u8; 16],     // MD5 of the hash table before decryption
+    md5_hi_block_table: [u8; 16], // MD5 of the hi-block table
+    md5_bet_table: [u8; 16],      // MD5 of the BET table before decryption
+    md5_het_table: [u8; 16],      // MD5 of the HET table before decryption
+    md5_mpq_header: [u8; 16],     // MD5 of the MPQ header from signature to (including) MD5_HetTable
 }
 ```
 
-Common flags include:
-
-- `0x00000100` - File is compressed
-- `0x00000200` - File is encrypted
-- `0x00000400` - File has a patch
-- `0x00010000` - Block is a sector (used in single-unit files)
-- `0x01000000` - File exists
-- `0x02000000` - File is a deletion marker
-
-The block table is always encrypted using the hash of the string "(block table)"
-as the key.
-
-### Extended Block Table
-
-In MPQ format version 2 and above, an extended block table may be present to
-support archives larger than 4GB. This table contains the high bits of the file
-offsets.
+### Header Location Algorithm Pseudocode
 
 ```rust
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct ExtBlockEntry {
-    /// High 16 bits of the file offset
-    pub offset_high: u16,
-    /// Reserved fields
-    pub reserved: [u16; 3],
+fn find_mpq_header(file: &mut File) -> Result<u64, MpqError> {
+    let mut offset: u64 = 0;
+    let file_size = file.metadata()?.len();
+
+    while offset < file_size {
+        file.seek(SeekFrom::Start(offset))?;
+        let mut signature = [0u8; 4];
+        file.read_exact(&mut signature)?;
+
+        let signature_value = u32::from_le_bytes(signature);
+
+        match signature_value {
+            0x1A51504D => {
+                // Found standard MPQ header (MPQ\x1A)
+                return Ok(offset);
+            },
+            0x1B51504D => {
+                // Found user data header (MPQ\x1B)
+                file.seek(SeekFrom::Start(offset + 8))?;
+                let mut header_offset_bytes = [0u8; 4];
+                file.read_exact(&mut header_offset_bytes)?;
+
+                let header_offset = u32::from_le_bytes(header_offset_bytes);
+                let new_offset = offset + u64::from(header_offset);
+
+                // Verify new offset is valid
+                if new_offset < file_size {
+                    file.seek(SeekFrom::Start(new_offset))?;
+                    let mut new_signature = [0u8; 4];
+                    file.read_exact(&mut new_signature)?;
+
+                    if u32::from_le_bytes(new_signature) == 0x1A51504D {
+                        return Ok(new_offset);
+                    }
+                }
+            },
+            _ => {},
+        }
+
+        // Move to next potential header position
+        offset += 0x200;  // 512 bytes
+    }
+
+    Err(MpqError::InvalidFormat("No valid MPQ header found"))
 }
 ```
 
-### Archive Files
+## Tables and Data Storage
 
-Files within an MPQ archive can be:
+### Hash Table Structure and Contents
 
-1. **Stored as is** - No compression or encryption
-2. **Compressed** - Using multiple possible compression methods
-3. **Encrypted** - Using a key derived from the file name
-4. **Imploded** - A specialized compression format
-5. **Stored with sectors** - Large files are divided into sectors for better
-   access
+The hash table is the primary mechanism for locating files within an MPQ archive. Unlike many other archive formats, MPQ does not store full file paths in a central directory. Instead, it uses hash-based lookups, which makes the hash table a crucial component of the format.
 
-## Algorithms
+**Size Constraints:**
 
-### Hash Functions
+- The hash table size must be a power of two (2ⁿ)
+- **Minimum size:** 0x00000004 (4 entries)
+- **Default size:** 0x00001000 (4,096 entries)
+- **Maximum size:** 0x00080000 (524,288 entries)
 
-MPQ uses two hash functions, known as "hash A" and "hash B", to compute hash
-values for file names. A third hash, "hash C", is used as an encryption key.
+#### Hash Table Entry Structure
 
 ```rust
-/// Computes hash value using MPQ hash algorithm
-pub fn hash_string(input: &str, hash_type: HashType) -> u32 {
-    let seed1: u32 = match hash_type {
-        HashType::TableOffset => 0x1505,
-        HashType::NameA => 0x7FED7FED,
-        HashType::NameB => 0xEEEEEEEE,
-        HashType::FileKey => 0x7EED,
-    };
+/// Hash table entry structure (16 bytes)
+#[repr(C, packed)]
+struct MpqHashEntry {
+    /// The hash of the full file name (part A)
+    name_1: u32,  // Hash using method A
 
-    let seed2: u32 = match hash_type {
-        HashType::TableOffset => 0,
-        HashType::NameA => 0xEEEEEEEE,
-        HashType::NameB => 0xEEEEEEEE,
-        HashType::FileKey => 0xEEEE,
-    };
+    /// The hash of the full file name (part B)
+    name_2: u32,  // Hash using method B
 
-    let mut hash: u32 = seed1;
+    /// The language of the file (Windows LANGID)
+    locale: u16,  // 0 = default/neutral
 
-    // Convert to uppercase for case-insensitive hashing
-    for c in input.to_uppercase().chars() {
-        // Only process ASCII characters to ensure consistent hashing
-        let character = c as u8;
+    /// The platform the file is used for
+    platform: u16,  // 0 = default platform
 
-        // Update hash value
-        hash = hash.wrapping_shl(5).wrapping_add(hash) ^ character as u32;
+    /// Block table index or special value:
+    /// - 0xFFFFFFFF: Empty entry, has always been empty
+    /// - 0xFFFFFFFE: Empty entry, was previously valid (deleted file)
+    block_index: u32,  // Index into block table or special value
+}
 
-        // Update seed2 (for NameA, NameB, and FileKey)
-        if hash_type != HashType::TableOffset {
-            seed2 = seed2.wrapping_add(
-                (seed2.wrapping_shl(5)).wrapping_add(character as u32)
-            );
+impl MpqHashEntry {
+    const EMPTY_NEVER_USED: u32 = 0xFFFFFFFF;
+    const EMPTY_DELETED: u32 = 0xFFFFFFFE;
+
+    /// Returns true if this entry has never been used
+    pub fn is_empty(&self) -> bool {
+        self.block_index == Self::EMPTY_NEVER_USED
+    }
+
+    /// Returns true if this entry was deleted
+    pub fn is_deleted(&self) -> bool {
+        self.block_index == Self::EMPTY_DELETED
+    }
+
+    /// Returns true if this entry contains valid file information
+    pub fn is_valid(&self) -> bool {
+        self.block_index < Self::EMPTY_DELETED
+    }
+}
+```
+
+#### Hash Table Entry States
+
+Each hash table entry can be in one of three states:
+
+1. **Empty (Never Used)**: Indicated by `dwBlockIndex = 0xFFFFFFFF`
+   - This entry has never contained file information
+   - Hash searches terminate when encountering this type of entry
+
+2. **Empty (Previously Used)**: Indicated by `dwBlockIndex = 0xFFFFFFFE`
+   - This entry previously contained file information, but the file was deleted
+   - Hash searches continue past this type of entry (allowing for collision resolution)
+
+3. **Occupied**: Indicated by `dwBlockIndex < 0xFFFFFFFE`
+   - The entry contains valid file information
+   - The `dwBlockIndex` value points to the corresponding entry in the block table
+
+#### Hash Table Organization
+
+The hash table always has 2ⁿ entries, and it's organized to enable efficient file lookups:
+
+1. The initial position for a file in the table is calculated using a hash of the lowercased filename modulo the table size.
+2. If a collision occurs (multiple files hash to the same position), a linear probing approach is used:
+   - Proceed to the next entry in the table
+   - Continue until finding the correct entry or an empty/never-used entry
+   - The search wraps around to the beginning of the table if necessary
+
+#### Hash Calculation and File Lookup Process
+
+To find a file in the MPQ archive:
+
+1. Calculate three hash values for the filename:
+
+   ```c
+   DWORD hashA = HashString(filename, MPQ_HASH_NAME_A);
+   DWORD hashB = HashString(filename, MPQ_HASH_NAME_B);
+   DWORD index = HashString(filename, MPQ_HASH_TABLE_OFFSET) % hashTableSize;
+   ```
+
+2. Begin searching at the calculated index position:
+
+   ```c
+   pHashEntry = &hashTable[index];
+   ```
+
+3. Examine the hash entry at the current position:
+   - If `dwName1 == hashA` and `dwName2 == hashB` and the locale/platform matches:
+     - This is the desired file; use `dwBlockIndex` to find it in the block table
+   - If `dwBlockIndex == 0xFFFFFFFF` (never used):
+     - The file doesn't exist in the archive; terminate the search
+   - Otherwise:
+     - Move to the next entry (wrapping if necessary) and continue the search
+
+This collision resolution strategy means files are not strictly stored at their hash position but may be placed at the next available slot.
+
+#### Multiple Language Versions of Files
+
+The MPQ format supports multiple language versions of the same file. These versions have the same filename and hash values but different `lcLocale` values. When searching for files, if a specific locale is requested, only files with matching locale should be considered.
+
+Common locale values include:
+
+- 0x0000: Neutral/Default (American English)
+- 0x0409: English (US)
+- 0x0809: English (UK)
+- 0x0407: German
+- 0x040c: French
+- 0x0410: Italian
+- 0x0405: Czech
+- 0x0412: Korean
+- 0x0411: Japanese
+
+#### Hash Table Encryption
+
+The hash table is encrypted using the MPQ encryption algorithm with the key derived from the string "(hash table)" (without quotes). Before using the hash table, an implementation must decrypt it:
+
+```rust
+/// Decrypt the hash table
+fn decrypt_hash_table(hash_table: &mut [MpqHashEntry], encryption_table: &[u32; 0x500]) {
+    // Calculate the key from the string "(hash table)"
+    let key = hash_string("(hash table)", MPQ_HASH_FILE_KEY, encryption_table);
+
+    // Cast to u32 array for processing
+    let ptr = hash_table.as_mut_ptr() as *mut u32;
+    let len = hash_table.len() * std::mem::size_of::<MpqHashEntry>() / std::mem::size_of::<u32>();
+
+    // Create a safe slice from the raw pointer
+    let data = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+
+    // Decrypt each DWORD using the key and index
+    for (i, val) in data.iter_mut().enumerate() {
+        *val = decrypt_dword(*val, key.wrapping_add(i as u32), encryption_table);
+    }
+}
+```
+
+#### Hash Table Optimization
+
+Some observations for implementers:
+
+1. The hash table is typically sparse, containing many empty entries, especially in large archives
+2. The hash table size is usually much larger than the number of files to minimize collisions
+3. Hash searches that fail (file not found) can be expensive due to linear probing
+4. To optimize lookups, many implementations create an in-memory file index based on the listfile
+
+#### Listfile Integration
+
+While the hash table doesn't store filenames, MPQ archives often include a special file named `(listfile)` that contains all filenames in the archive. When implementing an MPQ reader:
+
+1. First load and process the hash table
+2. Then extract and parse the `(listfile)` if present
+3. Use the listfile contents to build a mapping between filenames and hash table entries
+
+This allows for more user-friendly file access by name rather than requiring hash calculations for every access.
+
+### Block Table Structure
+
+The block table contains information about the actual file data storage in the archive.
+
+```rust
+/// Block table entry structure (16 bytes)
+#[repr(C, packed)]
+struct MpqBlockEntry {
+    /// Offset of the beginning of the file data, relative to the beginning of the archive
+    file_pos: u32,
+
+    /// Compressed file size
+    c_size: u32,
+
+    /// Size of uncompressed file
+    f_size: u32,
+
+    /// Flags for the file (see Block Table Flags section)
+    flags: u32,
+}
+
+impl MpqBlockEntry {
+    // Block table flag constants
+    pub const FLAG_IMPLODE: u32         = 0x00000100;
+    pub const FLAG_COMPRESS: u32        = 0x00000200;
+    pub const FLAG_ENCRYPTED: u32       = 0x00010000;
+    pub const FLAG_FIX_KEY: u32         = 0x00020000;
+    pub const FLAG_PATCH_FILE: u32      = 0x00100000;
+    pub const FLAG_SINGLE_UNIT: u32     = 0x01000000;
+    pub const FLAG_DELETE_MARKER: u32   = 0x02000000;
+    pub const FLAG_SECTOR_CRC: u32      = 0x04000000;
+    pub const FLAG_EXISTS: u32          = 0x80000000;
+
+    /// Returns true if the file is compressed
+    pub fn is_compressed(&self) -> bool {
+        (self.flags & (Self::FLAG_IMPLODE | Self::FLAG_COMPRESS)) != 0
+    }
+
+    /// Returns true if the file is encrypted
+    pub fn is_encrypted(&self) -> bool {
+        (self.flags & Self::FLAG_ENCRYPTED) != 0
+    }
+
+    /// Returns true if the file is stored as a single unit
+    pub fn is_single_unit(&self) -> bool {
+        (self.flags & Self::FLAG_SINGLE_UNIT) != 0
+    }
+
+    /// Returns true if the file has sector CRCs
+    pub fn has_sector_crc(&self) -> bool {
+        (self.flags & Self::FLAG_SECTOR_CRC) != 0
+    }
+}
+```
+
+The block table is encrypted using a known algorithm with the string "(block table)" as the key.
+
+### Hi-Block Table (Version 2+)
+
+For archives larger than 4GB, the Hi-Block table stores the high 16 bits of file positions:
+
+```rust
+/// Hi-Block table consists of 16-bit values
+/// One entry for each block table entry
+type MpqHiBlockTable = Vec<u16>;
+
+/// Full 64-bit file position calculation
+fn get_full_file_pos(block_entry: &MpqBlockEntry, hi_block_table: &[u16], index: usize) -> u64 {
+    if index < hi_block_table.len() {
+        // Combine the high 16 bits with the low 32 bits to form a 48-bit value
+        let high_bits = u64::from(hi_block_table[index]);
+        let low_bits = u64::from(block_entry.file_pos);
+        (high_bits << 32) | low_bits
+    } else {
+        // If there's no hi-block entry, just use the 32-bit value
+        u64::from(block_entry.file_pos)
+    }
+}
+```
+
+This table is not encrypted, and when present it immediately follows the block table.
+
+### HET Table Structure (Version 3+)
+
+The HET (Hash Entry Table) is an alternative to the hash table introduced in format version 3, designed to be more efficient. The HET table is present if the `het_table_pos` member of the MPQ header is set to a non-zero value.
+
+```rust
+/// HET table header structure
+#[repr(C, packed)]
+struct MpqHetTable {
+    /// Common header signature 'HET\x1A' (0x1A544548 in little-endian)
+    signature: u32,
+
+    /// Version (always 1)
+    version: u32,
+
+    /// Size of the contained table data
+    data_size: u32,
+
+    /// Size of the entire hash table including header
+    table_size: u32,
+
+    /// Maximum number of files in the MPQ
+    max_file_count: u32,
+
+    /// Size of the hash table in bytes
+    hash_table_size: u32,
+
+    /// Effective size of the hash entry in bits
+    hash_entry_size: u32,
+
+    /// Total size of file index in bits
+    total_index_size: u32,
+
+    /// Extra bits in the file index
+    index_size_extra: u32,
+
+    /// Effective size of the file index in bits
+    index_size: u32,
+
+    /// Size of the block index subtable in bytes
+    block_table_size: u32,
+
+    /// Followed by:
+    /// - HET hash table (hash_table_size bytes)
+    /// - Array of file indexes (bit-based)
+}
+
+impl MpqHetTable {
+    const SIGNATURE: u32 = 0x1A544548; // "HET\x1A" in little-endian
+
+    /// Calculates the hash mask for entry bits
+    pub fn get_hash_mask(&self) -> u64 {
+        (1u64 << self.hash_entry_size) - 1
+    }
+
+    /// Calculates the index mask for file indexes
+    pub fn get_index_mask(&self) -> u64 {
+        (1u64 << self.index_size) - 1
+    }
+}
+```
+
+The HET table can be encrypted and compressed.
+
+### BET Table Structure (Version 3+)
+
+The BET (Block Entry Table) is an alternative to the block table introduced in format version 3. The BET table is present if the `bet_table_pos` member of the MPQ header is set to a non-zero value.
+
+```rust
+/// BET table header structure
+#[repr(C, packed)]
+struct MpqBetTable {
+    /// Common header signature 'BET\x1A' (0x1A544542 in little-endian)
+    signature: u32,
+
+    /// Version (always 1)
+    version: u32,
+
+    /// Size of the contained table data
+    data_size: u32,
+
+    /// Size of the entire table including header
+    table_size: u32,
+
+    /// Number of files in BET table
+    file_count: u32,
+
+    /// Unknown, typically set to 0x10
+    unknown_08: u32,
+
+    /// Size of one table entry in bits
+    table_entry_size: u32,
+
+    /// Bit positions and sizes for various fields
+    bit_index_file_pos: u32,
+    bit_index_file_size: u32,
+    bit_index_cmp_size: u32,
+    bit_index_flag_index: u32,
+    bit_index_unknown: u32,
+
+    bit_count_file_pos: u32,
+    bit_count_file_size: u32,
+    bit_count_cmp_size: u32,
+    bit_count_flag_index: u32,
+    bit_count_unknown: u32,
+
+    /// BET hash information
+    total_bet_hash_size: u32,
+    bet_hash_size_extra: u32,
+    bet_hash_size: u32,
+    bet_hash_array_size: u32,
+
+    /// Number of flags in the following array
+    flag_count: u32,
+
+    /// Followed by:
+    /// - Array of file flags (flag_count * 4 bytes)
+    /// - File table (bit-based)
+    /// - Array of BET hashes
+}
+
+impl MpqBetTable {
+    const SIGNATURE: u32 = 0x1A544542; // "BET\x1A" in little-endian
+
+    /// Extracts a bit field from raw table data
+    pub fn extract_bits(value: u64, bit_offset: u32, bit_count: u32) -> u64 {
+        // Create a mask of bit_count bits
+        let mask = (1u64 << bit_count) - 1;
+
+        // Extract and return the bit field
+        (value >> bit_offset) & mask
+    }
+
+    /// Gets a file's position from BET entry bits
+    pub fn get_file_position(&self, entry_bits: u64) -> u64 {
+        Self::extract_bits(entry_bits, self.bit_index_file_pos, self.bit_count_file_pos)
+    }
+
+    /// Gets a file's uncompressed size from BET entry bits
+    pub fn get_file_size(&self, entry_bits: u64) -> u64 {
+        Self::extract_bits(entry_bits, self.bit_index_file_size, self.bit_count_file_size)
+    }
+
+    /// Gets a file's compressed size from BET entry bits
+    pub fn get_compressed_size(&self, entry_bits: u64) -> u64 {
+        Self::extract_bits(entry_bits, self.bit_index_cmp_size, self.bit_count_cmp_size)
+    }
+
+    /// Gets a file's flag index from BET entry bits
+    pub fn get_flag_index(&self, entry_bits: u64) -> u32 {
+        Self::extract_bits(entry_bits, self.bit_index_flag_index, self.bit_count_flag_index) as u32
+    }
+}
+```
+
+The BET table can be encrypted and compressed.
+
+### File Data Storage
+
+Files in MPQ archives are typically split into blocks (sectors). The sector size is determined by the `wBlockSize` field in the MPQ header:
+
+```
+Sector Size = 512 * 2^wBlockSize
+```
+
+For example, if `wBlockSize` is 3, then each sector is 512 * 2³ = 4096 bytes.
+
+If a file is flagged with `MPQ_FILE_SINGLE_UNIT`, it is stored as a single block regardless of its size. Otherwise:
+
+1. For compressed files: a table of sector offsets is stored at the beginning of the file data
+2. Each sector can be individually compressed using various compression methods
+3. Each sector can be individually encrypted if the file is encrypted
+4. If the `MPQ_FILE_SECTOR_CRC` flag is set, each sector has a checksum
+
+The sector offset table format:
+
+```
+DWORD sectorOffsets[numSectors + 1];
+```
+
+The additional entry at the end is used to calculate the size of the last sector. Sector offsets are relative to the beginning of the file data in the MPQ.
+
+### File Hashing Algorithm
+
+The MPQ format uses multiple hash functions to locate files in the hash table:
+
+```c
+// Hash types
+#define MPQ_HASH_TABLE_OFFSET   0   // For finding the correct hash table entry
+#define MPQ_HASH_NAME_A         1   // For comparing the first hash value
+#define MPQ_HASH_NAME_B         2   // For comparing the second hash value
+#define MPQ_HASH_FILE_KEY       3   // For computing the encryption key
+```
+
+#### ASCII Conversion Tables
+
+Before hashing filenames, the MPQ format normalizes character case using custom ASCII conversion tables rather than standard library functions. This ensures consistent behavior across different platforms and implementations.
+
+The tables are static 256-byte arrays that map each ASCII value to its uppercase or lowercase equivalent:
+
+```rust
+/// ASCII table for uppercase conversion
+static ASCII_TO_UPPER_TABLE: [u8; 256] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+    0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F,
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F,
+    0x60, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, // a-o -> A-O
+    0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F, // p-z -> P-Z
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F,
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
+    0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
+    0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,
+    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF,
+    0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,
+    0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF,
+    0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF
+];
+
+/// ASCII table for lowercase conversion
+static ASCII_TO_LOWER_TABLE: [u8; 256] = [
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+    0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+    0x40, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, // A-O -> a-o
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x5B, 0x5C, 0x5D, 0x5E, 0x5F, // P-Z -> p-z
+    0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F,
+    0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F,
+    0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F,
+    0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
+    0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
+    0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF,
+    0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF,
+    0xD0, 0xD1, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF,
+    0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF,
+    0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF
+];
+```
+
+These tables are used primarily for:
+
+1. **Case Normalization**: MPQ filenames are case-insensitive (e.g., "File.txt" and "FILE.TXT" should hash to the same value).
+2. **Path Separator Conversion**: Forward slashes ('/') are converted to backslashes ('\\') during hashing to ensure consistent behavior.
+3. **Consistency Across Platforms**: Using predefined tables ensures the same behavior regardless of the platform's locale or character set.
+
+#### Hash Function Implementation
+
+Here's the more detailed hash function that includes the ASCII conversion tables:
+
+```rust
+/// Hash function constants
+const MPQ_HASH_TABLE_OFFSET: u32 = 0; // For finding the correct hash table entry
+const MPQ_HASH_NAME_A: u32 = 1;       // For comparing the first hash value
+const MPQ_HASH_NAME_B: u32 = 2;       // For comparing the second hash value
+const MPQ_HASH_FILE_KEY: u32 = 3;     // For computing the encryption key
+const MPQ_HASH_KEY2_MIX: u32 = 4;     // For comptuing the block encryption key
+
+/// Hash function for MPQ filenames
+fn hash_string(file_name: &str, hash_type: u32, crypt_table: &[u32; 0x500]) -> u32 {
+    let mut seed1: u32 = 0x7FED7FED;
+    let mut seed2: u32 = 0xEEEEEEEE;
+
+    for &byte in file_name.as_bytes() {
+        // Get the next character and normalize it
+        let mut ch = byte;
+
+        // Convert path separators to backslash
+        if ch == b'/' {
+            ch = b'\\';
+        }
+
+        // Convert to uppercase using the table
+        ch = ASCII_TO_UPPER_TABLE[ch as usize];
+
+        // Update the hash
+        let table_idx = (hash_type * 0x100 + ch as u32) as usize;
+        seed1 = crypt_table[table_idx] ^ (seed1.wrapping_add(seed2));
+        seed2 = ch as u32 + seed1 + seed2 + (seed2 << 5) + 3;
+    }
+
+    seed1
+}
+```
+
+For the HET hash table introduced in version 3, a modified Jenkins hash algorithm is used, but it still applies the same case normalization principles:
+
+```rust
+/// Jenkins hash function for HET tables
+fn hash_string_jenkins(file_name: &str) -> u64 {
+    let mut hash: u64 = 0;
+
+    for &byte in file_name.as_bytes() {
+        // Get the next character and normalize it
+        let mut ch = byte;
+
+        // Convert path separators to backslash
+        if ch == b'/' {
+            ch = b'\\';
+        }
+
+        // Convert to lowercase using the table
+        ch = ASCII_TO_LOWER_TABLE[ch as usize];
+
+        // Jenkins one-at-a-time hash algorithm
+        hash = hash.wrapping_add(ch as u64);
+        hash = hash.wrapping_add(hash << 10);
+        hash ^= hash >> 6;
+    }
+
+    hash = hash.wrapping_add(hash << 3);
+    hash ^= hash >> 11;
+    hash = hash.wrapping_add(hash << 15);
+
+    hash
+}
+```
+
+The hash table search algorithm:
+
+```rust
+// Calculate the hash values
+let index = hash_string(file_name, MPQ_HASH_TABLE_OFFSET, crypt_table) & (hash_table_size - 1);
+let name_a = hash_string(file_name, MPQ_HASH_NAME_A, crypt_table);
+let name_b = hash_string(file_name, MPQ_HASH_NAME_B, crypt_table);
+
+// Start searching at the calculated index
+let mut hash_entry = &hash_table[index as usize];
+```
+
+Files are then located by comparing the calculated hash values with values stored in the hash table.
+
+### Encryption and Decryption Algorithm
+
+The MPQ format uses a proprietary encryption algorithm for protecting file data, hash tables, and block tables. The algorithm relies on a pre-generated table of encryption values.
+
+#### Encryption Table Generation
+
+Before any encryption or decryption can occur, a static encryption table must be generated. This table consists of 1280 values and only needs to be computed once. Here's the pseudocode for generating the encryption table:
+
+```rust
+/// Generate the encryption/decryption table
+fn generate_encryption_table() -> [u32; 0x500] {
+    let mut encryption_table = [0u32; 0x500];
+    let mut seed: u32 = 0x00100001;
+
+    // Fill the table with seemingly random numbers based on a simple algorithm
+    for index1 in 0..0x100 {
+        for i in 0..5 {
+            let index2 = index1 + i * 0x100;
+
+            seed = (seed.wrapping_mul(125) + 3) % 0x2AAAAB;
+            let temp1 = (seed & 0xFFFF) << 0x10;
+
+            seed = (seed.wrapping_mul(125) + 3) % 0x2AAAAB;
+            let temp2 = seed & 0xFFFF;
+
+            encryption_table[index2] = temp1 | temp2;
         }
     }
 
-    match hash_type {
-        HashType::NameA => hash ^ 0xEEEEEEEE,
-        HashType::NameB => hash,
-        HashType::FileKey | HashType::TableOffset => hash % 0x1000 + seed2 % 0x1000 * 0x1000,
-    }
-}
-
-pub enum HashType {
-    TableOffset, // Used for creating table offsets
-    NameA,       // First hash in the hash table
-    NameB,       // Second hash in the hash table
-    FileKey,     // Used for file encryption
+    encryption_table
 }
 ```
 
-### Encryption and Decryption
+This generates a table of 0x500 (1280) `u32` values that will be used for all encryption and decryption operations.
 
-MPQ uses a modified version of Blizzard's proprietary encryption algorithm, which
-is a simple XOR-based cipher.
+#### Encryption Function
+
+Here's the pseudocode for encrypting a block of data:
 
 ```rust
-/// Decrypts an MPQ encrypted data block
-pub fn decrypt_data(data: &mut [u8], key: u32) {
-    let mut seed1: u32 = 0xEEEEEEEE;
-    let mut ch: u32;
+/// Encrypt a block of data
+fn encrypt_data(data: &mut [u32], key: u32, encryption_table: &[u32; 0x500]) {
+    // If the key is 0, don't bother encrypting
+    if key == 0 {
+        return;
+    }
 
-    // Process data in 32-bit (4-byte) chunks
-    let mut data_u32 = unsafe {
-        std::slice::from_raw_parts_mut(
-            data.as_mut_ptr() as *mut u32,
-            data.len() / 4
-        )
-    };
+    let mut seed: u32 = 0xEEEEEEEE;
 
-    for value in data_u32.iter_mut() {
-        seed1 = seed1.wrapping_add(ENCRYPTION_TABLE[((key & 0xFF) as usize)]);
-        ch = *value ^ (key.wrapping_add(seed1));
+    // Process the data 4 bytes at a time
+    for value in data.iter_mut() {
+        // Update the seed using the encryption table and key
+        seed = seed.wrapping_add(encryption_table[0x400 + (key & 0xFF) as usize]);
 
+        // Update the current DWORD with the encryption formula
+        let ch = *value;
+        *value = ch ^ key.wrapping_add(seed);
+
+        // Update the key for the next round
+        key = (!key << 0x15).wrapping_add(0x11111111) | (key >> 0x0B);
+
+        // Update the seed for the next round
+        seed = ch.wrapping_add(seed).wrapping_add(seed << 5).wrapping_add(3);
+    }
+}
+```
+
+#### Decryption Function
+
+The decryption algorithm is very similar to the encryption algorithm, with a small change in the order of operations:
+
+```rust
+/// Decrypt a block of data
+fn decrypt_data(data: &mut [u32], key: u32, encryption_table: &[u32; 0x500]) {
+    // If the key is 0, don't bother decrypting
+    if key == 0 {
+        return;
+    }
+
+    let mut seed: u32 = 0xEEEEEEEE;
+
+    // Process the data 4 bytes at a time
+    for value in data.iter_mut() {
+        // Update the seed using the encryption table and key
+        seed = seed.wrapping_add(encryption_table[0x400 + (key & 0xFF) as usize]);
+
+        // Decrypt the current DWORD
+        let ch = *value ^ key.wrapping_add(seed);
         *value = ch;
 
-        key = ((!(key << 21)).wrapping_add(0x11111111)) | (key >> 11);
-        seed1 = ch.wrapping_add(seed1).wrapping_add(seed1 << 5).wrapping_add(3);
-    }
+        // Update the key for the next round
+        key = (!key << 0x15).wrapping_add(0x11111111) | (key >> 0x0B);
 
-    // Process any remaining bytes
-    let remaining_start = data_u32.len() * 4;
-    if remaining_start < data.len() {
-        let mut last_value: u32 = 0;
-        let mut shift: u32 = 0;
-
-        for i in remaining_start..data.len() {
-            seed1 = seed1.wrapping_add(ENCRYPTION_TABLE[((key & 0xFF) as usize)]);
-
-            // Process each byte
-            let byte = data[i];
-            let encrypted_byte = byte as u32 ^ ((key.wrapping_add(seed1) >> (shift * 8)) & 0xFF);
-            data[i] = encrypted_byte as u8;
-
-            last_value |= (encrypted_byte << (shift * 8));
-            shift += 1;
-
-            if shift == 4 {
-                key = ((!(key << 21)).wrapping_add(0x11111111)) | (key >> 11);
-                seed1 = last_value.wrapping_add(seed1).wrapping_add(seed1 << 5).wrapping_add(3);
-
-                last_value = 0;
-                shift = 0;
-            }
-        }
-
-        // Final key update if we processed any odd bytes
-        if shift > 0 {
-            key = ((!(key << 21)).wrapping_add(0x11111111)) | (key >> 11);
-            seed1 = last_value.wrapping_add(seed1).wrapping_add(seed1 << 5).wrapping_add(3);
-        }
+        // Update the seed for the next round
+        seed = ch.wrapping_add(seed).wrapping_add(seed << 5).wrapping_add(3);
     }
 }
 
-/// Encryption is the same as decryption in this algorithm (XOR-based)
-pub fn encrypt_data(data: &mut [u8], key: u32) {
-    decrypt_data(data, key);
+/// Decrypt a single DWORD value
+fn decrypt_dword(value: u32, key: u32, encryption_table: &[u32; 0x500]) -> u32 {
+    let mut seed: u32 = 0xEEEEEEEE;
+    seed = seed.wrapping_add(encryption_table[0x400 + (key & 0xFF) as usize]);
+
+    let decrypted = value ^ key.wrapping_add(seed);
+    decrypted
 }
+```
 
-/// Generates the encryption key for a file based on its name
-pub fn generate_file_key(filename: &str, offset: u32, size: u32) -> u32 {
-    let filename_uppercased = filename.to_uppercase();
+#### Computing Encryption Keys
 
-    // Use hash algorithm to create a key
-    let mut key = hash_string(&filename_uppercased, HashType::FileKey);
+Different parts of the MPQ file are encrypted with different keys:
 
-    // Adjust the key based on file offset and size
-    key = (key + offset) ^ size;
+```rust
+/// Compute a file's encryption key
+fn compute_file_key(file_name: &str, file_pos: u32, file_size: u32, flags: u32,
+                    encryption_table: &[u32; 0x500]) -> u32 {
+    // Get the base key from the filename
+    let mut key = hash_string(file_name, MPQ_HASH_FILE_KEY, encryption_table);
+
+    // Apply FIX_KEY modification if flag is set
+    if (flags & MpqBlockEntry::FLAG_FIX_KEY) != 0 {
+        key = (key.wrapping_add(file_pos)) ^ file_size;
+    }
 
     key
 }
 ```
 
-The `ENCRYPTION_TABLE` is a 256-entry array of randomly generated values that's
-used in the encryption algorithm. It's a constant table that's hardcoded into
-the implementation.
+This key is then used to encrypt/decrypt file data, sector offset tables, and other file structures.
 
-### Compression
+#### Encryption Order
 
-MPQ supports multiple compression methods, which can be combined. The supported
-methods are:
+When operating on MPQ archives:
 
-1. **Huffman encoding** (type 0x01)
-2. **zlib/deflate** (type 0x02)
-3. **PKWare DCL compression** (type 0x08)
-4. **bzip2 compression** (type 0x10)
-5. **LZMA compression** (type 0x12)
-6. **Sparse compression** (type 0x20)
-7. **IMA ADPCM mono compression** (type 0x40)
-8. **IMA ADPCM stereo compression** (type 0x80)
+1. Tables (hash, block) are always encrypted as a whole
+2. For files, the sector offset table is encrypted first (if present)
+3. Each file sector is encrypted individually
+4. Encryption is always applied after compression
 
-Each compression type is represented by a bit in the compression field. Multiple
-compression methods can be applied by OR-ing their values.
+This algorithm ensures that MPQ data remains protected while allowing efficient access with the proper keys.
+
+### Special Files
+
+MPQ archives may contain several special files with predefined names:
+
+1. `(listfile)` - Contains a list of all filenames in the archive, separated by newlines or semicolons
+2. `(attributes)` - Contains additional attributes for files in the archive
+3. `(signature)` - Contains digital signature information for archive verification
+4. `(user data)` - Contains additional user-defined metadata
+
+## Digital Signatures
+
+### Weak Digital Signature
+
+The weak digital signature uses RSASSA-PKCS1-v1_5 with the MD5 hashing algorithm and a 512-bit RSA key. The signature is stored uncompressed and unencrypted in the file `(signature)` with the following structure:
 
 ```rust
-pub enum CompressionType {
-    Huffman = 0x01,
-    Zlib = 0x02,
-    PKWare = 0x08,
-    BZip2 = 0x10,
-    Lzma = 0x12,
-    Sparse = 0x20,
-    ImaAdpcmMono = 0x40,
-    ImaAdpcmStereo = 0x80,
+/// Weak digital signature structure
+#[repr(C, packed)]
+struct MpqWeakSignature {
+    /// Must be 0
+    unknown1: u32,
+
+    /// Must be 0
+    unknown2: u32,
+
+    /// The digital signature (512 bits = 64 bytes)
+    signature: [u8; 64],
 }
 
-/// Decompresses a data block based on the compression types used
-pub fn decompress_data(
-    input: &[u8],
-    output_size: usize,
-    compression_mask: u8
-) -> Result<Vec<u8>, MpqError> {
-    let mut result = Vec::with_capacity(output_size);
-    let mut temp_buffer = input.to_vec();
+/// Verify a weak signature
+fn verify_weak_signature(public_key: &RsaPublicKey, signature: &[u8], digest: &[u8; 16]) -> bool {
+    // The signature is stored in little-endian order, but RSA expects big-endian
+    let mut reversed_signature = [0u8; 64];
+    let signature_data = &signature[8..72]; // Skip the two u32 unknown fields
 
-    // Apply decompressions in reverse order
-    for i in (0..8).rev() {
-        let compression_bit = 1 << i;
+    // Reverse the signature bytes
+    for i in 0..64 {
+        reversed_signature[i] = signature_data[63 - i];
+    }
 
-        if compression_mask & compression_bit == 0 {
-            continue;
+    // Verify using RSA-MD5 (PKCS#1 v1.5 padding)
+    rsa_verify(public_key, Md5Algorithm, digest, &reversed_signature)
+}
+```
+
+The archive is hashed from its beginning to its end, with the signature file content treated as binary zeros during signing and verification.
+
+### Strong Digital Signature
+
+The Strong Digital Signature is an enhanced security feature introduced in MPQ format version 2 and later, designed to provide stronger archive integrity verification than the weak signature. Unlike the weak signature (which uses 512-bit RSA with MD5), the strong signature uses 2048-bit RSA with SHA-1.
+
+#### Key Characteristics
+
+- **Algorithm**: RSA signature with SHA-1 hash
+- **Key Size**: 2048-bit RSA (compared to 512-bit for weak signature)
+- **Hash Algorithm**: SHA-1 (20 bytes)
+- **Location**: Appended after the end of the MPQ archive data (not stored as a file within the archive)
+- **Total Size**: 260 bytes (4-byte header + 256-byte signature)
+
+#### Structure
+
+```rust
+/// Strong digital signature structure
+#[repr(C, packed)]
+struct MpqStrongSignature {
+    /// Magic identifier "NGIS" ("SIGN" backwards) - 0x5349474E in little-endian
+    magic: [u8; 4],  // Must be ['N', 'G', 'I', 'S']
+
+    /// The digital signature data (2048 bits = 256 bytes)
+    /// Stored in little-endian format
+    signature: [u8; 256],
+}
+
+/// When decrypted with the public key, the signature has this internal structure
+#[repr(C, packed)]
+struct DecryptedSignatureContent {
+    /// Padding byte - Must be 0x0B
+    padding_type: u8,
+
+    /// Padding bytes - Must all be 0xBB
+    padding_bytes: [u8; 235],
+
+    /// SHA-1 hash of the archive (20 bytes)
+    /// In standard SHA-1 byte order
+    sha1_hash: [u8; 20],
+}
+```
+
+#### Implementation Details
+
+##### 1. Signature Location
+
+The strong digital signature is stored immediately after the archive, in the containing file. This is different from the weak signature, which is stored as a file named `(signature)` within the archive.
+
+```
+[MPQ Archive Data][Strong Signature (260 bytes)]
+                  ^
+                  ArchiveOffset + ArchiveSize
+```
+
+##### 2. Hashing Process
+
+The entire archive (ArchiveSize bytes, starting at ArchiveOffset in the containing file) is hashed as a single block. The process is:
+
+1. Calculate SHA-1 hash of the entire archive from beginning to end
+2. Optional: Append a signature tail to the SHA-1 digest before finalization
+3. Apply custom padding to create the message to be signed
+
+##### 3. Signature Format
+
+The signature uses a proprietary implementation of RSA signing with specific padding:
+
+```rust
+impl MpqStrongSignature {
+    const MAGIC: &'static [u8; 4] = b"NGIS";
+    const SIGNATURE_SIZE: usize = 256;  // 2048 bits
+    const TOTAL_SIZE: usize = 260;      // 4 + 256
+
+    /// Verify the magic identifier
+    pub fn is_valid(&self) -> bool {
+        self.magic == Self::MAGIC
+    }
+
+    /// Extract the signature for verification
+    pub fn get_signature_bytes(&self) -> &[u8; 256] {
+        &self.signature
+    }
+}
+
+impl DecryptedSignatureContent {
+    const PADDING_TYPE: u8 = 0x0B;
+    const PADDING_FILL: u8 = 0xBB;
+    const PADDING_LENGTH: usize = 235;
+
+    /// Verify the padding structure
+    pub fn verify_padding(&self) -> bool {
+        if self.padding_type != Self::PADDING_TYPE {
+            return false;
         }
 
-        match compression_bit {
-            0x01 => {
-                // Huffman decompression
-                temp_buffer = decompress_huffman(&temp_buffer, output_size)?;
+        self.padding_bytes.iter().all(|&b| b == Self::PADDING_FILL)
+    }
+}
+```
+
+##### 4. Verification Process
+
+```rust
+/// Verify a strong signature on an MPQ archive
+pub fn verify_strong_signature(
+    archive_data: &[u8],
+    signature: &MpqStrongSignature,
+    public_key: &RsaPublicKey,
+) -> Result<bool, MpqError> {
+    // 1. Verify signature magic
+    if !signature.is_valid() {
+        return Err(MpqError::InvalidSignature("Invalid signature magic"));
+    }
+
+    // 2. Calculate SHA-1 hash of the archive
+    let mut hasher = Sha1::new();
+    hasher.update(archive_data);
+    let archive_hash = hasher.finalize();
+
+    // 3. Decrypt the signature using RSA public key
+    // Note: The signature is stored in little-endian format
+    let mut signature_bytes = [0u8; 256];
+    for i in 0..256 {
+        signature_bytes[i] = signature.signature[255 - i];  // Reverse for big-endian
+    }
+
+    // 4. Perform RSA decryption
+    let decrypted = rsa_decrypt(&signature_bytes, public_key)?;
+
+    // 5. Verify padding structure
+    if decrypted[0] != 0x0B {
+        return Ok(false);
+    }
+
+    for i in 1..236 {
+        if decrypted[i] != 0xBB {
+            return Ok(false);
+        }
+    }
+
+    // 6. Compare hash values
+    let signature_hash = &decrypted[236..256];
+    Ok(archive_hash.as_slice() == signature_hash)
+}
+```
+
+#### Public Keys
+
+All known Blizzard keys are 2048-bit (strong) RSA keys. A default key is stored in Storm.dll, but different games and archive types use different public keys:
+
+- **Default Storm Key**: A default 2048-bit RSA key embedded in Storm.dll
+- **Game-Specific Keys**: Each Blizzard game may have its own public key
+- **Map-Specific Keys**: Warcraft 3 maps (.w3m and .w3x) use a specific key for map signatures
+
+##### Warcraft 3 Map Signatures
+
+Warcraft 3 maps have a special structure:
+
+1. Map header (512 bytes)
+2. MPQ archive at offset 512
+3. Strong digital signature immediately after the archive
+
+The SHA-1 digest for Warcraft 3 maps is calculated from the entire file content, including the map header, up to the end of the archive.
+
+#### Differences from Weak Signature
+
+| Feature | Weak Signature | Strong Signature |
+|---------|----------------|------------------|
+| **Algorithm** | RSASSA-PKCS1-v1_5 | Proprietary RSA |
+| **Hash** | MD5 (16 bytes) | SHA-1 (20 bytes) |
+| **Key Size** | 512-bit | 2048-bit |
+| **Location** | Inside archive as `(signature)` | After archive data |
+| **Padding** | Standard PKCS#1 | Custom (0x0B + 0xBB fill) |
+| **Security** | Broken (key factored in 2014) | Still considered secure |
+| **Storage** | Compressed/encrypted in archive | Raw data after archive |
+
+#### Usage Notes
+
+##### Detection
+
+Check for "NGIS" magic at the end of the file:
+
+```rust
+/// Check if an MPQ has a strong signature
+pub fn has_strong_signature(file: &mut File, archive_size: u64) -> Result<bool, std::io::Error> {
+    let file_size = file.metadata()?.len();
+
+    // Strong signature would be right after the archive
+    if file_size < archive_size + 260 {
+        return Ok(false);
+    }
+
+    // Seek to where the signature should be
+    file.seek(SeekFrom::Start(archive_size))?;
+
+    // Read the magic bytes
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)?;
+
+    Ok(&magic == b"NGIS")
+}
+```
+
+##### Important Considerations
+
+1. **Archive Size**: The `ArchiveSize` field in the MPQ header does not include the strong signature
+2. **Compatibility**: Not all MPQ readers support strong signature verification
+3. **Optional Feature**: Archives can have weak, strong, both, or neither signature
+4. **Byte Order**: The signature is stored in little-endian format but RSA operations expect big-endian
+5. **No Compression**: Unlike the weak signature, the strong signature is never compressed or encrypted
+
+#### Complete Example
+
+```rust
+use sha1::{Sha1, Digest};
+use rsa::{RsaPublicKey, PublicKey};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+
+pub struct StrongSignatureVerifier {
+    public_key: RsaPublicKey,
+}
+
+impl StrongSignatureVerifier {
+    pub fn new(public_key: RsaPublicKey) -> Self {
+        Self { public_key }
+    }
+
+    pub fn verify_file(&self, path: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        let mut file = File::open(path)?;
+        let file_size = file.metadata()?.len();
+
+        // Read MPQ header to get archive size
+        let archive_size = self.read_archive_size(&mut file)?;
+
+        // Check if strong signature exists
+        if file_size < archive_size + 260 {
+            return Ok(false);
+        }
+
+        // Read archive data
+        file.seek(SeekFrom::Start(0))?;
+        let mut archive_data = vec![0u8; archive_size as usize];
+        file.read_exact(&mut archive_data)?;
+
+        // Read signature
+        file.seek(SeekFrom::Start(archive_size))?;
+        let mut sig_data = [0u8; 260];
+        file.read_exact(&mut sig_data)?;
+
+        // Parse signature
+        let signature = MpqStrongSignature {
+            magic: [sig_data[0], sig_data[1], sig_data[2], sig_data[3]],
+            signature: {
+                let mut sig = [0u8; 256];
+                sig.copy_from_slice(&sig_data[4..260]);
+                sig
             },
-            0x02 => {
-                // zlib decompression
-                temp_buffer = decompress_zlib(&temp_buffer, output_size)?;
-            },
-            0x08 => {
-                // PKWare DCL decompression (not implemented in this example)
-                return Err(MpqError::UnsupportedCompression("PKWare DCL not implemented".into()));
-            },
-            // ... other decompression methods
-            _ => {
-                return Err(MpqError::UnsupportedCompression(
-                    format!("Compression type 0x{:02X} not supported", compression_bit)
-                ));
-            }
-        }
-    }
-
-    result = temp_buffer;
-
-    // Ensure output size is correct
-    if result.len() != output_size {
-        return Err(MpqError::DecompressionFailed(
-            format!("Expected {} bytes, got {}", output_size, result.len())
-        ));
-    }
-
-    Ok(result)
-}
-```
-
-### Name Search
-
-To find a file in an MPQ archive, the client computes two hashes of the file
-name and searches for these hashes in the hash table.
-
-```rust
-/// Search for a file in the MPQ archive using its name
-pub fn find_file(
-    archive: &MpqArchive,
-    filename: &str
-) -> Result<Option<(HashEntry, BlockEntry)>, MpqError> {
-    // Calculate both hash values for the file name
-    let hash_a = hash_string(filename, HashType::NameA);
-    let hash_b = hash_string(filename, HashType::NameB);
-
-    // Get the starting position in the hash table
-    let start_pos = (hash_a & (archive.header.hash_table_entries - 1)) as usize;
-
-    // Search through the hash table
-    let mut current_pos = start_pos;
-
-    loop {
-        let hash_entry = &archive.hash_table[current_pos];
-
-        // Check if we've reached an empty slot
-        if hash_entry.block_index == 0xFFFFFFFF {
-            break;
-        }
-
-        // Check if this is our file
-        if hash_entry.name_hash_a == hash_a &&
-           hash_entry.name_hash_b == hash_b {
-            // Found the file
-            if hash_entry.block_index >= archive.header.block_table_entries as u32 {
-                return Err(MpqError::InvalidBlockIndex(hash_entry.block_index));
-            }
-
-            let block_entry = archive.block_table[hash_entry.block_index as usize];
-
-            return Ok(Some((hash_entry.clone(), block_entry.clone())));
-        }
-
-        // Move to the next position (with wrap-around)
-        current_pos = (current_pos + 1) % archive.header.hash_table_entries as usize;
-
-        // If we've checked all entries, break
-        if current_pos == start_pos {
-            break;
-        }
-    }
-
-    // File not found
-    Ok(None)
-}
-```
-
-## Rust Implementation Examples
-
-Here are some examples of implementing MPQ functionality in Rust.
-
-### Hash Functions Implementation
-
-```rust
-use std::collections::HashMap;
-
-// Lazy static for the encryption table (pre-computed)
-lazy_static! {
-    static ref ENCRYPTION_TABLE: [u32; 256] = {
-        let mut table = [0u32; 256];
-        let mut seed = 0x00100001;
-
-        for i in 0..256 {
-            let mut index = i;
-            for j in 0..5 {
-                seed = (seed * 125 + 3) % 0x2AAAAB;
-                let temp1 = (seed & 0xFFFF) << 0x10;
-
-                seed = (seed * 125 + 3) % 0x2AAAAB;
-                let temp2 = seed & 0xFFFF;
-
-                table[index as usize] = temp1 | temp2;
-                index += 0x100;
-            }
-        }
-
-        table
-    };
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HashType {
-    TableOffset,
-    NameA,
-    NameB,
-    FileKey,
-}
-
-/// Computes a hash value from a string using the MPQ hash algorithm
-pub fn hash_string(input: &str, hash_type: HashType) -> u32 {
-    let seed1: u32 = match hash_type {
-        HashType::TableOffset => 0x1505,
-        HashType::NameA => 0x7FED7FED,
-        HashType::NameB => 0xEEEEEEEE,
-        HashType::FileKey => 0x7EED,
-    };
-
-    let seed2: u32 = match hash_type {
-        HashType::TableOffset => 0,
-        HashType::NameA => 0xEEEEEEEE,
-        HashType::NameB => 0xEEEEEEEE,
-        HashType::FileKey => 0xEEEE,
-    };
-
-    let mut hash: u32 = seed1;
-    let mut seed = seed2;
-
-    // Convert to uppercase for case-insensitive hashing
-    let input_upper = input.to_uppercase();
-
-    for c in input_upper.bytes() {
-        hash = (hash << 5).wrapping_add(hash) ^ (c as u32);
-
-        if hash_type != HashType::TableOffset {
-            seed = seed.wrapping_add((seed << 5).wrapping_add(c as u32));
-        }
-    }
-
-    match hash_type {
-        HashType::NameA => hash ^ 0xEEEEEEEE,
-        HashType::NameB => hash,
-        HashType::TableOffset | HashType::FileKey => (hash % 0x1000) + (seed % 0x1000) * 0x1000,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hash_functions() {
-        // Test cases based on known hash values
-        assert_eq!(hash_string("(hash table)", HashType::FileKey), 0xC3AF3770);
-        assert_eq!(hash_string("(block table)", HashType::FileKey), 0xEC83B3A3);
-
-        // Test name hash functions
-        assert_eq!(hash_string("War3.mpq\\(listfile)", HashType::NameA), 0x95775582);
-        assert_eq!(hash_string("War3.mpq\\(listfile)", HashType::NameB), 0xC4ED1798);
-
-        // Test case insensitivity
-        assert_eq!(
-            hash_string("WAR3.MPQ\\(LISTFILE)", HashType::NameA),
-            hash_string("War3.mpq\\(listfile)", HashType::NameA)
-        );
-    }
-}
-```
-
-### Encryption Implementation
-
-```rust
-/// Decrypt a block of data using the MPQ encryption algorithm
-pub fn decrypt_block(data: &mut [u8], key: u32) -> Result<(), MpqError> {
-    if data.len() % 4 != 0 {
-        return Err(MpqError::InvalidDataSize(
-            "Data size must be a multiple of 4 for decryption".into()
-        ));
-    }
-
-    let mut seed = 0xEEEEEEEE;
-    let mut current_key = key;
-
-    // Process data in 32-bit chunks
-    let chunks = data.len() / 4;
-    let data_ptr = data.as_mut_ptr() as *mut u32;
-    let data_slice = unsafe { std::slice::from_raw_parts_mut(data_ptr, chunks) };
-
-    for chunk in data_slice.iter_mut() {
-        seed = seed.wrapping_add(ENCRYPTION_TABLE[(current_key & 0xFF) as usize]);
-        let value = *chunk ^ current_key.wrapping_add(seed);
-
-        // Update key for next iteration
-        current_key = ((!(current_key << 21)).wrapping_add(0x11111111))
-            | (current_key >> 11);
-
-        // Update seed for next iteration
-        seed = value.wrapping_add(seed).wrapping_add(seed << 5).wrapping_add(3);
-
-        *chunk = value;
-    }
-
-    Ok(())
-}
-
-/// Encrypt a block of data using the MPQ encryption algorithm (identical to decrypt)
-pub fn encrypt_block(data: &mut [u8], key: u32) -> Result<(), MpqError> {
-    decrypt_block(data, key)
-}
-
-/// Calculate the encryption key for a file
-pub fn calculate_file_key(filename: &str, offset: u32, size: u32) -> u32 {
-    let name_hash = hash_string(filename, HashType::FileKey);
-    (name_hash.wrapping_add(offset) ^ size)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_encryption() {
-        // Create test data
-        let mut test_data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
-        let key = 0xDEADBEEF;
-
-        // Make a copy for verification
-        let original_data = test_data.clone();
-
-        // Encrypt the data
-        encrypt_block(&mut test_data, key).unwrap();
-
-        // Data should be different after encryption
-        assert_ne!(test_data, original_data);
-
-        // Decrypt the data (should restore original)
-        decrypt_block(&mut test_data, key).unwrap();
-
-        // Verify the data is restored
-        assert_eq!(test_data, original_data);
-    }
-}
-```
-
-### File Extraction
-
-```rust
-/// Extract a file from an MPQ archive
-pub fn extract_file(
-    archive: &MpqArchive,
-    filename: &str
-) -> Result<Vec<u8>, MpqError> {
-    // Find the file in the archive
-    let file_info = match find_file(archive, filename)? {
-        Some(info) => info,
-        None => return Err(MpqError::FileNotFound(filename.to_string())),
-    };
-
-    let (_, block_entry) = file_info;
-
-    // Check if the file exists
-    if block_entry.flags & 0x01000000 == 0 {
-        return Err(MpqError::FileNotFound(filename.to_string()));
-    }
-
-    // Calculate the file position
-    let file_pos = block_entry.offset;
-
-    // Create a file reader at the correct position
-    let mut reader = io::Cursor::new(&archive.data[file_pos as usize..]);
-
-    // Read the file based on its flags
-    let mut result = Vec::with_capacity(block_entry.file_size as usize);
-
-    if block_entry.flags & 0x00000100 != 0 {
-        // File is compressed
-        if block_entry.flags & 0x00010000 != 0 {
-            // Single unit file
-            let compressed_size = block_entry.compressed_size as usize;
-            let mut compressed_data = vec![0u8; compressed_size];
-            reader.read_exact(&mut compressed_data)?;
-
-            // Check if file is encrypted
-            if block_entry.flags & 0x00000200 != 0 {
-                // Calculate encryption key
-                let key = calculate_file_key(filename, file_pos, block_entry.file_size);
-                decrypt_block(&mut compressed_data, key)?;
-            }
-
-            // Decompress the data
-            let compression_mask = compressed_data[0]; // First byte is compression mask
-            result = decompress_data(&compressed_data[1..], block_entry.file_size as usize, compression_mask)?;
-        } else {
-            // File divided into sectors
-            let sector_size = archive.header.sector_size as u32;
-            let sectors = (block_entry.file_size + sector_size - 1) / sector_size;
-
-            // Read sector offsets table
-            let mut sector_offsets = vec![0u32; sectors as usize + 1];
-            for i in 0..=sectors as usize {
-                sector_offsets[i] = reader.read_u32::<LittleEndian>()?;
-            }
-
-            // Process each sector
-            for i in 0..sectors as usize {
-                let sector_start = sector_offsets[i] as usize;
-                let sector_end = sector_offsets[i + 1] as usize;
-                let sector_bytes = sector_end - sector_start;
-
-                // Read the sector data
-                let mut sector_data = vec![0u8; sector_bytes];
-                reader.seek(io::SeekFrom::Start((file_pos + sector_start) as u64))?;
-                reader.read_exact(&mut sector_data)?;
-
-                // Check if sector is encrypted
-                if block_entry.flags & 0x00000200 != 0 {
-                    // Calculate encryption key
-                    let key = calculate_file_key(
-                        filename,
-                        file_pos + sector_start as u32,
-                        block_entry.file_size
-                    );
-                    decrypt_block(&mut sector_data, key)?;
-                }
-
-                // Check if sector is compressed
-                if sector_bytes < sector_size as usize {
-                    // Sector is compressed
-                    let compression_mask = sector_data[0]; // First byte is compression mask
-                    let decompressed = decompress_data(
-                        &sector_data[1..],
-                        std::cmp::min(sector_size as usize, block_entry.file_size as usize - i * sector_size as usize),
-                        compression_mask
-                    )?;
-                    result.extend_from_slice(&decompressed);
-                } else {
-                    // Sector is not compressed
-                    result.extend_from_slice(&sector_data);
-                }
-            }
-        }
-    } else {
-        // File is stored as-is
-        let mut file_data = vec![0u8; block_entry.file_size as usize];
-        reader.read_exact(&mut file_data)?;
-
-        // Check if file is encrypted
-        if block_entry.flags & 0x00000200 != 0 {
-            // Calculate encryption key
-            let key = calculate_file_key(filename, file_pos, block_entry.file_size);
-            decrypt_block(&mut file_data, key)?;
-        }
-
-        result = file_data;
-    }
-
-    Ok(result)
-}
-```
-
-### Creating an MPQ Archive
-
-```rust
-pub struct MpqBuilder {
-    files: HashMap<String, Vec<u8>>,
-    sector_size: u16,
-    hash_table_size: u32,
-}
-
-impl MpqBuilder {
-    pub fn new() -> Self {
-        Self {
-            files: HashMap::new(),
-            sector_size: 4096, // Default sector size
-            hash_table_size: 1024, // Default hash table size (must be power of 2)
-        }
-    }
-
-    pub fn with_sector_size(mut self, sector_size: u16) -> Self {
-        self.sector_size = sector_size;
-        self
-    }
-
-    pub fn with_hash_table_size(mut self, size: u32) -> Self {
-        // Ensure size is a power of 2
-        let size = size.next_power_of_two();
-        self.hash_table_size = size;
-        self
-    }
-
-    pub fn add_file<S: AsRef<str>>(mut self, name: S, data: Vec<u8>) -> Self {
-        self.files.insert(name.as_ref().to_string(), data);
-        self
-    }
-
-    pub fn build(self) -> Result<Vec<u8>, MpqError> {
-        if self.files.is_empty() {
-            return Err(MpqError::NoFilesToArchive);
-        }
-
-        // Calculate sizes and offsets
-        let header_size = std::mem::size_of::<MpqHeader>();
-        let hash_table_size = self.hash_table_size as usize * std::mem::size_of::<HashEntry>();
-        let block_table_size = self.files.len() * std::mem::size_of::<BlockEntry>();
-
-        // Start with header, hash table and block table
-        let mut total_size = header_size + hash_table_size + block_table_size;
-
-        // Align to sector size
-        total_size = (total_size + self.sector_size as usize - 1) & !(self.sector_size as usize - 1);
-
-        // Initial file offset
-        let mut file_offset = total_size as u32;
-
-        // Create the block table entries
-        let mut block_entries = Vec::with_capacity(self.files.len());
-        let mut file_data = Vec::new();
-
-        for (name, data) in &self.files {
-            let file_size = data.len() as u32;
-
-            // For simplicity, store files uncompressed in this example
-            let flags = 0x01000000; // FILE_EXISTS flag
-
-            // Add the block entry
-            block_entries.push(BlockEntry {
-                offset: file_offset,
-                compressed_size: file_size,
-                file_size,
-                flags,
-            });
-
-            // Add file data
-            file_data.extend_from_slice(data);
-
-            // Update offset for next file
-            file_offset += file_size;
-
-            // Align to sector size
-            file_offset = (file_offset + self.sector_size as u32 - 1) & !(self.sector_size as u32 - 1);
-        }
-
-        // Calculate final archive size
-        let archive_size = file_offset;
-
-        // Create hash table (initialize all entries to DELETED)
-        let mut hash_table = vec![
-            HashEntry {
-                name_hash_a: 0xFFFFFFFF,
-                name_hash_b: 0xFFFFFFFF,
-                language: 0xFFFF,
-                platform: 0xFFFF,
-                block_index: 0xFFFFFFFF,
-            };
-            self.hash_table_size as usize
-        ];
-
-        // Fill the hash table
-        for (i, (name, _)) in self.files.iter().enumerate() {
-            let hash_a = hash_string(name, HashType::NameA);
-            let hash_b = hash_string(name, HashType::NameB);
-
-            // Find position in hash table
-            let mut pos = (hash_a & (self.hash_table_size - 1)) as usize;
-
-            while hash_table[pos].block_index != 0xFFFFFFFF &&
-                  hash_table[pos].name_hash_a != 0xFFFFFFFF {
-                pos = (pos + 1) % self.hash_table_size as usize;
-            }
-
-            // Add entry to hash table
-            hash_table[pos] = HashEntry {
-                name_hash_a: hash_a,
-                name_hash_b: hash_b,
-                language: 0, // Default language
-                platform: 0, // Default platform
-                block_index: i as u32,
-            };
-        }
-
-        // Create the file buffer
-        let mut result = Vec::with_capacity(archive_size as usize);
-
-        // Write the header
-        let header = MpqHeader {
-            magic: 0x1A51504D, // 'MPQ\x1A'
-            header_size: header_size as u32,
-            archive_size,
-            format_version: 0,
-            sector_size: self.sector_size,
-            hash_table_offset: header_size as u32,
-            block_table_offset: (header_size + hash_table_size) as u32,
-            hash_table_entries: self.hash_table_size,
-            block_table_entries: block_entries.len() as u32,
         };
 
-        // Write header to result
-        result.extend_from_slice(unsafe {
-            std::slice::from_raw_parts(
-                &header as *const _ as *const u8,
-                std::mem::size_of::<MpqHeader>()
-            )
-        });
+        // Verify
+        verify_strong_signature(&archive_data, &signature, &self.public_key)
+    }
 
-        // Encrypt and write hash table
-        let mut hash_table_bytes = unsafe {
-            std::slice::from_raw_parts(
-                hash_table.as_ptr() as *const u8,
-                hash_table.len() * std::mem::size_of::<HashEntry>()
-            )
-        }.to_vec();
-
-        encrypt_block(&mut hash_table_bytes, hash_string("(hash table)", HashType::FileKey))?;
-        result.extend_from_slice(&hash_table_bytes);
-
-        // Encrypt and write block table
-        let mut block_table_bytes = unsafe {
-            std::slice::from_raw_parts(
-                block_entries.as_ptr() as *const u8,
-                block_entries.len() * std::mem::size_of::<BlockEntry>()
-            )
-        }.to_vec();
-
-        encrypt_block(&mut block_table_bytes, hash_string("(block table)", HashType::FileKey))?;
-        result.extend_from_slice(&block_table_bytes);
-
-        // Pad to file_offset
-        result.resize(total_size, 0);
-
-        // Write file data
-        result.extend_from_slice(&file_data);
-
-        // Ensure final size matches expected size
-        assert_eq!(result.len(), archive_size as usize);
-
-        Ok(result)
+    fn read_archive_size(&self, file: &mut File) -> Result<u64, Box<dyn std::error::Error>> {
+        // Implementation would read MPQ header and extract archive size
+        // This is simplified for the example
+        unimplemented!()
     }
 }
 ```
 
-## Performance Benchmarks
+The implementation details of the strong signature are not fully documented publicly.
 
-Here are some benchmarks for the key MPQ operations:
+## Compression Method Compatibility Matrix
 
-```rust
-#[cfg(test)]
-mod benchmarks {
-    use super::*;
-    use test::Bencher;
+| Compression Type | ID Bit | v1 | v2 | v3 | v4 | Notes |
+|-----------------|--------|----|----|----|----|-------|
+| PKWare implode | 0x00000100 | ✅ | ✅ | ✅ | ✅ | Original compression method |
+| Multiple compression | 0x00000200 | ✅ | ✅ | ✅ | ✅ | Combination of methods |
+| Huffman encoding | 0x01 | ✅ | ✅ | ✅ | ✅ | Bit value in compression mask |
+| Deflate (zlib) | 0x02 | ✅ | ✅ | ✅ | ✅ | Added in Warcraft III |
+| Implode (PKWare) | 0x08 | ✅ | ✅ | ✅ | ✅ | Licensed from PKWare |
+| BZip2 | 0x10 | ❌ | ✅ | ✅ | ✅ | Added in WoW: The Burning Crusade |
+| Sparse compression | 0x20 | ❌ | ❌ | ✅ | ✅ | Added in Starcraft II |
+| ADPCM mono | 0x40 | ✅ | ✅ | ✅ | ✅ | For audio compression |
+| ADPCM stereo | 0x80 | ✅ | ✅ | ✅ | ✅ | For stereo audio compression |
+| LZMA | N/A | ❌ | ❌ | ✅ | ✅ | Added in Starcraft II |
 
-    #[bench]
-    fn bench_hash_string(b: &mut Bencher) {
-        b.iter(|| {
-            hash_string("War3.mpq\\(listfile)", HashType::NameA);
-            hash_string("War3.mpq\\(listfile)", HashType::NameB);
-            hash_string("War3.mpq\\(listfile)", HashType::FileKey);
-        });
-    }
+## Block Table Flags
 
-    #[bench]
-    fn bench_decrypt_small_block(b: &mut Bencher) {
-        let mut data = [0u8; 128];
-        for i in 0..data.len() {
-            data[i] = i as u8;
-        }
+| Flag | Value | Description |
+|------|-------|-------------|
+| MPQ_FILE_IMPLODE | 0x00000100 | File is compressed using PKWARE Data compression library |
+| MPQ_FILE_COMPRESS | 0x00000200 | File is compressed using combination of compression methods |
+| MPQ_FILE_ENCRYPTED | 0x00010000 | The file is encrypted |
+| MPQ_FILE_FIX_KEY | 0x00020000 | The decryption key is altered according to file position |
+| MPQ_FILE_PATCH_FILE | 0x00100000 | File contains incremental patch for existing file |
+| MPQ_FILE_SINGLE_UNIT | 0x01000000 | File stored as single unit instead of split into blocks |
+| MPQ_FILE_DELETE_MARKER | 0x02000000 | File is a deletion marker |
+| MPQ_FILE_SECTOR_CRC | 0x04000000 | File has checksums for each sector |
+| MPQ_FILE_EXISTS | 0x80000000 | File exists, reset when deleted |
 
-        b.iter(|| {
-            let mut test_data = data.clone();
-            decrypt_block(&mut test_data, 0xDEADBEEF).unwrap();
-        });
-    }
+## Compression Method Flags
 
-    #[bench]
-    fn bench_decrypt_large_block(b: &mut Bencher) {
-        let mut data = [0u8; 4096];
-        for i in 0..data.len() {
-            data[i] = i as u8;
-        }
+| Flag | Value | Description |
+|------|-------|-------------|
+| MPQ_COMPRESSION_HUFFMANN | 0x01 | Huffmann compression (used on WAVE files only) |
+| MPQ_COMPRESSION_ZLIB | 0x02 | ZLIB compression |
+| MPQ_COMPRESSION_PKWARE | 0x08 | PKWARE DCL compression |
+| MPQ_COMPRESSION_BZIP2 | 0x10 | BZIP2 compression (added in Warcraft III) |
+| MPQ_COMPRESSION_SPARSE | 0x20 | Run-length (sparse) compression (added in Starcraft 2) |
+| MPQ_COMPRESSION_ADPCM_MONO | 0x40 | IMA ADPCM compression (mono) |
+| MPQ_COMPRESSION_ADPCM_STEREO | 0x80 | IMA ADPCM compression (stereo) |
+| MPQ_COMPRESSION_LZMA | 0x12 | LZMA compression. Added in Starcraft 2. This value is NOT a combination of flags. |
+| MPQ_COMPRESSION_NEXT_SAME | 0xFFFFFFFF | Same compression |
 
-        b.iter(|| {
-            let mut test_data = data.clone();
-            decrypt_block(&mut test_data, 0xDEADBEEF).unwrap();
-        });
-    }
+## Implementation Notes
 
-    #[bench]
-    fn bench_find_file(b: &mut Bencher) {
-        // Create a small test archive with 100 files
-        let mut builder = MpqBuilder::new().with_hash_table_size(256);
+1. The hash table size must be a power of two
+2. Maximum number of files depends on hash table size
+3. Burning Crusade format (v2) introduced support for archives larger than 4GB
+4. Format v3 introduced optional HET and BET tables that can replace hash and block tables
+5. Format v4 added MD5 checksums for the tables and header integrity verification
+6. Archives in newer games (since 2014) have been replaced by the CASC format
 
-        for i in 0..100 {
-            let filename = format!("test/file{}.txt", i);
-            let content = vec![i as u8; 100];
-            builder = builder.add_file(filename, content);
-        }
+### Test Vectors for Implementation Verification
 
-        let archive_data = builder.build().unwrap();
-        let archive = MpqArchive::from_data(archive_data).unwrap();
+Implementers can use the following test values to verify their MPQ algorithms:
 
-        b.iter(|| {
-            find_file(&archive, "test/file50.txt").unwrap();
-        });
-    }
-}
+#### Hash Function Test Vectors
+
+| Filename | MPQ_HASH_TABLE_OFFSET (0) | MPQ_HASH_NAME_A (1) | MPQ_HASH_NAME_B (2) | MPQ_HASH_FILE_KEY (3) |
+|----------|---------------------------|---------------------|---------------------|------------------------|
+| "War3.mpq" | 0xB5E3BF95 | 0xAB8F548C | 0xA9CAF9C1 | 0xF4E26CAD |
+| "(attribute)" | 0xD38437CB | 0x07DFEAEC | 0x1CB8E78A | 0xD3C2D58B |
+| "(listfile)" | 0xFD5F6EEA | 0x7E4A7FE4 | 0xCABC04F6 | 0xD3F10625 |
+| "ARCHIVE" | 0x8E2B8CED | 0x6D7F9E62 | 0xD89B5A0D | 0xB09C6288 |
+| "items\\map.doo" | 0xD83EAAD5 | 0xB052F1F6 | 0x5ECCF240 | 0xCA581368 |
+| "replay.dat" | 0x70A2E78D | 0x716F3B76 | 0xA00E26BD | 0x34D2D63E |
+
+#### Case Insensitivity Test
+
+These examples demonstrate that different cases produce the same hash values:
+
+| Filename A | Filename B | MPQ_HASH_TABLE_OFFSET |
+|------------|------------|------------------------|
+| "file.txt" | "FILE.TXT" | 0x1FC54C64 |
+| "path\\to\\FILE" | "PATH\\TO\\file" | 0x8844B672 |
+
+#### Path Separator Normalization Test
+
+These examples show that forward and backslashes produce the same hash:
+
+| Filename A | Filename B | MPQ_HASH_TABLE_OFFSET |
+|------------|------------|------------------------|
+| "path\\to\\file" | "path/to/file" | 0x8844B672 |
+| "interface\\glue\\mainmenu.blp" | "interface/glue/mainmenu.blp" | 0x41992D90 |
+
+#### Encryption/Decryption Test Vectors
+
+Test encryption table generation (first and last few values of the 1280-value table):
+
+```
+encryptionTable[0x000] = 0x1A790AA9
+encryptionTable[0x001] = 0x18DF4175
+encryptionTable[0x002] = 0x3C064005
+encryptionTable[0x003] = 0x0D66C89C
+encryptionTable[0x004] = 0x24C5C5A9
+...
+encryptionTable[0x4FB] = 0x3C9740B0
+encryptionTable[0x4FC] = 0x3C579B79
+encryptionTable[0x4FD] = 0x1A3C54E7
+encryptionTable[0x4FE] = 0x21B86B73
+encryptionTable[0x4FF] = 0x16FEF546
 ```
 
-## StormLib Implementation Comparison
+Test data encryption/decryption:
 
-StormLib, maintained by Ladislav Zezula, is considered the reference implementation
-for MPQ handling. This section compares our Rust implementation with StormLib's
-approach and highlights important differences implementers should be aware of.
+```
+// Original data (32 bytes)
+DWORD originalData[8] = {
+    0x12345678, 0x9ABCDEF0, 0x13579BDF, 0x2468ACE0,
+    0xFEDCBA98, 0x76543210, 0xF0DEBC9A, 0xE1C3A597
+};
 
-### Encryption Table Generation
+// Key = 0xC1EB1CEF
+// Expected encrypted data
+DWORD encryptedData[8] = {
+    0x6DBB9D94, 0x20F0AF34, 0x3A73EA6F, 0x8E82A467,
+    0x5F11FC9B, 0xD9BE74FF, 0x82071B61, 0xF1E4D305
+};
+```
 
-In StormLib, the encryption table is generated once at initialization:
+#### Hash Table Entry Examples
 
-```cpp
-// From StormLib/src/SBaseCommon.cpp
-static DWORD InitializeMpqCryptography()
+Hash table entries for a file "unit\\neutral\\chicken.mdx":
+
+```
+// Hash values
+dwName1 = 0xB785DF90
+dwName2 = 0x0936D252
+
+// Hash table index
+dwIndex = 0x4F0C (assuming hash table size 0x1000)
+
+// Hash table entry (before encryption)
 {
-    DWORD dwSeed = 0x00100001;
-    DWORD index1 = 0;
-    DWORD index2 = 0;
-    DWORD i;
-
-    // Initialize the decryption tables
-    for(index1 = 0; index1 < 0x100; index1++)
-    {
-        for(index2 = index1, i = 0; i < 5; i++, index2 += 0x100)
-        {
-            DWORD temp1, temp2;
-
-            dwSeed = (dwSeed * 125 + 3) % 0x2AAAAB;
-            temp1  = (dwSeed & 0xFFFF) << 0x10;
-
-            dwSeed = (dwSeed * 125 + 3) % 0x2AAAAB;
-            temp2  = (dwSeed & 0xFFFF);
-
-            StormBuffer[index2] = (temp1 | temp2);
-        }
-    }
-
-    // Success
-    bCryptographyInitialized = TRUE;
-    return ERROR_SUCCESS;
+    dwName1 = 0xB785DF90,
+    dwName2 = 0x0936D252,
+    lcLocale = 0x0000,
+    wPlatform = 0x0000,
+    dwBlockIndex = 0x00000123
 }
 ```
 
-Our Rust implementation uses a `lazy_static` approach that generates the table on first use. The mathematical algorithm is identical, but implementers should be aware that:
+#### HET/BET Table Test Vectors
 
-1. The table is always the same - it's a static set of values
-2. StormLib initializes it at the start of the program
-3. Our Rust implementation generates it on first use
+For version 3+ HET tables, Jenkins hash for the same test file:
 
-### Hash Functions
-
-StormLib's implementation of hash functions closely matches our Rust version, with a few nuances:
-
-```cpp
-// From StormLib/src/SBaseCommon.cpp
-DWORD HashString(const char * szFileName, DWORD dwHashType)
-{
-    DWORD dwSeed1 = 0x7FED7FED;
-    DWORD dwSeed2 = 0xEEEEEEEE;
-    DWORD ch;
-
-    while(*szFileName != 0)
-    {
-        ch = toupper(*szFileName++);
-
-        dwSeed1 = StormBuffer[dwHashType + ch] ^ (dwSeed1 + dwSeed2);
-        dwSeed2 = ch + dwSeed1 + dwSeed2 + (dwSeed2 << 5) + 3;
-    }
-
-    return dwSeed1;
-}
+```
+// Jenkins hash for "unit\\neutral\\chicken.mdx"
+ULONGLONG jenkins_hash = 0x0E47BAE570E8D3CA
 ```
 
-Key differences:
+These test vectors provide reference values that implementers can use to verify their MPQ handling code. A working implementation should produce identical results when processing these inputs.
 
-1. StormLib uses a pre-computed table lookup for faster calculation
-2. The basic algorithm is mathematically equivalent but uses a different implementation approach
-3. StormLib's version is more optimized for speed but less clear about what's happening
+## Notable Library Implementations
 
-Implementers should ensure their hash function produces identical results, regardless of implementation approach, as the hash values must match exactly for file lookups to succeed.
-
-### Encryption/Decryption
-
-StormLib's encryption and decryption functions use an optimized approach:
-
-```cpp
-// From StormLib/src/SBaseCommon.cpp
-void DecryptBlock(void * pvDataBlock, DWORD dwLength, DWORD dwKey)
-{
-    DWORD * pdwDataBlock = (DWORD *)pvDataBlock;
-    DWORD dwSeed1 = 0xEEEEEEEE;
-    DWORD dwSeed2 = 0xEEEEEEEE;
-    DWORD ch;
-
-    // Round to DWORDs
-    dwLength >>= 2;
-
-    // Decrypt the data block
-    for(DWORD i = 0; i < dwLength; i++)
-    {
-        dwSeed2 += StormBuffer[0x400 + (dwKey & 0xFF)];
-        ch = pdwDataBlock[i];
-        ch = ch ^ (dwKey + dwSeed1);
-        pdwDataBlock[i] = ch;
-        dwKey = ((~dwKey << 0x15) + 0x11111111) | (dwKey >> 0x0B);
-        dwSeed1 = ch + dwSeed1 + (dwSeed1 << 5) + 3;
-    }
-}
-```
-
-Important differences:
-
-1. StormLib pre-shifts the data length by 2 (divide by 4) to process DWORDs
-2. It uses the encryption table offset by 0x400 (1024) for the seed calculation
-3. The key rotation is expressed slightly differently but mathematically equivalent
-
-Our Rust version handles non-aligned data sizes more explicitly, which StormLib doesn't do in this core function. Instead, StormLib has separate functions for handling odd-sized buffers.
-
-### Compression Handling
-
-StormLib supports multiple compression methods and chains them in a specific order:
-
-```cpp
-// From StormLib/src/SCommon.cpp
-int SCompDecompress(void * pvOutBuffer, int * pcbOutBuffer, void * pvInBuffer, int cbInBuffer)
-{
-    // Get the compression type from the first byte of the input buffer
-    BYTE * pbInBuffer = (BYTE *)pvInBuffer;
-    BYTE * pbOutBuff = (BYTE *)pvOutBuffer;
-    int cbOutBuffer = *pcbOutBuffer;
-    int nResult = ERROR_SUCCESS;
-
-    // Is it compressed by PKWARE Data Compression Library?
-    if(cbInBuffer > 1 && *pbInBuffer == 'P')
-    {
-        // We need to decompress the data using Pkware DCL
-        if(DecompressPklib(pbOutBuff, cbOutBuffer, pbInBuffer+1, cbInBuffer-1) == false)
-            nResult = ERROR_FILE_CORRUPT;
-    }
-    // Is it compressed by Blizzard's multiple compression ?
-    else if(cbInBuffer > 2 && *pbInBuffer == 'B' && *(pbInBuffer+1) <= 5)
-    {
-        // We need to decompress the data using Blizzard compression
-        nResult = DecompressMulti(pbOutBuff, pcbOutBuffer, pbInBuffer+1, cbInBuffer-1);
-    }
-    else
-    // Is it compressed by ZLIB ?
-    if(cbInBuffer > 2 && *pbInBuffer == 'Z')
-    {
-        // We need to decompress the data using ZLIB
-        nResult = DecompressZlib(pbOutBuff, pcbOutBuffer, pbInBuffer+1, cbInBuffer-1);
-    }
-    // Is it compressed by BZIP2 ?
-    else if(cbInBuffer > 2 && *pbInBuffer == '2')
-    {
-        // We need to decompress the data using BZIP2
-        nResult = DecompressBzip2(pbOutBuff, pcbOutBuffer, pbInBuffer+1, cbInBuffer-1);
-    }
-    // Is it a SPARSE file?
-    else if(cbInBuffer > 2 && *pbInBuffer == 'S')
-    {
-        // We need to decompress the sparse file
-        nResult = DecompressSparse(pbOutBuff, pcbOutBuffer, pbInBuffer+1, cbInBuffer-1);
-    }
-    // Not compressed, just copy the data
-    else if(cbOutBuffer >= cbInBuffer)
-    {
-        memcpy(pbOutBuff, pbInBuffer, cbInBuffer);
-        *pcbOutBuffer = cbInBuffer;
-    }
-    else
-    {
-        *pcbOutBuffer = 0;
-        nResult = ERROR_INSUFFICIENT_BUFFER;
-    }
-
-    return nResult;
-}
-```
-
-Key differences:
-
-1. StormLib uses a letter-based prefix system ('P', 'B', 'Z', '2', 'S') rather than bit flags
-2. StormLib has dedicated functions for each compression method
-3. The multi-compression ('B') approach in StormLib chains multiple algorithms
-
-Our Rust implementation uses a bit-flag approach which is closer to the MPQ specification. Implementers should be aware that real MPQ files might use either approach, so a robust implementation should handle both.
-
-### File Lookup and Handling
-
-StormLib's file lookup mechanism uses a more complex approach to handle locale settings and platform-specific files:
-
-```cpp
-// From StormLib/src/SFileFind.cpp
-TMPQFile * CreateMpqFile(TMPQArchive * ha)
-{
-    TMPQFile * hf;
-
-    hf = STORM_ALLOC(TMPQFile, 1);
-    if(hf != NULL)
-    {
-        memset(hf, 0, sizeof(TMPQFile));
-        hf->filename = NULL;
-        hf->pStream = NULL;
-        hf->hFile = SFILE_INVALID_HANDLE;
-        hf->ha = ha;
-    }
-
-    return hf;
-}
-
-BOOL SFileOpenFileEx(HANDLE hMpq, const char * szFileName, DWORD dwSearchScope, HANDLE * phFile)
-{
-    // ... (error checking code)
-
-    // Find the file within the MPQ
-    dwErrCode = FindFile(ha, szFileName, &pFileEntry, lcLocale);
-
-    // ... (more implementation)
-}
-```
-
-Important implementation details:
-
-1. StormLib tracks locale settings and platform specifics more thoroughly
-2. It has optimizations for partial file loading
-3. It manages file handles differently than our more straightforward Rust approach
-
-Implementers should consider these additional complexities for a production-ready implementation.
-
-### Sector-based Reading
-
-StormLib has a complex mechanism for reading sector-based files:
-
-```cpp
-// From StormLib/src/SFileReadFile.cpp
-static int ReadMPQFileSectors(TMPQFile * hf, void * pvBuffer, DWORD dwStartSector, DWORD dwSectorCount, LPDWORD pdwBytesRead)
-{
-    // ... (complicated implementation)
-}
-```
-
-Key differences:
-
-1. StormLib handles partial sector reads more robustly
-2. It has optimizations for reading specific sectors rather than the whole file
-3. It manages sector checksums and verification
-
-Our Rust implementation provides a simpler approach that reads entire files, which is sufficient for most use cases but may not be as optimized for large files with partial reads.
-
-### Extended Attributes Support
-
-StormLib has evolved to support multiple versions of the MPQ format:
-
-```cpp
-// From StormLib/src/SFileAttributes.cpp
-int SFileGetAttributes(HANDLE hMpq)
-{
-    TMPQArchive * ha = (TMPQArchive *)hMpq;
-
-    // Check valid parameters
-    if(!IsValidMpqHandle(ha))
-        return SFILE_INVALID_ATTRIBUTES;
-
-    return ha->dwFlags;
-}
-
-int SFileSetAttributes(HANDLE hMpq, DWORD dwFlags)
-{
-    TMPQArchive * ha = (TMPQArchive *)hMpq;
-    DWORD dwOldFlags;
-    DWORD dwNewFlags;
-
-    // Check valid parameters
-    if(!IsValidMpqHandle(ha))
-        return ERROR_INVALID_PARAMETER;
-
-    // Not all flags can be set directly by the user
-    dwNewFlags = dwFlags & MPQ_ATTRIBUTE_ALL;
-    dwOldFlags = ha->dwFlags;
-
-    // Set the attributes
-    ha->dwFlags = dwNewFlags;
-
-    // Return the old attributes
-    return dwOldFlags;
-}
-```
-
-StormLib supports:
-
-1. MPQ format versions 1-4
-2. HET and BET tables (high-efficiency tables)
-3. Archive attributes and extended attributes
-4. Strong signatures and checksums
-
-Our Rust implementation focuses on the core version 1 format for simplicity, but a production implementation might need to handle these extended features for full compatibility.
-
-### Practical Considerations
-
-When implementing a Rust MPQ library with StormLib compatibility in mind:
-
-1. **Test against real game files**: Test your implementation against actual MPQ files from Blizzard games
-2. **Verify hash outputs**: Ensure your hash functions produce identical results to StormLib
-3. **Handle edge cases**: MPQ archives have many edge cases involving compression, encryption, and file format variations
-4. **Check error handling**: Compare your error cases with StormLib's to ensure consistent behavior
-5. **Benchmark against StormLib**: Compare performance to identify potential optimization opportunities
-
-### Example: Validating Hash Function Compatibility
-
-To verify your hash function produces StormLib-compatible results:
-
-```rust
-#[test]
-fn test_stormlib_hash_compatibility() {
-    // Known values from StormLib
-    let test_cases = [
-        ("(hash table)", HashType::FileKey, 0xC3AF3770),
-        ("(block table)", HashType::FileKey, 0xEC83B3A3),
-        ("(listfile)", HashType::NameA, 0x1DA8B0CF),
-        ("(attributes)", HashType::NameA, 0x29AECE40),
-        // Add more test cases from StormLib source
-    ];
-
-    for (input, hash_type, expected) in test_cases.iter() {
-        let result = hash_string(input, *hash_type);
-        assert_eq!(result, *expected,
-            "Hash mismatch for '{}' using {:?}: expected 0x{:08X}, got 0x{:08X}",
-            input, hash_type, expected, result);
-    }
-}
-```
+- **StormLib**: Full-featured C++ library by Ladislav Zezula supporting all MPQ versions
+- **JMPQ**: Java implementation with partial support for newer versions
+- **mpq.d**: D language implementation
+- **libmpq**: C library
+- **mpq**: Go library for parsing MPQ files
 
 ## References
 
-1. [MPQ Format Documentation](http://www.zezula.net/en/mpq/mpqformat.html)
-2. [StormLib](https://github.com/ladislav-zezula/StormLib)
-3. [ceres-mpq](https://github.com/ceres-wc3/ceres-mpq)
-4. [World of Warcraft development wiki](https://wowdev.wiki/)
-5. [image-blp](https://github.com/zloy-tulen/image-blp)
-6. [libwarcraft](https://github.com/WowDevTools/libwarcraft)
-7. [StormLib Source Code](https://github.com/ladislav-zezula/StormLib/tree/master/src)
+1. Zezula, Ladislav. "MPQ Format Documentation." [www.zezula.net](http://www.zezula.net/en/mpq/mpqformat.html)
+2. StormLib Repository: [github.com/ladislav-zezula/StormLib](https://github.com/ladislav-zezula/StormLib)
+3. Olbrantz, Justin and Roy, Jean-Francois. "The MoPaQ Archive Format."

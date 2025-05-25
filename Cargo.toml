@@ -1,33 +1,80 @@
-[package]
-name = "mopaq"
+[workspace]
+members = ["storm", "storm-ffi", "storm-cli"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 authors = ["Daniel S. Reichenbach <daniel@kogito.network>"]
-edition = "2024"
+edition = "2021"
 rust-version = "1.86"
-description = "MoPaQ implementation in Rust"
-homepage = "https://wowemulation.dev"
-repository = "https://github.com/danielsreichenbach/mopaq"
 license = "MIT OR Apache-2.0"
-keywords = ["archive", "compression", "mpq"]
+repository = "https://github.com/danielsreichenbach/stormlib-rs"
+homepage = "https://github.com/danielsreichenbach/stormlib-rs"
+documentation = "https://docs.rs/storm"
+keywords = ["mpq", "blizzard", "archive", "stormlib", "gaming"]
+categories = [
+  "compression",
+  "filesystem",
+  "game-development",
+  "parser-implementations",
+]
 
-[dependencies]
-byteorder = "1.5"
-memmap2 = "0.9"
+[workspace.dependencies]
+# Error handling
 thiserror = "2.0"
-flate2 = { version = "1.0", optional = true }
-bzip2 = { version = "0.5", optional = true }
-xz2 = { version = "0.1", optional = true }
+anyhow = "1.0"
 
-[dev-dependencies]
-criterion = "0.5"
-tempfile = "3"
+# Data structures and utilities
+bytes = "1.8"
+byteorder = "1.5"
+bitflags = "2.6"
 
-[features]
-default = ["zlib"]
-zlib = ["dep:flate2"]
-bzip2 = ["dep:bzip2"]
-lzma = ["dep:xz2"]
-all-compression = ["zlib", "bzip2", "lzma"]
+# Hashing and cryptography
+sha1 = "0.10"
+sha2 = "0.10"
+md-5 = "0.10"
+num-bigint = "0.4"
+num-traits = "0.2"
 
-[badges]
-maintenance = { status = "actively-developed" }
+# Compression algorithms
+flate2 = "1.0"
+bzip2 = "0.4"
+lzma-rs = "0.3"
+
+# I/O and performance
+memmap2 = "0.9"
+parking_lot = "0.12"
+
+# Testing and benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.6"
+pretty_assertions = "1.4"
+tempfile = "3.14"
+
+# Serialization (for debug output)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI dependencies
+clap = { version = "4.5", features = ["derive", "color", "suggestions"] }
+indicatif = "0.17"
+env_logger = "0.11"
+log = "0.4"
+
+# FFI dependencies
+libc = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
+
+[profile.bench]
+debug = true
+
+[profile.dev]
+opt-level = 0
+
+[profile.test]
+opt-level = 2

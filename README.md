@@ -1,160 +1,162 @@
-# mopaq library
+# StormLib-rs
 
-![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)
-![Rust Version](https://img.shields.io/badge/rust-1.86%2B-orange.svg)
+A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format used by Blizzard Entertainment games.
 
-A Rust library for reading and writing World of Warcraft MPQ archives, designed to be approachable, well-documented, and community-driven.
+[![Crates.io](https://img.shields.io/crates/v/storm.svg)](https://crates.io/crates/storm)
+[![Documentation](https://docs.rs/storm/badge.svg)](https://docs.rs/storm)
+[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![CI Status](https://github.com/danielsreichenbach/stormlib-rs/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/stormlib-rs/actions)
 
-## ✨ What is this?
+## Features
 
-MPQ (Mo'PaQ or Mike O'Brien Pack) is the archive format used by Blizzard Entertainment's games including World of Warcraft, Diablo, and StarCraft. This library allows you to:
+- 🚀 **Full MPQ Format Support**: Implements all MPQ versions (v1-v4) with complete feature parity
+- 🔒 **Security First**: Safe Rust implementation with comprehensive error handling
+- ⚡ **High Performance**: Memory-mapped I/O, zero-copy operations, and efficient caching
+- 🔧 **StormLib Compatible**: Drop-in replacement via FFI bindings
+- 🗜️ **Compression Support**: All MPQ compression methods (zlib, bzip2, LZMA, sparse, etc.)
+- 🔐 **Digital Signatures**: Both weak (512-bit RSA) and strong (2048-bit RSA) signature verification
+- 🛠️ **Rich CLI Tool**: Comprehensive command-line interface with debugging capabilities
+- 📊 **Well Tested**: Extensive test suite with fuzzing and benchmarks
 
-- Read existing MPQ archives
-- Create new MPQ archives
-- Extract files from archives
-- Add files to archives
-- And more!
+## Installation
 
-## 🚀 Quick Start
-
-### Installation
-
-Add the library to your Cargo.toml:
+### As a Rust Library
 
 ```toml
 [dependencies]
-mopaq = "0.1.0"
+storm = "0.1"
 ```
 
-### Basic Usage
+### CLI Tool
+
+```bash
+cargo install storm-cli
+```
+
+### C/C++ FFI
+
+The `storm-ffi` crate provides a StormLib-compatible C API. See the [FFI documentation](storm-ffi/README.md) for integration details.
+
+## Quick Start
+
+### Rust API
 
 ```rust
-use mopaq::{MpqArchive, Result};
-use std::path::Path;
+use storm::{Archive, OpenOptions};
 
-fn main() -> Result<()> {
-    // Open an existing WoW MPQ archive
-    let archive = MpqArchive::open("path/to/your/wow.mpq")?;
-    println!("Archive opened successfully!");
+fn main() -> storm::Result<()> {
+    // Open an existing MPQ archive
+    let mut archive = Archive::open("StarCraft.mpq")?;
 
-    // Print some basic information
-    println!("Format version: {}", archive.header.format_version);
-    println!("Contains user header: {}", archive.user_header.is_some());
+    // List all files
+    for entry in archive.list()? {
+        println!("{} ({} bytes)", entry.name, entry.size);
+    }
 
-    // Create a new MPQ archive (format version 1)
-    let new_archive = MpqArchive::create("path/to/new.mpq", 1)?;
-    println!("Created a new archive!");
+    // Extract a specific file
+    let data = archive.read_file("unit\\terran\\marine.grp")?;
+    std::fs::write("marine.grp", data)?;
+
+    // Create a new archive
+    let mut new_archive = OpenOptions::new()
+        .version(storm::FormatVersion::V2)
+        .create("my_archive.mpq")?;
+
+    new_archive.add_file("readme.txt", b"Hello, MPQ!")?;
 
     Ok(())
 }
 ```
 
-## 🧰 Features
+### CLI Usage
 
-- **Simple API**: Designed to be intuitive for Rust beginners
-- **Well-documented**: Every function has clear explanations
-- **Safe**: Strong emphasis on proper error handling
-- **Fast**: Optimized for performance with benchmarks
-- **Cross-platform**: Works on Windows, macOS, and Linux
+```bash
+# List files in an archive
+storm list StarCraft.mpq
 
-## 🛠️ For Beginners
+# Extract files
+storm extract StarCraft.mpq --output ./extracted
 
-New to Rust or MPQ archives? No problem! We've designed this library to be approachable:
+# Create a new archive
+storm create my_mod.mpq ./mod_files
 
-1. **Comprehensive examples** in the `examples/` directory
-2. **Step-by-step tutorials** in the documentation
-3. **Clear error messages** that help you understand what went wrong
+# Verify archive integrity
+storm verify WarCraft3.w3m
 
-### Learning Resources
-
-- [What are MPQ archives?](#mpq-basics) - An introduction for beginners
-- [Rust basics for this project](#rust-basics) - Key Rust concepts used here
-- [Common tasks guide](#common-tasks) - How to perform typical operations
-
-## 🤝 Contributing
-
-We welcome contributions from everyone, regardless of experience level! Here's how you can help:
-
-- **Beginners**: Try using the library and report any confusing parts
-- **Documentation**: Help improve explanations or add examples
-- **Code**: Implement missing features or optimize existing ones
-- **Testing**: Add test cases or find bugs
-
-Check out [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
-
-### Getting Started as a Contributor
-
-1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/mopaq.git`
-3. Create a branch: `git checkout -b my-feature`
-4. Make your changes
-5. Run tests: `cargo test`
-6. Push your branch: `git push origin my-feature`
-7. Open a Pull Request
-
-## 📚 Documentation
-
-Full documentation is available at [docs.rs/mopaq](https://docs.rs/mopaq).
-
-### <a name="mpq-basics"></a>What are MPQ Archives?
-
-MPQ (Mo'PaQ or Mike O'Brien Pack) is an archive format created by Blizzard Entertainment. It's used in many of their games to package game assets like models, textures, sounds, and more.
-
-Key features of the MPQ format:
-
-- File compression
-- Built-in encryption
-- Support for multiple languages
-- Fast file lookup through hash tables
-
-### <a name="rust-basics"></a>Rust Basics for This Project
-
-This library makes use of several Rust concepts:
-
-- **Result/Option types**: For proper error handling
-- **Traits**: For consistent interfaces
-- **Ownership**: For memory safety without garbage collection
-- **Modules**: For code organization
-
-Don't worry if you're not familiar with all of these—our documentation explains the concepts as they come up!
-
-### <a name="common-tasks"></a>Common Tasks
-
-#### Opening an Archive
-
-```rust
-let archive = MpqArchive::open("game.mpq")?;
+# Debug archive structure
+storm debug info Diablo2.mpq
 ```
 
-#### Creating a New Archive
+## Supported Games
 
-```rust
-let archive = MpqArchive::create("new.mpq", 1)?;
+- Diablo (1996)
+- StarCraft (1998)
+- Diablo II (2000)
+- WarCraft III (2002)
+- World of Warcraft (2004-present)
+- StarCraft II (2010)
+- Heroes of the Storm
+- And other Blizzard games using MPQ format
+
+## Performance
+
+StormLib-rs is designed for high performance:
+
+- Memory-mapped I/O for large archives
+- Parallel decompression support
+- Efficient hash table lookups with caching
+- Zero-copy operations where possible
+
+See [benchmarks](docs/benchmarks.md) for detailed performance comparisons.
+
+## Architecture
+
+The project consists of three main components:
+
+1. **storm** - Core library with pure Rust implementation
+2. **storm-ffi** - C-compatible FFI bindings for StormLib compatibility
+3. **storm-cli** - Feature-rich command-line tool
+
+See [architecture documentation](docs/architecture.md) for details.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/danielsreichenbach/stormlib-rs
+cd stormlib-rs
+
+# Run tests
+cargo test --all
+
+# Run benchmarks
+cargo bench
+
+# Build everything
+cargo build --all
 ```
 
-#### Extracting a File
-
-```rust
-// Coming soon!
-```
-
-## 📝 License
+## License
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
 
-## 📊 Project Status
+## Acknowledgments
 
-This project is under active development. Check our [TODO.md](TODO.md) for planned features.
+- Ladislav Zezula for the original [StormLib](https://github.com/ladislav-zezula/StormLib) implementation
+- The [wowdev](https://wowdev.wiki/) community for format documentation
+- All contributors to MPQ format reverse engineering efforts
 
-## 💬 Community
+## Related Projects
 
-- **Discord**: [Join our server](https://discord.gg/your-invite-link)
-- **Issues**: [GitHub Issues](https://github.com/your-username/mopaq/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/mopaq/discussions)
-
-We're building a friendly community around this project and welcome everyone from beginners to experts!
+- [StormLib](https://github.com/ladislav-zezula/StormLib) - Original C++ implementation
+- [ceres-mpq](https://github.com/ceres-wc3/ceres-mpq) - Rust MPQ reader
+- [JMPQ](https://github.com/IntelOrca/JMPQ) - Java implementation

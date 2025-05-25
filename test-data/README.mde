@@ -1,0 +1,22 @@
+# Test Data Directory
+
+This directory contains test MPQ archives for different format versions.
+
+## Structure
+
+- `v1/` - MPQ format version 1 test archives (32-byte header)
+- `v2/` - MPQ format version 2 test archives (44-byte header)
+- `v3/` - MPQ format version 3 test archives (68-byte header)
+- `v4/` - MPQ format version 4 test archives (208-byte header)
+
+## Adding Test Files
+
+Test archives should be small and contain only non-copyrighted data. Consider creating minimal test archives with:
+- Text files for testing compression
+- Binary data for testing encryption
+- Multiple files for testing hash table collisions
+- Files with different locales for testing language support
+
+## Note
+
+Large MPQ files should not be committed to the repository. Instead, provide scripts to download or generate them.
