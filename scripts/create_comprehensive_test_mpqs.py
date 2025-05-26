@@ -150,7 +150,7 @@ class MPQArchiveBuilder:
         else:
             return data
 
-    def _create_sector_data(self, file_info: dict) -> Tuple[bytearray, List[int], List[int]]:
+    def _create_sector_data(self, file_info: dict, file_key: int) -> Tuple[bytearray, List[int], List[int]]:
         """Create sectored file data with optional compression and CRC."""
         sector_size = 512 << self.block_size
         data = file_info['data']
@@ -163,7 +163,7 @@ class MPQArchiveBuilder:
         for i in range(0, len(data), sector_size):
             sector_data = data[i:i + sector_size]
 
-            # Calculate CRC if needed
+            # Calculate CRC if needed (on uncompressed data)
             if file_info['sector_crc']:
                 crc = zlib.crc32(sector_data) & 0xFFFFFFFF
                 sector_crcs.append(crc)
@@ -181,17 +181,29 @@ class MPQArchiveBuilder:
         result = bytearray()
 
         # Sector offset table
+        offset_data = bytearray()
         for offset in sector_offsets:
-            result.extend(struct.pack('<I', offset))
+            offset_data.extend(struct.pack('<I', offset))
 
-        # CRC table if present
+        # Encrypt sector offset table with key-1
+        if file_info['encrypt'] and file_key > 0:
+            offset_key = (file_key - 1) & 0xFFFFFFFF
+            self.crypto.encrypt_block(offset_data, offset_key)
+
+        result.extend(offset_data)
+
+        # CRC table if present (not encrypted)
         if file_info['sector_crc']:
             for crc in sector_crcs:
                 result.extend(struct.pack('<I', crc))
 
-        # Sector data
-        for sector in sectors:
-            result.extend(sector)
+        # Encrypt each sector individually
+        for i, sector in enumerate(sectors):
+            sector_data = bytearray(sector)
+            if file_info['encrypt']:
+                sector_key = (file_key + i) & 0xFFFFFFFF
+                self.crypto.encrypt_block(sector_data, sector_key)
+            result.extend(sector_data)
 
         return result, sector_offsets, sector_crcs
 
@@ -229,11 +241,25 @@ class MPQArchiveBuilder:
                         crc = zlib.crc32(file_info['data']) & 0xFFFFFFFF
                         file_data.extend(struct.pack('<I', crc))
 
+                    # Encrypt single unit files
+                    if file_info['encrypt']:
+                        key = self.crypto.hash_string(file_info['name'], 3)
+                        if file_info['fix_key']:
+                            key = (key + file_data_offset) ^ len(file_info['data'])
+                        self.crypto.encrypt_block(file_data, key)
+
                     compressed_size = len(file_data) - (4 if file_info['sector_crc'] else 0)
                 else:
-                    # Multi-sector file
-                    file_data, _, _ = self._create_sector_data(file_info)
+                    # Multi-sector file - pass the key to sector creation
+                    key = 0
+                    if file_info['encrypt']:
+                        key = self.crypto.hash_string(file_info['name'], 3)
+                        if file_info['fix_key']:
+                            key = (key + file_data_offset) ^ len(file_info['data'])
+
+                    file_data, _, _ = self._create_sector_data(file_info, key)
                     compressed_size = len(file_data)
+                    # Don't encrypt here - already encrypted per-sector
 
                 # Encrypt if needed
                 if file_info['encrypt']:

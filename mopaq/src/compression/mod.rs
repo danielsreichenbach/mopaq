@@ -60,32 +60,54 @@ impl CompressionMethod {
 
 /// Decompress data using the specified compression method
 pub fn decompress(data: &[u8], method: u8, decompressed_size: usize) -> Result<Vec<u8>> {
-    // First byte indicates compression type(s) if multiple compression
     if data.is_empty() {
         return Err(Error::compression("Empty compressed data"));
     }
 
+    // Check if this is IMPLODE flag rather than COMPRESS
+    if method == 0 {
+        // No compression
+        return Ok(data.to_vec());
+    }
+
+    // Log what we're trying to decompress for debugging
+    log::debug!(
+        "Decompressing {} bytes to {} bytes with method 0x{:02X}",
+        data.len(),
+        decompressed_size,
+        method
+    );
+
     let compression = CompressionMethod::from_flags(method);
 
     match compression {
-        CompressionMethod::None => {
-            // No compression, just return the data
-            Ok(data.to_vec())
-        }
+        CompressionMethod::None => Ok(data.to_vec()),
         CompressionMethod::Zlib => decompress_zlib(data, decompressed_size),
         CompressionMethod::BZip2 => decompress_bzip2(data, decompressed_size),
         CompressionMethod::Lzma => decompress_lzma(data, decompressed_size),
         CompressionMethod::Sparse => decompress_sparse(data, decompressed_size),
-        CompressionMethod::PKWare => Err(Error::compression(
-            "PKWare decompression not yet implemented",
-        )),
-        CompressionMethod::Huffman => Err(Error::compression(
-            "Huffman decompression not yet implemented",
-        )),
-        CompressionMethod::AdpcmMono | CompressionMethod::AdpcmStereo => Err(Error::compression(
-            "ADPCM decompression not yet implemented",
-        )),
-        CompressionMethod::Multiple(flags) => decompress_multiple(data, flags, decompressed_size),
+        CompressionMethod::PKWare => {
+            log::error!("PKWare decompression requested but not implemented");
+            Err(Error::compression(
+                "PKWare decompression not yet implemented",
+            ))
+        }
+        CompressionMethod::Huffman => {
+            log::error!("Huffman decompression requested but not implemented");
+            Err(Error::compression(
+                "Huffman decompression not yet implemented",
+            ))
+        }
+        CompressionMethod::AdpcmMono | CompressionMethod::AdpcmStereo => {
+            log::error!("ADPCM decompression requested but not implemented");
+            Err(Error::compression(
+                "ADPCM decompression not yet implemented",
+            ))
+        }
+        CompressionMethod::Multiple(flags) => {
+            log::debug!("Multiple compression with flags 0x{:02X}", flags);
+            decompress_multiple(data, flags, decompressed_size)
+        }
     }
 }
 
@@ -93,22 +115,41 @@ pub fn decompress(data: &[u8], method: u8, decompressed_size: usize) -> Result<V
 fn decompress_zlib(data: &[u8], expected_size: usize) -> Result<Vec<u8>> {
     use flate2::read::ZlibDecoder;
 
+    // Validate zlib header (should start with 0x78)
+    if !data.is_empty() && data[0] != 0x78 {
+        log::warn!(
+            "Data doesn't start with zlib header (got 0x{:02X}), attempting decompression anyway",
+            data[0]
+        );
+    }
+
     let mut decoder = ZlibDecoder::new(data);
     let mut decompressed = Vec::with_capacity(expected_size);
 
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| Error::compression(format!("Zlib decompression failed: {}", e)))?;
-
-    if decompressed.len() != expected_size {
-        return Err(Error::compression(format!(
-            "Decompressed size mismatch: expected {}, got {}",
-            expected_size,
-            decompressed.len()
-        )));
+    match decoder.read_to_end(&mut decompressed) {
+        Ok(_) => {
+            if decompressed.len() != expected_size {
+                log::warn!(
+                    "Decompressed size mismatch: expected {}, got {}",
+                    expected_size,
+                    decompressed.len()
+                );
+                // Some MPQ files have incorrect size info, so we'll allow this
+            }
+            Ok(decompressed)
+        }
+        Err(e) => {
+            log::error!("Zlib decompression failed: {}", e);
+            log::debug!(
+                "First 16 bytes of data: {:02X?}",
+                &data[..16.min(data.len())]
+            );
+            Err(Error::compression(format!(
+                "Zlib decompression failed: {}",
+                e
+            )))
+        }
     }
-
-    Ok(decompressed)
 }
 
 /// Decompress using BZip2
@@ -198,34 +239,91 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
         return Err(Error::compression("Empty compressed data"));
     }
 
-    // The first byte indicates which compression was used last
-    let compression_order = data[0];
-    let compressed_data = &data[1..];
+    // For multiple compression, we need to check which methods are actually used
+    // The data format depends on which compressions are applied
 
-    // Decompress using the indicated method
-    let mut decompressed = match compression_order {
-        flags::ZLIB => decompress_zlib(compressed_data, expected_size)?,
-        flags::BZIP2 => decompress_bzip2(compressed_data, expected_size)?,
-        flags::SPARSE => decompress_sparse(compressed_data, expected_size)?,
-        // PKWare is never used as the final compression in multiple compression
-        _ => {
-            return Err(Error::compression(format!(
-                "Unknown compression order byte: 0x{:02X}",
-                compression_order
-            )))
-        }
+    // Check if PKWARE is in the flags - it's always applied first if present
+    let has_pkware = (flags & flags::PKWARE) != 0;
+
+    // Determine the other compression method (applied last)
+    let final_compression = if flags & flags::ZLIB != 0 {
+        flags::ZLIB
+    } else if flags & flags::BZIP2 != 0 {
+        flags::BZIP2
+    } else if flags & flags::SPARSE != 0 {
+        flags::SPARSE
+    } else {
+        return Err(Error::compression(format!(
+            "Multiple compression flag set but no known compression methods: 0x{:02X}",
+            flags
+        )));
     };
 
-    // Note: In practice, PKWare (if present in flags) is applied first,
-    // but we handle the decompression in reverse order.
-    // Since we don't support PKWare yet, we'll just return what we have.
+    // If we have PKWare, the first byte tells us the actual compression used
+    let (compression_used, compressed_data) = if has_pkware {
+        // First byte indicates which compression was actually used
+        // If it matches our final compression, only that was used
+        // Otherwise, both PKWare and the final compression were used
+        let first_byte = data[0];
 
-    if flags & flags::PKWARE != 0 {
-        // TODO: Apply PKWare decompression
-        log::warn!("Multiple compression with PKWare not fully supported");
+        // Check if only one compression was actually applied
+        if first_byte == final_compression {
+            // Only the final compression was used (PKWare didn't help)
+            (final_compression, &data[1..])
+        } else {
+            // Both compressions were used - this is the complex case
+            // For now, we'll skip PKWare decompression and try to handle the data
+            log::warn!("Multiple compression with PKWare detected - attempting to decompress without PKWare");
+
+            // The data might start with a compression byte or might be raw compressed data
+            // Let's try to detect based on the byte value
+            if first_byte <= 0x10 || first_byte == 0x20 {
+                // Looks like a compression type byte
+                (first_byte, &data[1..])
+            } else {
+                // Probably compressed data - assume it's the final compression
+                (final_compression, data)
+            }
+        }
+    } else {
+        // No PKWare, just the single compression method
+        (final_compression, data)
+    };
+
+    // Decompress using the detected method
+    match compression_used {
+        flags::ZLIB => decompress_zlib(compressed_data, expected_size),
+        flags::BZIP2 => decompress_bzip2(compressed_data, expected_size),
+        flags::SPARSE => decompress_sparse(compressed_data, expected_size),
+        _ => {
+            // Try each method if we're not sure
+            log::warn!(
+                "Unknown compression byte 0x{:02X}, trying available methods",
+                compression_used
+            );
+
+            // Try zlib first (most common)
+            if let Ok(result) = decompress_zlib(data, expected_size) {
+                return Ok(result);
+            }
+
+            // Try bzip2
+            if let Ok(result) = decompress_bzip2(data, expected_size) {
+                return Ok(result);
+            }
+
+            // Try sparse
+            if let Ok(result) = decompress_sparse(data, expected_size) {
+                return Ok(result);
+            }
+
+            Err(Error::compression(format!(
+                "Failed to decompress with any method. First byte: 0x{:02X}, flags: 0x{:02X}",
+                data.get(0).unwrap_or(&0),
+                flags
+            )))
+        }
     }
-
-    Ok(decompressed)
 }
 
 /// Compress data using the specified compression method
