@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test vector validation for hash functions
 - CLI debug hash command to generate hash values
 - CLI debug hash-compare command to compare hashes between files
+- Hash table structure parsing and decryption
+- Block table structure parsing and decryption
+- Hi-block table support for archives > 4GB
+- File lookup functionality (find_file method)
+- CLI debug tables command to display table contents
+- Table entry state tracking (valid/deleted/empty)
 
 ### Changed
 

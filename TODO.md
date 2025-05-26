@@ -40,35 +40,35 @@
 
 ##### Hash Table (v1+)
 
-- [ ] Hash table structure parsing
-- [ ] Hash table encryption/decryption
-- [ ] Hash entry states (empty, deleted, occupied)
-- [ ] Linear probing collision resolution
-- [ ] Locale support in hash entries
-- [ ] Platform support in hash entries
-- [ ] Hash table size validation (power of 2)
+- [x] Hash table structure parsing
+- [x] Hash table encryption/decryption
+- [x] Hash entry states (empty, deleted, occupied)
+- [x] Linear probing collision resolution
+- [x] Locale support in hash entries
+- [x] Platform support in hash entries
+- [x] Hash table size validation (power of 2)
 - [ ] Hash table optimization for sparse tables
 
 ##### Block Table (v1+)
 
-- [ ] Block table structure parsing
-- [ ] Block table encryption/decryption
-- [ ] Block table flags parsing
-- [ ] File position calculation
-- [ ] Compressed/uncompressed size handling
+- [x] Block table structure parsing
+- [x] Block table encryption/decryption
+- [x] Block table flags parsing
+- [x] File position calculation
+- [x] Compressed/uncompressed size handling
 
 ##### Hi-Block Table (v2+)
 
-- [ ] Hi-block table parsing
-- [ ] 64-bit file position calculation
-- [ ] Integration with block table
+- [x] Hi-block table parsing
+- [x] 64-bit file position calculation
+- [x] Integration with block table
 
 ##### HET Table (v3+)
 
 - [ ] HET table header parsing
 - [ ] HET hash table parsing
 - [ ] Bit-based file index parsing
-- [ ] Jenkins hash implementation for HET
+- [x] Jenkins hash implementation for HET
 - [ ] HET table encryption support
 - [ ] HET table compression support
 
@@ -151,6 +151,7 @@
 - [ ] File replacement
 - [ ] File renaming
 - [ ] Compact archive (remove deleted entries)
+- [x] File lookup by name (find_file implemented)
 
 ### Special Files
 
@@ -204,22 +205,26 @@
 
 - [x] Comprehensive error types
 - [x] Error context propagation
+- [x] Table-specific error types (hash_table, block_table)
 - [ ] Recovery mechanisms
 - [ ] Validation functions
 
 ### Testing
 
-- [ ] Unit tests for all hash functions
+- [x] Unit tests for all hash functions
 - [x] Unit tests for encryption/decryption
+- [x] Unit tests for table structures
+- [x] Integration tests for table parsing
 - [ ] Unit tests for each compression method
 - [ ] Integration tests with test archives
 - [ ] Fuzzing tests for security
 - [x] Test vector validation (crypto)
+- [x] Test vector validation (hash functions)
 - [ ] Cross-validation with StormLib
 
 ### Benchmarks
 
-- [ ] Hash function benchmarks
+- [x] Hash function benchmarks
 - [x] Encryption/decryption benchmarks
 - [ ] Compression method benchmarks
 - [ ] File extraction benchmarks
@@ -272,7 +277,7 @@
 
 - [x] CLI argument parsing structure
 - [x] Basic CLI integration tests
-- [ ] list - List files in archive
+- [ ] list - List files in archive (partial - needs listfile)
 - [ ] extract - Extract files
 - [ ] create - Create new archive
 - [ ] add - Add files to archive
@@ -283,9 +288,10 @@
 
 - [x] info - Show archive information
 - [x] crypto - Test crypto functions
+- [x] hash - Calculate hashes for filenames
+- [x] hash-compare - Compare hashes between filenames
+- [x] tables - Display table contents
 - [ ] headers - Display all headers
-- [ ] tables - Display table contents
-- [ ] hash - Calculate hashes for filenames
 - [ ] decrypt - Decrypt and display table/file
 - [ ] hexdump - Hex dump of archive sections
 
@@ -310,6 +316,9 @@
 - [x] Implementation summary
 - [x] Crypto implementation documentation
 - [x] Crypto implementation summary
+- [x] Hash implementation documentation
+- [x] Debug commands documentation
+- [x] Table parsing documentation
 - [ ] Architecture documentation
 - [ ] Performance guide
 - [ ] Debugging guide
@@ -328,6 +337,7 @@
 - [x] Build verification script
 - [x] CLI name test script
 - [x] Test data generator (basic MPQ headers)
+- [x] Test encryption table validation script
 - [ ] Test data generator (full archives)
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts

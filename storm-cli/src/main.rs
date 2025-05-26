@@ -78,6 +78,17 @@ enum DebugCommands {
         /// Second filename
         filename2: String,
     },
+    /// Display table contents
+    Tables {
+        /// Path to the MPQ archive
+        archive: String,
+        /// Table type (hash, block) or index number
+        #[arg(short = 't', long)]
+        table_type: Option<String>,
+        /// Limit number of entries shown
+        #[arg(short, long, default_value = "20")]
+        limit: Option<usize>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -123,7 +134,15 @@ fn main() -> Result<()> {
             } => {
                 commands::debug::hash_compare(&filename1, &filename2)?;
             }
+            DebugCommands::Tables {
+                archive,
+                table_type,
+                limit,
+            } => {
+                commands::debug::tables(&archive, table_type.as_deref(), limit)?;
+            }
         },
     }
+
     Ok(())
 }

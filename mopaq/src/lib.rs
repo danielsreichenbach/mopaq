@@ -56,15 +56,16 @@ pub mod io;
 pub mod tables;
 
 // Re-export commonly used types
-pub use archive::{Archive, OpenOptions};
+pub use archive::{Archive, FileEntry, FileInfo, OpenOptions};
 pub use error::{Error, Result};
 pub use header::{FormatVersion, MpqHeader};
+pub use tables::{BlockEntry, BlockTable, HashEntry, HashTable};
 
 // Re-export crypto for CLI usage
 pub use crypto::{decrypt_block, decrypt_dword, encrypt_block};
 
 // Re-export hash functions for CLI usage
-pub use hash::{hash_string, jenkins_hash};
+pub use hash::{hash_string, hash_type, jenkins_hash};
 
 /// MPQ signature constants
 pub mod signatures {

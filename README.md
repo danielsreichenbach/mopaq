@@ -90,6 +90,48 @@ decrypt_block(&mut data, key);
 println!("Decrypted: {:08X?}", data);
 ```
 
+### Hash Example
+
+```rust
+use mopaq::hash::{hash_string, hash_type};
+
+// Generate hash values for file lookup
+let filename = "units\\human\\footman.mdx";
+let hash_a = hash_string(filename, hash_type::NAME_A);
+let hash_b = hash_string(filename, hash_type::NAME_B);
+let table_index = hash_string(filename, hash_type::TABLE_OFFSET);
+
+println!("Hash A: 0x{:08X}", hash_a);
+println!("Hash B: 0x{:08X}", hash_b);
+println!("Table Index: 0x{:08X}", table_index);
+```
+
+### Table Access Example
+
+```rust
+use mopaq::Archive;
+
+// Open archive and load tables
+let mut archive = Archive::open("game.mpq")?;
+archive.load_tables()?;
+
+// Find a specific file
+if let Some(file_info) = archive.find_file("war3map.j")? {
+    println!("Found at position: 0x{:08X}", file_info.file_pos);
+    println!("Size: {} bytes", file_info.file_size);
+    println!("Compressed: {} bytes", file_info.compressed_size);
+
+    if file_info.is_encrypted() {
+        println!("File is encrypted");
+    }
+}
+
+// Access raw tables
+if let Some(hash_table) = archive.hash_table() {
+    println!("Hash table has {} entries", hash_table.size());
+}
+```
+
 ### CLI Usage
 
 ```bash
@@ -107,6 +149,15 @@ storm-cli verify WarCraft3.w3m
 
 # Debug archive structure
 storm-cli debug info Diablo2.mpq
+
+# Display table contents
+storm-cli debug tables Diablo2.mpq
+
+# Generate hash values for debugging
+storm-cli debug hash "(listfile)" --all
+
+# Compare hashes to check for collisions
+storm-cli debug hash-compare "file1.txt" "file2.txt"
 ```
 
 Example output from `debug info`:
@@ -138,6 +189,28 @@ Tables:
     Entries: 256
 ```
 
+Example output from `debug hash`:
+
+```
+$ storm-cli debug hash "(listfile)" --all
+
+Hash values for "(listfile)":
+
+  TABLE_OFFSET (0): 0xFD5F6EEA (decimal: 4250595050)
+  NAME_A       (1): 0x7E4A7FE4 (decimal: 2118746084)
+  NAME_B       (2): 0xCABC04F6 (decimal: 3401352438)
+  FILE_KEY     (3): 0xD3F10625 (decimal: 3555919397)
+  KEY2_MIX     (4): 0x1672FA43 (decimal: 376863299)
+
+Hash table lookup:
+  For a hash table of size 0x1000 (4096):
+  Initial index: 0x6EEA (28394)
+
+  Hash entry would contain:
+    dwName1: 0x7E4A7FE4
+    dwName2: 0xCABC04F6
+```
+
 ## Current Status
 
 ### Implemented
@@ -147,13 +220,17 @@ Tables:
 - ✅ User data header support
 - ✅ Encryption table generation
 - ✅ Encryption/decryption algorithms
-- ✅ Debug CLI commands (info, crypto)
+- ✅ Hash functions (MPQ and Jenkins)
+- ✅ Hash table parsing and decryption
+- ✅ Block table parsing and decryption
+- ✅ Hi-block table support (v2+)
+- ✅ File lookup by name
+- ✅ Debug CLI commands (info, crypto, hash, hash-compare, tables)
 
 ### In Progress
 
-- 🚧 Hash functions
-- 🚧 Table parsing (hash, block)
-- 🚧 File extraction
+- 🚧 File extraction (need compression support)
+- 🚧 (listfile) parsing for file enumeration
 
 ### Planned
 

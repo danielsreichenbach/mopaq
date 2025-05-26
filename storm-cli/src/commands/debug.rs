@@ -367,6 +367,198 @@ pub fn hash_compare(filename1: &str, filename2: &str) -> Result<()> {
     Ok(())
 }
 
+/// Display table contents from an MPQ archive
+pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>) -> Result<()> {
+    println!("MPQ Table Contents");
+    println!("==================");
+    println!();
+
+    // Open the archive
+    let mut archive = Archive::open(archive_path)?;
+
+    // Load tables if not already loaded
+    if archive.hash_table().is_none() {
+        println!("Loading tables...");
+        archive.load_tables()?;
+    }
+
+    let show_all = table_type.is_none();
+    let limit = limit.unwrap_or(20);
+
+    // Display hash table
+    if show_all || table_type == Some("hash") {
+        if let Some(hash_table) = archive.hash_table() {
+            println!("Hash Table (size: {}):", hash_table.size());
+            println!("Index | Name1      | Name2      | Locale | Platform | Block Index | Status");
+            println!("------|------------|------------|--------|----------|-------------|--------");
+
+            let entries = hash_table.entries();
+            let count = if show_all {
+                limit.min(entries.len())
+            } else {
+                entries.len()
+            };
+
+            let mut valid_count = 0;
+            let mut deleted_count = 0;
+            let mut empty_count = 0;
+
+            for (i, entry) in entries.iter().enumerate() {
+                if entry.is_valid() {
+                    valid_count += 1;
+                    if valid_count <= limit || !show_all {
+                        println!(
+                            "{:5} | 0x{:08X} | 0x{:08X} | {:6} | {:8} | {:11} | Valid",
+                            i,
+                            entry.name_1,
+                            entry.name_2,
+                            entry.locale,
+                            entry.platform,
+                            entry.block_index
+                        );
+                    }
+                } else if entry.is_deleted() {
+                    deleted_count += 1;
+                } else {
+                    empty_count += 1;
+                }
+            }
+
+            println!();
+            println!(
+                "Summary: {} valid, {} deleted, {} empty entries",
+                valid_count, deleted_count, empty_count
+            );
+        } else {
+            println!("No hash table loaded");
+        }
+    }
+
+    // Display block table
+    if show_all || table_type == Some("block") {
+        println!();
+        if let Some(block_table) = archive.block_table() {
+            println!("Block Table (size: {}):", block_table.size());
+            println!("Index | File Pos   | Compressed | File Size  | Flags      | Status");
+            println!("------|------------|------------|------------|------------|--------");
+
+            let entries = block_table.entries();
+            let count = if show_all {
+                limit.min(entries.len())
+            } else {
+                entries.len()
+            };
+
+            let mut valid_count = 0;
+
+            for (i, entry) in entries.iter().enumerate() {
+                if entry.exists() {
+                    valid_count += 1;
+                    if valid_count <= limit || !show_all {
+                        let flags_str = format_block_flags(entry.flags);
+                        println!(
+                            "{:5} | 0x{:08X} | {:10} | {:10} | {:10} | {}",
+                            i,
+                            entry.file_pos,
+                            entry.compressed_size,
+                            entry.file_size,
+                            flags_str,
+                            if entry.exists() { "Exists" } else { "Deleted" }
+                        );
+                    }
+                }
+            }
+
+            println!();
+            println!("Summary: {} valid entries", valid_count);
+        } else {
+            println!("No block table loaded");
+        }
+    }
+
+    // Show specific entry details if requested
+    if let Some(index_str) = table_type {
+        if let Ok(index) = index_str.parse::<usize>() {
+            println!();
+            println!("Detailed entry at index {}:", index);
+
+            if let Some(hash_table) = archive.hash_table() {
+                if let Some(hash_entry) = hash_table.get(index) {
+                    println!("Hash Entry:");
+                    println!("  Name 1: 0x{:08X}", hash_entry.name_1);
+                    println!("  Name 2: 0x{:08X}", hash_entry.name_2);
+                    println!(
+                        "  Locale: {} (0x{:04X})",
+                        format_locale(hash_entry.locale),
+                        hash_entry.locale
+                    );
+                    println!("  Platform: {}", format_platform(hash_entry.platform));
+                    println!("  Block Index: {}", hash_entry.block_index);
+                    println!(
+                        "  Status: {}",
+                        if hash_entry.is_valid() {
+                            "Valid"
+                        } else if hash_entry.is_deleted() {
+                            "Deleted"
+                        } else {
+                            "Empty"
+                        }
+                    );
+
+                    if hash_entry.is_valid() {
+                        if let Some(block_table) = archive.block_table() {
+                            if let Some(block_entry) =
+                                block_table.get(hash_entry.block_index as usize)
+                            {
+                                println!();
+                                println!("Corresponding Block Entry:");
+                                println!("  File Position: 0x{:08X}", block_entry.file_pos);
+                                println!(
+                                    "  Compressed Size: {} bytes",
+                                    block_entry.compressed_size
+                                );
+                                println!("  File Size: {} bytes", block_entry.file_size);
+                                println!(
+                                    "  Compression Ratio: {:.1}%",
+                                    if block_entry.file_size > 0 {
+                                        100.0 * block_entry.compressed_size as f64
+                                            / block_entry.file_size as f64
+                                    } else {
+                                        0.0
+                                    }
+                                );
+                                println!("  Flags: 0x{:08X}", block_entry.flags);
+
+                                use mopaq::tables::BlockEntry;
+                                if block_entry.flags & BlockEntry::FLAG_EXISTS != 0 {
+                                    println!("    - EXISTS");
+                                }
+                                if block_entry.flags & BlockEntry::FLAG_COMPRESS != 0 {
+                                    println!("    - COMPRESSED");
+                                }
+                                if block_entry.flags & BlockEntry::FLAG_ENCRYPTED != 0 {
+                                    println!("    - ENCRYPTED");
+                                }
+                                if block_entry.flags & BlockEntry::FLAG_FIX_KEY != 0 {
+                                    println!("    - FIX_KEY");
+                                }
+                                if block_entry.flags & BlockEntry::FLAG_SINGLE_UNIT != 0 {
+                                    println!("    - SINGLE_UNIT");
+                                }
+                                if block_entry.flags & BlockEntry::FLAG_SECTOR_CRC != 0 {
+                                    println!("    - SECTOR_CRC");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Get a human-readable name for the format version
 fn format_version_name(version: FormatVersion) -> &'static str {
     match version {
@@ -383,4 +575,61 @@ fn hex_string(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{:02X}", b))
         .collect::<String>()
+}
+
+/// Format block flags as a short string
+fn format_block_flags(flags: u32) -> String {
+    use mopaq::tables::BlockEntry;
+    let mut parts = Vec::new();
+
+    if flags & BlockEntry::FLAG_COMPRESS != 0 {
+        parts.push("CMP");
+    }
+    if flags & BlockEntry::FLAG_ENCRYPTED != 0 {
+        parts.push("ENC");
+    }
+    if flags & BlockEntry::FLAG_FIX_KEY != 0 {
+        parts.push("FIX");
+    }
+    if flags & BlockEntry::FLAG_SINGLE_UNIT != 0 {
+        parts.push("SGL");
+    }
+
+    if parts.is_empty() {
+        "NONE".to_string()
+    } else {
+        parts.join("|")
+    }
+}
+
+/// Format locale code
+fn format_locale(locale: u16) -> &'static str {
+    match locale {
+        0x0000 => "Neutral",
+        0x0409 => "English (US)",
+        0x0809 => "English (UK)",
+        0x0407 => "German",
+        0x040c => "French",
+        0x0410 => "Italian",
+        0x0405 => "Czech",
+        0x0411 => "Japanese",
+        0x0412 => "Korean",
+        0x0404 => "Chinese (Traditional)",
+        0x0804 => "Chinese (Simplified)",
+        0x0419 => "Russian",
+        0x0415 => "Polish",
+        0x0416 => "Portuguese (BR)",
+        0x0816 => "Portuguese (PT)",
+        0x040a => "Spanish (ES)",
+        0x080a => "Spanish (MX)",
+        _ => "Unknown",
+    }
+}
+
+/// Format platform code
+fn format_platform(platform: u16) -> &'static str {
+    match platform {
+        0 => "Default",
+        _ => "Unknown",
+    }
 }
