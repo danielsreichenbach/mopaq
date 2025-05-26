@@ -61,10 +61,6 @@ harness = false
 name = "crypto"
 harness = false
 
-[[bench]]
-name = "compression"
-harness = false
-
 [features]
 default = ["mmap", "all-compressions"]
 mmap = ["memmap2"]
