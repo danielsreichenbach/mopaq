@@ -384,21 +384,61 @@ impl Archive {
 
 /// Decrypt file data in-place
 fn decrypt_file_data(data: &mut [u8], key: u32) {
-    // Convert to u32 slice for decryption
-    let ptr = data.as_mut_ptr() as *mut u32;
-    let len = data.len() / 4;
-    let u32_data = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+    if data.is_empty() || key == 0 {
+        return;
+    }
 
-    decrypt_block(u32_data, key);
+    // Process full u32 chunks
+    let chunks = data.len() / 4;
+    if chunks > 0 {
+        // Create a properly aligned u32 slice
+        let mut u32_data = Vec::with_capacity(chunks);
+
+        // Copy data as u32 values (little-endian)
+        for i in 0..chunks {
+            let offset = i * 4;
+            let value = u32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            u32_data.push(value);
+        }
+
+        // Decrypt the u32 data
+        decrypt_block(&mut u32_data, key);
+
+        // Copy back to byte array
+        for (i, &value) in u32_data.iter().enumerate() {
+            let offset = i * 4;
+            let bytes = value.to_le_bytes();
+            data[offset] = bytes[0];
+            data[offset + 1] = bytes[1];
+            data[offset + 2] = bytes[2];
+            data[offset + 3] = bytes[3];
+        }
+    }
 
     // Handle remaining bytes if not aligned to 4
     let remainder = data.len() % 4;
     if remainder > 0 {
-        let offset = data.len() - remainder;
-        let last_dword = unsafe { std::ptr::read_unaligned(data[offset..].as_ptr() as *const u32) };
-        let decrypted = decrypt_dword(last_dword, key.wrapping_add(len as u32));
-        unsafe {
-            std::ptr::write_unaligned(data[offset..].as_mut_ptr() as *mut u32, decrypted);
+        let offset = chunks * 4;
+
+        // Read remaining bytes into a u32 (padding with zeros)
+        let mut last_bytes = [0u8; 4];
+        for i in 0..remainder {
+            last_bytes[i] = data[offset + i];
+        }
+        let last_dword = u32::from_le_bytes(last_bytes);
+
+        // Decrypt with adjusted key
+        let decrypted = decrypt_dword(last_dword, key.wrapping_add(chunks as u32));
+
+        // Write back only the remainder bytes
+        let decrypted_bytes = decrypted.to_le_bytes();
+        for i in 0..remainder {
+            data[offset + i] = decrypted_bytes[i];
         }
     }
 }
