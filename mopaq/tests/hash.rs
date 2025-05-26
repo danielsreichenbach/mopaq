@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use mopaq::crypto::{decrypt_block, encrypt_block, ENCRYPTION_TABLE};
+    use mopaq::crypto::{decrypt_block, encrypt_block};
     use mopaq::hash::{hash_string, hash_type};
 
     #[test]
