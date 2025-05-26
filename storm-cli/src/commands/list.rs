@@ -30,8 +30,8 @@ fn list_using_listfile(archive: &mut Archive, verbose: bool) -> Result<()> {
         .read_file("(listfile)")
         .context("Failed to read (listfile)")?;
 
-    let listfile_content = String::from_utf8_lossy(&listfile_data);
-    let filenames = parse_listfile(&listfile_content);
+    let filenames = mopaq::special_files::parse_listfile(&listfile_data)
+        .context("Failed to parse (listfile)")?;
 
     if filenames.is_empty() {
         println!("(listfile) is empty");

@@ -53,6 +53,7 @@ pub mod error;
 pub mod hash;
 pub mod header;
 pub mod io;
+pub mod special_files;
 pub mod tables;
 
 // Re-export commonly used types

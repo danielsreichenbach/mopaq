@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI list command with verbose and all-entries options
 - CLI verify command for archive integrity checking
 - CLI find command to search for specific files with detailed information
+- Special file handling introduced for listfiles
 
 ### Changed
 

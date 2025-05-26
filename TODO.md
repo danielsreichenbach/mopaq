@@ -155,8 +155,8 @@
 
 ### Special Files
 
-- [ ] `(listfile)` support
-  - [ ] Listfile parsing
+- [x] `(listfile)` support
+  - [x] Listfile parsing
   - [ ] Listfile generation
   - [ ] Filename index building
 - [ ] `(attributes)` support

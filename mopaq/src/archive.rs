@@ -5,6 +5,7 @@ use crate::{
     crypto::{decrypt_block, decrypt_dword},
     hash::{hash_string, hash_type},
     header::{self, MpqHeader, UserDataHeader},
+    special_files,
     tables::{BlockTable, HashTable, HiBlockTable},
     Error, Result,
 };

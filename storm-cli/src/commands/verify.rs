@@ -249,8 +249,7 @@ fn verify_files(
     verbose: bool,
 ) -> Result<()> {
     let listfile_data = archive.read_file("(listfile)")?;
-    let listfile_content = String::from_utf8_lossy(&listfile_data);
-    let filenames = parse_listfile(&listfile_content);
+    let filenames = mopaq::special_files::parse_listfile(&listfile_data)?;
 
     println!();
     println!("Verifying {} files...", filenames.len());
