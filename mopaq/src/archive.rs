@@ -1,4 +1,12 @@
 //! MPQ archive handling
+//!
+//! This module provides the main Archive type for reading MPQ files.
+//! It supports:
+//! - All MPQ versions (v1-v4)
+//! - File extraction with decompression
+//! - Sector CRC validation
+//! - Encryption/decryption
+//! - Multi-sector and single-unit files
 
 use crate::{
     compression,
@@ -210,18 +218,45 @@ impl Archive {
     }
 
     /// List files in the archive
-    pub fn list(&self) -> Result<Vec<FileEntry>> {
-        // For now, we can only list files if we have a (listfile)
-        // In the future, we could try to enumerate all valid entries
-
+    pub fn list(&mut self) -> Result<Vec<FileEntry>> {
         // Try to find and read (listfile)
         if let Some(listfile_info) = self.find_file("(listfile)")? {
-            // TODO: Read and parse the listfile
-            // For now, return empty list
-            Ok(vec![])
+            // Read the listfile
+            let listfile_data = self.read_file("(listfile)")?;
+
+            // Parse the listfile
+            let filenames = special_files::parse_listfile(&listfile_data)?;
+
+            let mut entries = Vec::new();
+
+            // Look up each file in the hash table
+            for filename in filenames {
+                if let Some(file_info) = self.find_file(&filename)? {
+                    // Get the block entry for size information
+                    if let Some(block_table) = &self.block_table {
+                        if let Some(block_entry) = block_table.get(file_info.block_index) {
+                            entries.push(FileEntry {
+                                name: filename,
+                                size: block_entry.file_size as u64,
+                                compressed_size: block_entry.compressed_size as u64,
+                                flags: block_entry.flags,
+                            });
+                        }
+                    }
+                } else {
+                    // File is in listfile but not found in archive
+                    log::warn!(
+                        "File '{}' listed in (listfile) but not found in archive",
+                        filename
+                    );
+                }
+            }
+
+            Ok(entries)
         } else {
-            // No listfile, we'll need to enumerate entries
-            // This is less reliable but can still work
+            // No listfile, we'll need to enumerate entries without names
+            log::info!("No (listfile) found, enumerating anonymous entries");
+
             let hash_table = self
                 .hash_table
                 .as_ref()
@@ -295,6 +330,40 @@ impl Archive {
                 decrypt_file_data(&mut data, key);
             }
 
+            // Validate CRC if present for single unit files
+            if file_info.has_sector_crc() && file_info.is_single_unit() {
+                // For single unit files, there's one CRC after the data
+                let mut crc_bytes = [0u8; 4];
+                self.reader.read_exact(&mut crc_bytes)?;
+                let expected_crc = u32::from_le_bytes(crc_bytes);
+
+                // CRC is calculated on the decompressed data
+                let data_to_check = if file_info.is_compressed() {
+                    // We need to decompress first to check CRC
+                    let compression_type = data[0];
+                    let compressed_data = &data[1..];
+                    let decompressed = compression::decompress(
+                        compressed_data,
+                        compression_type,
+                        file_info.file_size as usize,
+                    )?;
+                    decompressed
+                } else {
+                    data.clone()
+                };
+
+                let actual_crc = crc32fast::hash(&data_to_check);
+                if actual_crc != expected_crc {
+                    return Err(Error::ChecksumMismatch {
+                        file: name.to_string(),
+                        expected: expected_crc,
+                        actual: actual_crc,
+                    });
+                }
+
+                log::debug!("Single unit file CRC validated: 0x{:08X}", actual_crc);
+            }
+
             // Decompress if needed
             if file_info.is_compressed() {
                 // Get compression type from first byte
@@ -338,6 +407,24 @@ impl Archive {
             sector_offsets.push(cursor.read_u32::<LittleEndian>()?);
         }
 
+        // Read CRC table if present
+        let mut sector_crcs = None;
+        if file_info.has_sector_crc() {
+            let crc_table_size = sector_count * 4;
+            let mut crc_data = vec![0u8; crc_table_size as usize];
+            self.reader.read_exact(&mut crc_data)?;
+
+            // CRC table is not encrypted
+            let mut crcs = Vec::with_capacity(sector_count as usize);
+            let mut cursor = std::io::Cursor::new(&crc_data);
+            for _ in 0..sector_count {
+                crcs.push(cursor.read_u32::<LittleEndian>()?);
+            }
+            sector_crcs = Some(crcs);
+
+            log::debug!("Read {} sector CRCs for file", sector_count);
+        }
+
         // Read and decompress each sector
         let mut decompressed_data = Vec::with_capacity(file_info.file_size as usize);
 
@@ -361,17 +448,34 @@ impl Archive {
             }
 
             // Decompress sector
-            if file_info.is_compressed() && sector_size_compressed < expected_size {
-                // Sector is compressed
-                let compression_type = sector_data[0];
-                let compressed = &sector_data[1..];
-                let mut decompressed =
-                    compression::decompress(compressed, compression_type, expected_size)?;
-                decompressed_data.append(&mut decompressed);
-            } else {
-                // Sector is not compressed (or compression didn't help)
-                decompressed_data.extend_from_slice(&sector_data[..expected_size]);
+            let decompressed_sector =
+                if file_info.is_compressed() && sector_size_compressed < expected_size {
+                    // Sector is compressed
+                    let compression_type = sector_data[0];
+                    let compressed = &sector_data[1..];
+                    compression::decompress(compressed, compression_type, expected_size)?
+                } else {
+                    // Sector is not compressed (or compression didn't help)
+                    sector_data[..expected_size].to_vec()
+                };
+
+            // Validate CRC if present
+            if let Some(ref crcs) = sector_crcs {
+                let expected_crc = crcs[i];
+                let actual_crc = crc32fast::hash(&decompressed_sector);
+
+                if actual_crc != expected_crc {
+                    return Err(Error::ChecksumMismatch {
+                        file: format!("sector {}", i),
+                        expected: expected_crc,
+                        actual: actual_crc,
+                    });
+                }
+
+                log::trace!("Sector {} CRC validated: 0x{:08X}", i, actual_crc);
             }
+
+            decompressed_data.extend_from_slice(&decompressed_sector);
         }
 
         Ok(decompressed_data)
@@ -553,5 +657,15 @@ mod tests {
         // Decrypt (same operation)
         decrypt_file_data(&mut data, 0xDEADBEEF);
         assert_eq!(data, original);
+    }
+
+    #[test]
+    fn test_crc_calculation() {
+        // Test that we're using the correct CRC algorithm (CRC-32)
+        let test_data = b"Hello, World!";
+        let crc = crc32fast::hash(test_data);
+
+        // This is the expected CRC-32 value for "Hello, World!"
+        assert_eq!(crc, 0xEC4AC3D0);
     }
 }

@@ -257,6 +257,7 @@ fn verify_files(
     let mut verified = 0;
     let mut missing = 0;
     let mut failed = 0;
+    let mut crc_protected = 0;
 
     for filename in &filenames {
         if verbose {
@@ -266,6 +267,11 @@ fn verify_files(
         // Check if file exists in hash table
         match archive.find_file(filename) {
             Ok(Some(file_info)) => {
+                // Check if file has CRC protection
+                if file_info.has_sector_crc() {
+                    crc_protected += 1;
+                }
+
                 // Try to read the file to verify it's accessible
                 match archive.read_file(filename) {
                     Ok(data) => {
@@ -322,22 +328,7 @@ fn verify_files(
     println!("  Verified: {}", verified);
     println!("  Missing: {}", missing);
     println!("  Failed: {}", failed);
+    println!("  CRC protected: {}", crc_protected);
 
     Ok(())
-}
-
-/// Parse a listfile into individual filenames
-fn parse_listfile(content: &str) -> Vec<String> {
-    content
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty() && !line.starts_with(';') && !line.starts_with('#'))
-        .map(|line| {
-            if let Some(pos) = line.find(';') {
-                line[..pos].trim().to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect()
 }

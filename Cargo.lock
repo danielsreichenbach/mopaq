@@ -785,6 +785,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "bzip2",
+ "crc32fast",
  "criterion",
  "env_logger",
  "flate2",

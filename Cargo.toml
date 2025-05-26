@@ -38,6 +38,7 @@ sha2 = "0.10"
 md-5 = "0.10"
 num-bigint = "0.4"
 num-traits = "0.2"
+crc32fast = "1.4"
 
 # Compression algorithms
 flate2 = "1.0"

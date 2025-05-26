@@ -141,7 +141,7 @@
 - [x] Sector offset table parsing
 - [x] Multi-sector file reading
 - [x] Single unit file reading
-- [ ] Sector CRC validation
+- [X] Sector CRC validation
 - [ ] Patch file support
 
 #### File Management
@@ -335,9 +335,10 @@
 ## Python Scripts
 
 - [x] Build verification script
-- [x] CLI name test script
 - [x] Test data generator (basic MPQ headers)
 - [x] Test encryption table validation script
+- [x] Test data generator with compression
+- [x] Test data generator with CRC validation
 - [ ] Test data generator (full archives)
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts

@@ -141,22 +141,6 @@ fn list_all_entries(archive: &Archive) -> Result<()> {
     Ok(())
 }
 
-/// Parse a listfile into individual filenames
-fn parse_listfile(content: &str) -> Vec<String> {
-    content
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty() && !line.starts_with(';') && !line.starts_with('#'))
-        .map(|line| {
-            if let Some(pos) = line.find(';') {
-                line[..pos].trim().to_string()
-            } else {
-                line.to_string()
-            }
-        })
-        .collect()
-}
-
 /// Format file size in human-readable format
 fn format_size(size: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
