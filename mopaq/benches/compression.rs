@@ -33,9 +33,13 @@ fn bench_zlib_compression(c: &mut Criterion) {
         for &size in &sizes {
             let data = create_test_data(size, pattern);
 
-            group.benchmark_id(BenchmarkId::new(*data_name, format!("{}B", size)), |b| {
-                b.iter(|| compress(black_box(&data), flags::ZLIB));
-            });
+            group.bench_with_input(
+                BenchmarkId::new(*data_name, format!("{}B", size)),
+                &data,
+                |b, test_data| {
+                    b.iter(|| compress(black_box(test_data), flags::ZLIB));
+                },
+            );
         }
     }
 
