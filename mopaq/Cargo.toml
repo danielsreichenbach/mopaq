@@ -31,7 +31,7 @@ num-traits = { workspace = true }
 # Compression algorithms
 flate2 = { workspace = true }
 bzip2 = { workspace = true }
-lzma-rs = { workspace = true }
+rust-lzma = { workspace = true }
 
 # I/O and performance
 memmap2 = { workspace = true, optional = true }
@@ -59,6 +59,10 @@ harness = false
 
 [[bench]]
 name = "crypto"
+harness = false
+
+[[bench]]
+name = "compression"
 harness = false
 
 [features]

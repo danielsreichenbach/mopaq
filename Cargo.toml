@@ -42,7 +42,7 @@ num-traits = "0.2"
 # Compression algorithms
 flate2 = "1.0"
 bzip2 = "0.4"
-lzma-rs = "0.3"
+rust-lzma = "0.6"
 
 # I/O and performance
 memmap2 = "0.9"

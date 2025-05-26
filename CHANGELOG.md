@@ -38,6 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File lookup functionality (find_file method)
 - CLI debug tables command to display table contents
 - Table entry state tracking (valid/deleted/empty)
+- Compression module implementation with multiple algorithms
+- Zlib compression/decompression support
+- BZip2 compression/decompression support
+- Sparse/RLE decompression support
+- LZMA decompression support (basic)
+- Multi-sector file reading with compression
+- File encryption/decryption support with key calculation
+- CLI extract command (basic implementation)
+- Sector offset table parsing and decryption
+- Single unit and multi-sector file handling
+- Compression benchmarks for performance testing
+- Integration tests for compression functionality
+- Refactored CLI commands into separate modules for better organization
+- CLI list command with verbose and all-entries options
+- CLI verify command for archive integrity checking
+- CLI find command to search for specific files with detailed information
 
 ### Changed
 
@@ -51,3 +67,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dual-licensed under MIT and Apache 2.0
 - StormLib-compatible FFI interface planned
 - Crypto implementation uses const fn for compile-time table generation
+- Compression uses feature flags for optional algorithms (bzip2, lzma)

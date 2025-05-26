@@ -1,10 +1,14 @@
 //! MPQ archive handling
 
 use crate::{
+    compression,
+    crypto::{decrypt_block, decrypt_dword},
+    hash::{hash_string, hash_type},
     header::{self, MpqHeader, UserDataHeader},
     tables::{BlockTable, HashTable, HiBlockTable},
     Error, Result,
 };
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -254,26 +258,148 @@ impl Archive {
             .find_file(name)?
             .ok_or_else(|| Error::FileNotFound(name.to_string()))?;
 
-        // Seek to file position
+        // Get the block entry
+        let block_table = self
+            .block_table
+            .as_ref()
+            .ok_or_else(|| Error::invalid_format("Block table not loaded"))?;
+        let block_entry = block_table
+            .get(file_info.block_index)
+            .ok_or_else(|| Error::block_table("Invalid block index"))?;
+
+        // Calculate encryption key if needed
+        let key = if file_info.is_encrypted() {
+            let base_key = hash_string(name, hash_type::FILE_KEY);
+            if file_info.has_fix_key() {
+                // Apply FIX_KEY modification
+                let file_pos = (file_info.file_pos - self.archive_offset) as u32;
+                (base_key.wrapping_add(file_pos)) ^ block_entry.file_size
+            } else {
+                base_key
+            }
+        } else {
+            0
+        };
+
+        // Read the file data
         self.reader.seek(SeekFrom::Start(file_info.file_pos))?;
 
-        // TODO: Handle compression and encryption
-        if file_info.is_compressed() || file_info.is_encrypted() {
-            return Err(Error::invalid_format(
-                "Compression/encryption not yet implemented",
-            ));
+        if file_info.is_single_unit() || !file_info.is_compressed() {
+            // Single unit or uncompressed file - read directly
+            let mut data = vec![0u8; file_info.compressed_size as usize];
+            self.reader.read_exact(&mut data)?;
+
+            // Decrypt if needed
+            if file_info.is_encrypted() {
+                decrypt_file_data(&mut data, key);
+            }
+
+            // Decompress if needed
+            if file_info.is_compressed() {
+                // Get compression type from first byte
+                let compression_type = data[0];
+                let compressed_data = &data[1..];
+
+                compression::decompress(
+                    compressed_data,
+                    compression_type,
+                    file_info.file_size as usize,
+                )
+            } else {
+                Ok(data)
+            }
+        } else {
+            // Multi-sector compressed file
+            self.read_sectored_file(&file_info, key)
+        }
+    }
+
+    /// Read a file that is split into sectors
+    fn read_sectored_file(&mut self, file_info: &FileInfo, key: u32) -> Result<Vec<u8>> {
+        let sector_size = self.header.sector_size();
+        let sector_count = ((file_info.file_size as usize + sector_size - 1) / sector_size) as u32;
+
+        // Read sector offset table
+        let offset_table_size = (sector_count + 1) * 4;
+        let mut offset_data = vec![0u8; offset_table_size as usize];
+        self.reader.read_exact(&mut offset_data)?;
+
+        // Decrypt sector offset table if needed
+        if file_info.is_encrypted() {
+            let offset_key = key.wrapping_sub(1);
+            decrypt_file_data(&mut offset_data, offset_key);
         }
 
-        // For now, just read uncompressed, unencrypted files
-        let mut data = vec![0u8; file_info.file_size as usize];
-        self.reader.read_exact(&mut data)?;
+        // Parse sector offsets
+        let mut sector_offsets = Vec::with_capacity((sector_count + 1) as usize);
+        let mut cursor = std::io::Cursor::new(&offset_data);
+        for _ in 0..=sector_count {
+            sector_offsets.push(cursor.read_u32::<LittleEndian>()?);
+        }
 
-        Ok(data)
+        // Read and decompress each sector
+        let mut decompressed_data = Vec::with_capacity(file_info.file_size as usize);
+
+        for i in 0..sector_count as usize {
+            let sector_start = sector_offsets[i] as usize;
+            let sector_end = sector_offsets[i + 1] as usize;
+            let sector_size_compressed = sector_end - sector_start;
+
+            // Calculate expected decompressed size for this sector
+            let remaining = file_info.file_size as usize - decompressed_data.len();
+            let expected_size = remaining.min(sector_size);
+
+            // Read sector data
+            let mut sector_data = vec![0u8; sector_size_compressed];
+            self.reader.read_exact(&mut sector_data)?;
+
+            // Decrypt sector if needed
+            if file_info.is_encrypted() {
+                let sector_key = key.wrapping_add(i as u32);
+                decrypt_file_data(&mut sector_data, sector_key);
+            }
+
+            // Decompress sector
+            if file_info.is_compressed() && sector_size_compressed < expected_size {
+                // Sector is compressed
+                let compression_type = sector_data[0];
+                let compressed = &sector_data[1..];
+                let mut decompressed =
+                    compression::decompress(compressed, compression_type, expected_size)?;
+                decompressed_data.append(&mut decompressed);
+            } else {
+                // Sector is not compressed (or compression didn't help)
+                decompressed_data.extend_from_slice(&sector_data[..expected_size]);
+            }
+        }
+
+        Ok(decompressed_data)
     }
 
     /// Add a file to the archive
     pub fn add_file(&mut self, _name: &str, _data: &[u8]) -> Result<()> {
         todo!("Implement file addition")
+    }
+}
+
+/// Decrypt file data in-place
+fn decrypt_file_data(data: &mut [u8], key: u32) {
+    // Convert to u32 slice for decryption
+    let ptr = data.as_mut_ptr() as *mut u32;
+    let len = data.len() / 4;
+    let u32_data = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+
+    decrypt_block(u32_data, key);
+
+    // Handle remaining bytes if not aligned to 4
+    let remainder = data.len() % 4;
+    if remainder > 0 {
+        let offset = data.len() - remainder;
+        let last_dword = unsafe { std::ptr::read_unaligned(data[offset..].as_ptr() as *const u32) };
+        let decrypted = decrypt_dword(last_dword, key.wrapping_add(len as u32));
+        unsafe {
+            std::ptr::write_unaligned(data[offset..].as_mut_ptr() as *mut u32, decrypted);
+        }
     }
 }
 
@@ -315,6 +441,18 @@ impl FileInfo {
     pub fn has_fix_key(&self) -> bool {
         use crate::tables::BlockEntry;
         (self.flags & BlockEntry::FLAG_FIX_KEY) != 0
+    }
+
+    /// Check if the file is stored as a single unit
+    pub fn is_single_unit(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_SINGLE_UNIT) != 0
+    }
+
+    /// Check if the file has sector CRCs
+    pub fn has_sector_crc(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_SECTOR_CRC) != 0
     }
 }
 
@@ -360,5 +498,19 @@ mod tests {
         assert!(info.is_compressed());
         assert!(info.is_encrypted());
         assert!(!info.has_fix_key());
+    }
+
+    #[test]
+    fn test_decrypt_file_data() {
+        let mut data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
+        let original = data.clone();
+
+        // Encrypt
+        decrypt_file_data(&mut data, 0xDEADBEEF);
+        assert_ne!(data, original);
+
+        // Decrypt (same operation)
+        decrypt_file_data(&mut data, 0xDEADBEEF);
+        assert_eq!(data, original);
     }
 }

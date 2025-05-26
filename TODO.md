@@ -106,9 +106,9 @@
 
 #### File Encryption
 
-- [ ] File key calculation
-- [ ] FIX_KEY flag support
-- [ ] Sector encryption/decryption
+- [x] File key calculation
+- [x] FIX_KEY flag support
+- [x] Sector encryption/decryption
 - [ ] Encryption key caching
 
 ### Compression Support
@@ -117,30 +117,30 @@
 
 - [ ] PKWare implode (0x00000100)
 - [ ] Huffman encoding (0x01)
-- [ ] Deflate/zlib (0x02)
+- [x] Deflate/zlib (0x02)
 - [ ] PKWare DCL (0x08)
-- [ ] BZip2 (0x10) - v2+
-- [ ] Sparse/RLE (0x20) - v3+
+- [x] BZip2 (0x10) - v2+
+- [x] Sparse/RLE (0x20) - v3+
 - [ ] ADPCM mono (0x40)
 - [ ] ADPCM stereo (0x80)
-- [ ] LZMA (0x12) - v3+
-- [ ] Multiple compression support
+- [x] LZMA (0x12) - v3+ (basic support)
+- [x] Multiple compression support (partial - PKWare not implemented)
 
 #### Compression Infrastructure
 
-- [ ] Sector-based compression
-- [ ] Single unit file support
-- [ ] Compression method detection
-- [ ] Decompression dispatcher
+- [x] Sector-based compression
+- [x] Single unit file support
+- [x] Compression method detection
+- [x] Decompression dispatcher
 
 ### File Operations
 
 #### File Storage
 
-- [ ] Sector size calculation
-- [ ] Sector offset table parsing
-- [ ] Multi-sector file reading
-- [ ] Single unit file reading
+- [x] Sector size calculation
+- [x] Sector offset table parsing
+- [x] Multi-sector file reading
+- [x] Single unit file reading
 - [ ] Sector CRC validation
 - [ ] Patch file support
 
@@ -215,7 +215,7 @@
 - [x] Unit tests for encryption/decryption
 - [x] Unit tests for table structures
 - [x] Integration tests for table parsing
-- [ ] Unit tests for each compression method
+- [x] Unit tests for compression methods (zlib, bzip2, sparse)
 - [ ] Integration tests with test archives
 - [ ] Fuzzing tests for security
 - [x] Test vector validation (crypto)
@@ -277,12 +277,12 @@
 
 - [x] CLI argument parsing structure
 - [x] Basic CLI integration tests
-- [ ] list - List files in archive (partial - needs listfile)
-- [ ] extract - Extract files
+- [x] list - List files in archive
+- [x] extract - Extract files
 - [ ] create - Create new archive
 - [ ] add - Add files to archive
 - [ ] remove - Remove files from archive
-- [ ] verify - Verify archive integrity
+- [x] verify - Verify archive integrity
 
 ### Debug Commands
 

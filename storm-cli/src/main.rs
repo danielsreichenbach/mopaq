@@ -22,6 +22,22 @@ enum Commands {
     List {
         /// Path to the MPQ archive
         archive: String,
+        /// Show detailed information about each file
+        #[arg(short, long)]
+        verbose: bool,
+        /// Show all entries even without filenames
+        #[arg(short, long)]
+        all: bool,
+    },
+    /// Find a specific file in an archive
+    Find {
+        /// Path to the MPQ archive
+        archive: String,
+        /// Filename to search for
+        filename: String,
+        /// Show detailed information
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Extract files from an archive
     Extract {
@@ -30,6 +46,9 @@ enum Commands {
         /// Output directory
         #[arg(short, long, default_value = ".")]
         output: String,
+        /// Specific file to extract (if not specified, extracts all)
+        #[arg(short, long)]
+        file: Option<String>,
     },
     /// Create a new archive
     Create {
@@ -42,6 +61,9 @@ enum Commands {
     Verify {
         /// Path to the MPQ archive
         archive: String,
+        /// Show detailed verification progress
+        #[arg(short, long)]
+        verbose: bool,
     },
     /// Debug commands
     #[command(subcommand)]
@@ -97,21 +119,33 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::List { archive } => {
-            println!("Listing files in: {}", archive);
-            // TODO: Implement listing
+        Commands::List {
+            archive,
+            verbose,
+            all,
+        } => {
+            commands::list::list(&archive, verbose, all)?;
         }
-        Commands::Extract { archive, output } => {
-            println!("Extracting {} to {}", archive, output);
-            // TODO: Implement extraction
+        Commands::Find {
+            archive,
+            filename,
+            verbose,
+        } => {
+            commands::find::find(&archive, &filename, verbose)?;
+        }
+        Commands::Extract {
+            archive,
+            output,
+            file,
+        } => {
+            commands::extract::extract(&archive, &output, file.as_deref())?;
         }
         Commands::Create { archive, source } => {
             println!("Creating {} from {}", archive, source);
             // TODO: Implement creation
         }
-        Commands::Verify { archive } => {
-            println!("Verifying {}", archive);
-            // TODO: Implement verification
+        Commands::Verify { archive, verbose } => {
+            commands::verify::verify(&archive, verbose)?;
         }
         Commands::Debug(debug_cmd) => match debug_cmd {
             DebugCommands::Info { archive } => {

@@ -67,6 +67,9 @@ pub use crypto::{decrypt_block, decrypt_dword, encrypt_block};
 // Re-export hash functions for CLI usage
 pub use hash::{hash_string, hash_type, jenkins_hash};
 
+// Re-export compression for testing
+pub use compression::{compress, decompress};
+
 /// MPQ signature constants
 pub mod signatures {
     /// Standard MPQ archive signature ('MPQ\x1A')
