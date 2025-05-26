@@ -4,10 +4,13 @@ This directory contains test MPQ archives for different format versions.
 
 ## Structure
 
-- `v1/` - MPQ format version 1 test archives (32-byte header)
-- `v2/` - MPQ format version 2 test archives (44-byte header)
-- `v3/` - MPQ format version 3 test archives (68-byte header)
-- `v4/` - MPQ format version 4 test archives (208-byte header)
+- `v1/`            - MPQ format version 1 test archives (32-byte header)
+- `v2/`            - MPQ format version 2 test archives (44-byte header)
+- `v3/`            - MPQ format version 3 test archives (68-byte header)
+- `v4/`            - MPQ format version 4 test archives (208-byte header)
+- `comprehensive/` - MPQ archives using many/all of the formats features
+- `compressed/`    - MPQ archives with compressed files
+- `crc/`           - MPQ archives with checksums
 
 ## Adding Test Files
 
