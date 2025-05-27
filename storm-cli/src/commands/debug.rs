@@ -68,8 +68,10 @@ pub fn info(archive_path: &str) -> Result<()> {
     // Version-specific information
     if header.format_version as u16 >= 1 {
         if let Some(hi_pos) = header.hi_block_table_pos {
-            println!("  Hi-block table:");
-            println!("    Position: 0x{:08X}", hi_pos);
+            if hi_pos != 0 {
+                println!("  Hi-block table:");
+                println!("    Position: 0x{:08X}", hi_pos);
+            }
         }
     }
 
