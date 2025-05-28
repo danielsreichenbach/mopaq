@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core library renamed from `storm` to `mopaq` to avoid conflicts with FFI output
 - Encryption table generation changed from `once_cell::Lazy` to `const fn` for compile-time generation
 - CLI commands now show some colors.
+- MPQ test data generation scripts have been merged into a single swiss army knife
 
 ### Fixed
 

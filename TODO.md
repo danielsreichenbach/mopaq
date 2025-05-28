@@ -339,7 +339,7 @@
 - [x] Test encryption table validation script
 - [x] Test data generator with compression
 - [x] Test data generator with CRC validation
-- [ ] Test data generator (full archives)
+- [X] Test data generator (full archives)
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts
 - [ ] Performance comparison scripts

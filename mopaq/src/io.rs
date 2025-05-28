@@ -1,7 +1,7 @@
 //! I/O abstractions for MPQ archives
 
 use crate::Result;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
 /// Trait for reading from MPQ archives
 pub trait MpqRead: Read + Seek {
@@ -22,8 +22,10 @@ impl<R: Read + Seek> BufferedMpqReader<R> {
 }
 
 impl<R: Read + Seek> MpqRead for BufferedMpqReader<R> {
-    fn read_at(&mut self, _offset: u64, _buf: &mut [u8]) -> Result<()> {
-        todo!("Implement read_at")
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> Result<()> {
+        self.inner.seek(SeekFrom::Start(offset))?;
+        self.inner.read_exact(buf)?;
+        Ok(())
     }
 }
 
