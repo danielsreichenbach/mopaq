@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use mopaq::Archive;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 
 /// Extract files from an MPQ archive
 pub fn extract(archive_path: &str, output_dir: &str, specific_file: Option<&str>) -> Result<()> {
@@ -33,7 +33,8 @@ fn extract_single_file(archive: &mut Archive, filename: &str, output_dir: &str) 
         .read_file(filename)
         .with_context(|| format!("Failed to read file '{}' from archive", filename))?;
 
-    let output_path = Path::new(output_dir).join(filename);
+    // Convert the archive path to OS-appropriate path
+    let output_path = build_output_path(output_dir, filename);
 
     // Create parent directories if needed
     if let Some(parent) = output_path.parent() {
@@ -111,7 +112,13 @@ fn extract_using_listfile(archive: &mut Archive, output_dir: &str) -> Result<()>
             continue;
         }
 
-        print!("Extracting {}... ", filename.cyan());
+        let output_path = build_output_path(output_dir, filename);
+
+        print!("Extracting {} ", filename.cyan());
+        if filename.contains('\\') || filename.contains('/') {
+            print!("→ {} ", output_path.display().to_string().dimmed());
+        }
+        print!("... ");
 
         match extract_file_safe(archive, filename, output_dir) {
             Ok(size) => {
@@ -170,16 +177,111 @@ fn extract_using_listfile(archive: &mut Archive, output_dir: &str) -> Result<()>
 
 /// Safely extract a file, returning the file size on success
 fn extract_file_safe(archive: &mut Archive, filename: &str, output_dir: &str) -> Result<usize> {
-    let data = archive.read_file(filename)?;
-    let output_path = Path::new(output_dir).join(filename);
+    // Read the file data
+    let data = archive
+        .read_file(filename)
+        .with_context(|| format!("Failed to read file '{}' from archive", filename))?;
+
+    // Convert the archive path to OS-appropriate path
+    let output_path = build_output_path(output_dir, filename);
 
     // Create parent directories if needed
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Failed to create directory structure for: {:?}",
+                output_path
+            )
+        })?;
     }
 
-    fs::write(&output_path, &data)?;
+    // Write the file
+    fs::write(&output_path, &data)
+        .with_context(|| format!("Failed to write file to: {:?}", output_path))?;
+
     Ok(data.len())
+}
+
+/// Build an OS-appropriate output path from an archive filename
+fn build_output_path(output_dir: &str, archive_filename: &str) -> PathBuf {
+    // Replace both forward slashes and backslashes with the OS separator
+    let normalized_path = if MAIN_SEPARATOR == '\\' {
+        // On Windows, just replace forward slashes
+        archive_filename.replace('/', "\\")
+    } else {
+        // On Unix, replace backslashes with forward slashes
+        archive_filename.replace('\\', "/")
+    };
+
+    Path::new(output_dir).join(normalized_path)
+}
+
+/// Build an OS-appropriate output path with security checks
+fn build_safe_output_path(output_dir: &str, archive_filename: &str) -> Result<PathBuf> {
+    // Remove any leading slashes or backslashes
+    let cleaned = archive_filename.trim_start_matches(&['/', '\\'][..]);
+
+    // Split by both types of separators
+    let components: Vec<&str> = cleaned
+        .split(&['/', '\\'][..])
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Check for path traversal attempts
+    for component in &components {
+        if *component == ".." || *component == "." {
+            return Err(anyhow::anyhow!(
+                "Security error: Path traversal detected in filename: {}",
+                archive_filename
+            ));
+        }
+
+        // Also check for absolute paths on Windows (C:, D:, etc)
+        if component.len() >= 2 && component.chars().nth(1) == Some(':') {
+            return Err(anyhow::anyhow!(
+                "Security error: Absolute path detected in filename: {}",
+                archive_filename
+            ));
+        }
+    }
+
+    // Build the safe path
+    let mut path = PathBuf::from(output_dir);
+    for component in components {
+        path.push(component);
+    }
+
+    // Verify the final path is still within output_dir
+    let canonical_output = Path::new(output_dir)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(output_dir));
+    let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+
+    if !canonical_path.starts_with(&canonical_output) {
+        return Err(anyhow::anyhow!(
+            "Security error: Path escapes output directory: {:?}",
+            archive_filename
+        ));
+    }
+
+    Ok(path)
+}
+
+/// Alternative implementation using PathBuf components (more robust)
+fn build_output_path_components(output_dir: &str, archive_filename: &str) -> PathBuf {
+    // Split the archive filename by both separators
+    let components: Vec<&str> = archive_filename
+        .split(&['/', '\\'][..])
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    // Build the path using the OS's native separator
+    let mut path = PathBuf::from(output_dir);
+    for component in components {
+        path.push(component);
+    }
+
+    path
 }
 
 /// Format file size in human-readable format

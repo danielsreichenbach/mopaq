@@ -55,12 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI verify command for archive integrity checking
 - CLI find command to search for specific files with detailed information
 - Special file handling introduced for listfiles
+- CRC validation arrvied
 
 ### Changed
 
 - CLI binary renamed from `storm` to `storm-cli` to avoid naming conflicts with the library crate
 - Core library renamed from `storm` to `mopaq` to avoid conflicts with FFI output
 - Encryption table generation changed from `once_cell::Lazy` to `const fn` for compile-time generation
+- CLI commands now show some colors.
+
+### Fixed
+
+- `storm-cli extract` will now convert archive file paths to the local systems path separators
 
 ### Technical Details
 
