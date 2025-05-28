@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `storm-cli extract` will now convert archive file paths to the local systems path separators
 
+### Removed
+
+- `scripts/test_encryption_table.py` has been removed, since the topic is covered in Rust by tests
+
 ### Technical Details
 
 - Using Rust edition 2021 with MSRV 1.86
