@@ -1,11 +1,12 @@
 //! Verify command implementation
 
 use anyhow::{Context, Result};
+use colored::*;
 use mopaq::Archive;
 
 /// Verify the integrity of an MPQ archive
 pub fn verify(archive_path: &str, verbose: bool) -> Result<()> {
-    println!("Verifying archive: {}", archive_path);
+    println!("{}: {}", "Verifying archive".bold(), archive_path.cyan());
     println!();
 
     let mut archive = Archive::open(archive_path)
@@ -28,25 +29,32 @@ pub fn verify(archive_path: &str, verbose: bool) -> Result<()> {
     }
 
     // Report results
-    println!("Verification Results:");
-    println!("====================");
+    println!("{}", "Verification Results:".bold().underline());
 
     if issues.is_empty() && warnings.is_empty() {
-        println!("✓ Archive appears to be valid");
+        println!("{} Archive appears to be valid", "✓".green().bold());
     } else {
         if !issues.is_empty() {
             println!();
-            println!("Issues found ({}):", issues.len());
+            println!(
+                "{} ({}):",
+                "Issues found".red().bold(),
+                issues.len().to_string().red()
+            );
             for issue in &issues {
-                println!("  ✗ {}", issue);
+                println!("  {} {}", "✗".red(), issue);
             }
         }
 
         if !warnings.is_empty() {
             println!();
-            println!("Warnings ({}):", warnings.len());
+            println!(
+                "{} ({}):",
+                "Warnings".yellow().bold(),
+                warnings.len().to_string().yellow()
+            );
             for warning in &warnings {
-                println!("  ⚠ {}", warning);
+                println!("  {} {}", "⚠".yellow(), warning);
             }
         }
     }
@@ -224,18 +232,20 @@ fn verify_tables(
         ));
     }
 
-    println!("Table Statistics:");
+    println!("{}", "Table Statistics:".bold());
     println!(
-        "  Hash table: {} entries ({} valid, {} deleted, {} empty)",
-        hash_table.size(),
-        valid_count,
-        deleted_count,
-        empty_count
+        "  {}: {} entries ({} valid, {} deleted, {} empty)",
+        "Hash table".cyan(),
+        hash_table.size().to_string().bright_white(),
+        valid_count.to_string().green(),
+        deleted_count.to_string().yellow(),
+        empty_count.to_string().dimmed()
     );
     println!(
-        "  Block table: {} entries ({} exist)",
-        block_table.size(),
-        files_exist
+        "  {}: {} entries ({} exist)",
+        "Block table".cyan(),
+        block_table.size().to_string().bright_white(),
+        files_exist.to_string().green()
     );
 
     Ok(())
@@ -252,7 +262,11 @@ fn verify_files(
     let filenames = mopaq::special_files::parse_listfile(&listfile_data)?;
 
     println!();
-    println!("Verifying {} files...", filenames.len());
+    println!(
+        "{} {} files...",
+        "Verifying".bold(),
+        filenames.len().to_string().bright_blue()
+    );
 
     let mut verified = 0;
     let mut missing = 0;
@@ -324,11 +338,15 @@ fn verify_files(
     }
 
     println!();
-    println!("File Verification:");
-    println!("  Verified: {}", verified);
-    println!("  Missing: {}", missing);
-    println!("  Failed: {}", failed);
-    println!("  CRC protected: {}", crc_protected);
+    println!("{}", "File Verification:".bold());
+    println!("  {}: {}", "Verified".green(), verified.to_string().green());
+    println!("  {}: {}", "Missing".yellow(), missing.to_string().yellow());
+    println!("  {}: {}", "Failed".red(), failed.to_string().red());
+    println!(
+        "  {}: {}",
+        "CRC protected".cyan(),
+        crc_protected.to_string().cyan()
+    );
 
     Ok(())
 }

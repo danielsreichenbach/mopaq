@@ -1,6 +1,7 @@
 //! List command implementation
 
 use anyhow::{Context, Result};
+use colored::*;
 use mopaq::{tables::BlockEntry, Archive};
 
 /// List files in an MPQ archive
@@ -8,7 +9,7 @@ pub fn list(archive_path: &str, verbose: bool, show_all: bool) -> Result<()> {
     let mut archive = Archive::open(archive_path)
         .with_context(|| format!("Failed to open archive: {}", archive_path))?;
 
-    println!("Archive: {}", archive_path);
+    println!("{}: {}", "Archive".bold(), archive_path.cyan());
 
     // Try to list using (listfile) first
     if let Ok(Some(_)) = archive.find_file("(listfile)") {
@@ -17,8 +18,12 @@ pub fn list(archive_path: &str, verbose: bool, show_all: bool) -> Result<()> {
         // Show all entries from tables even without filenames
         list_all_entries(&archive)?;
     } else {
-        println!("No (listfile) found in archive");
-        println!("Use --all to show all entries by index");
+        println!(
+            "{} {}",
+            "⚠".yellow(),
+            "No (listfile) found in archive".yellow()
+        );
+        println!("Use {} to show all entries by index", "--all".cyan());
     }
 
     Ok(())
@@ -34,55 +39,74 @@ fn list_using_listfile(archive: &mut Archive, verbose: bool) -> Result<()> {
         .context("Failed to parse (listfile)")?;
 
     if filenames.is_empty() {
-        println!("(listfile) is empty");
+        println!("{} {}", "⚠".yellow(), "(listfile) is empty".yellow());
         return Ok(());
     }
 
-    println!("Files in archive:");
+    println!("{}", "Files in archive:".bold());
     println!();
 
     if verbose {
         // Detailed listing with file information
         println!(
             "{:<50} {:>12} {:>12} {:>8} {:<20}",
-            "Filename", "Size", "Compressed", "Ratio", "Flags"
+            "Filename".bold().underline(),
+            "Size".bold().underline(),
+            "Compressed".bold().underline(),
+            "Ratio".bold().underline(),
+            "Flags".bold().underline()
         );
-        println!("{}", "-".repeat(104));
 
         for filename in &filenames {
             if let Ok(Some(file_info)) = archive.find_file(filename) {
                 let ratio = if file_info.file_size > 0 {
-                    format!(
-                        "{:.1}%",
-                        100.0 * file_info.compressed_size as f64 / file_info.file_size as f64
-                    )
+                    let ratio_val =
+                        100.0 * file_info.compressed_size as f64 / file_info.file_size as f64;
+                    if ratio_val < 50.0 {
+                        format!("{:.1}%", ratio_val).green()
+                    } else if ratio_val < 80.0 {
+                        format!("{:.1}%", ratio_val).yellow()
+                    } else {
+                        format!("{:.1}%", ratio_val).normal()
+                    }
                 } else {
-                    "N/A".to_string()
+                    "N/A".dimmed()
                 };
 
                 let flags = format_file_flags(file_info.flags);
+                let flags_colored = if flags.contains("ENCRYPTED") {
+                    flags.red()
+                } else if flags.contains("COMPRESSED") {
+                    flags.cyan()
+                } else {
+                    flags.normal()
+                };
 
                 println!(
                     "{:<50} {:>12} {:>12} {:>8} {:<20}",
-                    filename,
-                    format_size(file_info.file_size),
-                    format_size(file_info.compressed_size),
+                    filename.normal(),
+                    format_size(file_info.file_size).bright_white(),
+                    format_size(file_info.compressed_size).dimmed(),
                     ratio,
-                    flags
+                    flags_colored
                 );
             } else {
-                println!("{:<50} (not found in hash table)", filename);
+                println!("{:<50} {}", filename, "(not found in hash table)".red());
             }
         }
     } else {
         // Simple listing
         for filename in &filenames {
-            println!("{}", filename);
+            println!("  {}", filename);
         }
     }
 
     println!();
-    println!("Total files: {}", filenames.len());
+    println!(
+        "{}: {}",
+        "Total files".bold(),
+        filenames.len().to_string().green()
+    );
 
     Ok(())
 }
@@ -96,13 +120,16 @@ fn list_all_entries(archive: &Archive) -> Result<()> {
         .block_table()
         .ok_or_else(|| anyhow::anyhow!("Block table not loaded"))?;
 
-    println!("All entries in archive (by index):");
+    println!("{}", "All entries in archive (by index):".bold());
     println!();
     println!(
         "{:<10} {:>12} {:>12} {:>8} {:<20}",
-        "Index", "Size", "Compressed", "Ratio", "Flags"
+        "Index".bold().underline(),
+        "Size".bold().underline(),
+        "Compressed".bold().underline(),
+        "Ratio".bold().underline(),
+        "Flags".bold().underline()
     );
-    println!("{}", "-".repeat(66));
 
     let mut count = 0;
     for (i, hash_entry) in hash_table.entries().iter().enumerate() {
@@ -110,24 +137,35 @@ fn list_all_entries(archive: &Archive) -> Result<()> {
             if let Some(block_entry) = block_table.get(hash_entry.block_index as usize) {
                 if block_entry.exists() {
                     let ratio = if block_entry.file_size > 0 {
-                        format!(
-                            "{:.1}%",
-                            100.0 * block_entry.compressed_size as f64
-                                / block_entry.file_size as f64
-                        )
+                        let ratio_val = 100.0 * block_entry.compressed_size as f64
+                            / block_entry.file_size as f64;
+                        if ratio_val < 50.0 {
+                            format!("{:.1}%", ratio_val).green()
+                        } else if ratio_val < 80.0 {
+                            format!("{:.1}%", ratio_val).yellow()
+                        } else {
+                            format!("{:.1}%", ratio_val).normal()
+                        }
                     } else {
-                        "N/A".to_string()
+                        "N/A".dimmed()
                     };
 
                     let flags = format_file_flags(block_entry.flags);
+                    let flags_colored = if flags.contains("ENCRYPTED") {
+                        flags.red()
+                    } else if flags.contains("COMPRESSED") {
+                        flags.cyan()
+                    } else {
+                        flags.normal()
+                    };
 
                     println!(
                         "{:<10} {:>12} {:>12} {:>8} {:<20}",
-                        format!("#{}", i),
-                        format_size(block_entry.file_size as u64),
-                        format_size(block_entry.compressed_size as u64),
+                        format!("#{}", i).bright_blue(),
+                        format_size(block_entry.file_size as u64).bright_white(),
+                        format_size(block_entry.compressed_size as u64).dimmed(),
                         ratio,
-                        flags
+                        flags_colored
                     );
                     count += 1;
                 }
@@ -136,7 +174,7 @@ fn list_all_entries(archive: &Archive) -> Result<()> {
     }
 
     println!();
-    println!("Total entries: {}", count);
+    println!("{}: {}", "Total entries".bold(), count.to_string().green());
 
     Ok(())
 }

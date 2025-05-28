@@ -1,14 +1,14 @@
 //! Debug commands for MPQ archives
 
 use anyhow::Result;
+use colored::*;
 use mopaq::hash::{hash_string, hash_type, jenkins_hash};
 use mopaq::{Archive, FormatVersion};
 use std::path::Path;
 
 /// Display detailed information about an MPQ archive
 pub fn info(archive_path: &str) -> Result<()> {
-    println!("MPQ Archive Information");
-    println!("======================");
+    println!("{}", "MPQ Archive Information".bold());
     println!();
 
     // Try to open the archive
@@ -16,11 +16,12 @@ pub fn info(archive_path: &str) -> Result<()> {
     let header = archive.header();
 
     // Basic information
-    println!("File: {}", archive_path);
+    println!("File: {}", archive_path.cyan());
     println!(
-        "Archive offset: 0x{:08X} ({} bytes)",
-        archive.archive_offset(),
-        archive.archive_offset()
+        "  {}: {} ({} bytes)",
+        "Archive offset".bright_blue(),
+        format!("0x{:08X}", archive.archive_offset()).bright_magenta(),
+        archive.archive_offset().to_string().dimmed()
     );
 
     // User data information
@@ -37,7 +38,7 @@ pub fn info(archive_path: &str) -> Result<()> {
 
     // Header information
     println!();
-    println!("MPQ Header:");
+    println!("{}", "MPQ Header".bold());
     println!(
         "  Format version: {} ({})",
         header.format_version as u16,
@@ -53,7 +54,7 @@ pub fn info(archive_path: &str) -> Result<()> {
 
     // Table information
     println!();
-    println!("Tables:");
+    println!("{}", "Tables".bold());
     println!("  Hash table:");
     println!("    Position: 0x{:08X}", header.get_hash_table_pos());
     println!(
@@ -94,7 +95,7 @@ pub fn info(archive_path: &str) -> Result<()> {
     // Version 4 specific information
     if let Some(v4_data) = &header.v4_data {
         println!();
-        println!("Version 4 Extended Data:");
+        println!("{}", "Version 4 Extended Data".bold());
         println!("  Compressed table sizes:");
         println!("    Hash table: {} bytes", v4_data.hash_table_size_64);
         println!("    Block table: {} bytes", v4_data.block_table_size_64);
@@ -197,14 +198,18 @@ pub fn hash(filename: &str, hash_type_name: Option<&str>, all: bool, jenkins: bo
     if jenkins {
         // Generate Jenkins hash
         let hash = jenkins_hash(filename);
-        println!("Jenkins hash for \"{}\":", filename);
-        println!("  0x{:016X} (decimal: {})", hash, hash);
+        println!("{} \"{}\":", "Jenkins hash for".bold(), filename.cyan());
+        println!(
+            "  {} (decimal: {})",
+            format!("0x{:016X}", hash).bright_magenta(),
+            hash.to_string().dimmed()
+        );
         return Ok(());
     }
 
     if all {
         // Generate all hash types
-        println!("Hash values for \"{}\":", filename);
+        println!("{} \"{}\":", "Hash values for".bold(), filename.cyan());
         println!();
 
         let table_offset = hash_string(filename, hash_type::TABLE_OFFSET);
@@ -214,32 +219,58 @@ pub fn hash(filename: &str, hash_type_name: Option<&str>, all: bool, jenkins: bo
         let key2_mix = hash_string(filename, hash_type::KEY2_MIX);
 
         println!(
-            "  TABLE_OFFSET (0): 0x{:08X} (decimal: {})",
-            table_offset, table_offset
-        );
-        println!("  NAME_A       (1): 0x{:08X} (decimal: {})", name_a, name_a);
-        println!("  NAME_B       (2): 0x{:08X} (decimal: {})", name_b, name_b);
-        println!(
-            "  FILE_KEY     (3): 0x{:08X} (decimal: {})",
-            file_key, file_key
+            "  {} (0): {} (decimal: {})",
+            "TABLE_OFFSET".bright_blue(),
+            format!("0x{:08X}", table_offset).bright_magenta(),
+            table_offset.to_string().dimmed()
         );
         println!(
-            "  KEY2_MIX     (4): 0x{:08X} (decimal: {})",
-            key2_mix, key2_mix
+            "  {} (1): {} (decimal: {})",
+            "NAME_A      ".bright_blue(),
+            format!("0x{:08X}", name_a).bright_magenta(),
+            name_a.to_string().dimmed()
+        );
+        println!(
+            "  {} (2): {} (decimal: {})",
+            "NAME_B      ".bright_blue(),
+            format!("0x{:08X}", name_b).bright_magenta(),
+            name_b.to_string().dimmed()
+        );
+        println!(
+            "  {} (3): {} (decimal: {})",
+            "FILE_KEY    ".bright_blue(),
+            format!("0x{:08X}", file_key).bright_magenta(),
+            file_key.to_string().dimmed()
+        );
+        println!(
+            "  {} (4): {} (decimal: {})",
+            "KEY2_MIX    ".bright_blue(),
+            format!("0x{:08X}", key2_mix).bright_magenta(),
+            key2_mix.to_string().dimmed()
         );
 
         println!();
-        println!("Hash table lookup:");
-        println!("  For a hash table of size 0x1000 (4096):");
+        println!("{}:", "Hash table lookup".bold());
+        println!("  {}:", "For a hash table of size 0x1000 (4096)".bold());
         println!(
-            "  Initial index: 0x{:04X} ({})",
-            table_offset & 0xFFF,
-            table_offset & 0xFFF
+            "  {}: {} (decimal: {})",
+            "Initial index".bright_blue(),
+            format!("0x{:04X}", table_offset & 0xFFF).bright_magenta(),
+            (table_offset & 0xFFF).to_string().dimmed()
         );
+
         println!();
-        println!("  Hash entry would contain:");
-        println!("    dwName1: 0x{:08X}", name_a);
-        println!("    dwName2: 0x{:08X}", name_b);
+        println!("  {}:", "Hash entry would contain".bold());
+        println!(
+            "    {}: {}",
+            "dwName1".bright_blue(),
+            format!("0x{:08X}", name_a).bright_magenta()
+        );
+        println!(
+            "    {}: {}",
+            "dwName2".bright_blue(),
+            format!("0x{:08X}", name_b).bright_magenta()
+        );
 
         // Show path normalization if relevant
         if filename.contains('/') {
@@ -255,7 +286,11 @@ pub fn hash(filename: &str, hash_type_name: Option<&str>, all: bool, jenkins: bo
         let has_lowercase = filename.chars().any(|c| c.is_ascii_lowercase());
         if has_lowercase {
             println!();
-            println!("Note: Filename is case-insensitive (converted to uppercase for hashing)");
+            println!(
+                "{}: {}",
+                "Note".dimmed(),
+                "Filename is case-insensitive (converted to uppercase for hashing)".dimmed()
+            );
         }
     } else {
         // Generate specific hash type

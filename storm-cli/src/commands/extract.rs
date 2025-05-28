@@ -1,13 +1,14 @@
 //! Extract command implementation
 
 use anyhow::{Context, Result};
+use colored::*;
 use mopaq::Archive;
 use std::fs;
 use std::path::Path;
 
 /// Extract files from an MPQ archive
 pub fn extract(archive_path: &str, output_dir: &str, specific_file: Option<&str>) -> Result<()> {
-    println!("Opening archive: {}", archive_path);
+    println!("{}: {}", "Opening archive".bold(), archive_path.cyan());
     let mut archive = Archive::open(archive_path)
         .with_context(|| format!("Failed to open archive: {}", archive_path))?;
 
@@ -26,7 +27,7 @@ pub fn extract(archive_path: &str, output_dir: &str, specific_file: Option<&str>
 
 /// Extract a single file from the archive
 fn extract_single_file(archive: &mut Archive, filename: &str, output_dir: &str) -> Result<()> {
-    println!("Extracting file: {}", filename);
+    println!("{}: {}", "Extracting file".bold(), filename.cyan());
 
     let data = archive
         .read_file(filename)
@@ -44,9 +45,10 @@ fn extract_single_file(archive: &mut Archive, filename: &str, output_dir: &str) 
         .with_context(|| format!("Failed to write file: {:?}", output_path))?;
 
     println!(
-        "Extracted {} ({} bytes) to {:?}",
-        filename,
-        data.len(),
+        "{} Extracted {} ({}) to {:?}",
+        "✓".green().bold(),
+        filename.cyan(),
+        format_size(data.len() as u64).yellow(),
         output_path
     );
     Ok(())
@@ -91,7 +93,11 @@ fn extract_using_listfile(archive: &mut Archive, output_dir: &str) -> Result<()>
         return Ok(());
     }
 
-    println!("Found {} files in (listfile)", filenames.len());
+    println!(
+        "{} {} files in (listfile)",
+        "Found".green(),
+        filenames.len().to_string().bright_blue()
+    );
     println!();
 
     let mut extracted_count = 0;
@@ -105,15 +111,19 @@ fn extract_using_listfile(archive: &mut Archive, output_dir: &str) -> Result<()>
             continue;
         }
 
-        print!("Extracting {}... ", filename);
+        print!("Extracting {}... ", filename.cyan());
 
         match extract_file_safe(archive, filename, output_dir) {
             Ok(size) => {
-                println!("OK ({} bytes)", size);
+                println!(
+                    "{} ({})",
+                    "OK".green().bold(),
+                    format_size(size as u64).dimmed()
+                );
                 extracted_count += 1;
             }
             Err(e) => {
-                println!("FAILED: {}", e);
+                println!("{}: {}", "FAILED".red().bold(), e.to_string().red());
                 failed_count += 1;
             }
         }
@@ -121,17 +131,38 @@ fn extract_using_listfile(archive: &mut Archive, output_dir: &str) -> Result<()>
 
     // Summary
     println!();
-    println!("Extraction complete:");
-    println!("  Files extracted: {}", extracted_count);
-    println!("  Files failed: {}", failed_count);
-    println!("  Files skipped: {}", skipped_count);
+    println!("{}", "Extraction complete:".bold().underline());
+    println!(
+        "  {}: {}",
+        "Files extracted".green(),
+        extracted_count.to_string().green()
+    );
+    println!(
+        "  {}: {}",
+        "Files failed".red(),
+        failed_count.to_string().red()
+    );
+    println!(
+        "  {}: {}",
+        "Files skipped".yellow(),
+        skipped_count.to_string().yellow()
+    );
 
     if failed_count > 0 {
         println!();
-        println!("Note: Some files failed to extract. Common reasons:");
-        println!("  - File is referenced in (listfile) but not actually present");
-        println!("  - File uses unsupported compression (PKWare, Huffman, etc.)");
-        println!("  - File is corrupted or has invalid data");
+        println!(
+            "{}",
+            "Note: Some files failed to extract. Common reasons:".yellow()
+        );
+        println!(
+            "  {} File is referenced in (listfile) but not actually present",
+            "-".dimmed()
+        );
+        println!(
+            "  {} File uses unsupported compression (PKWare, Huffman, etc.)",
+            "-".dimmed()
+        );
+        println!("  {} File is corrupted or has invalid data", "-".dimmed());
     }
 
     Ok(())
@@ -149,4 +180,22 @@ fn extract_file_safe(archive: &mut Archive, filename: &str, output_dir: &str) ->
 
     fs::write(&output_path, &data)?;
     Ok(data.len())
+}
+
+/// Format file size in human-readable format
+fn format_size(size: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB"];
+    let mut size = size as f64;
+    let mut unit_index = 0;
+
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", size as u64, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size, UNITS[unit_index])
+    }
 }

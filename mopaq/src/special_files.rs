@@ -66,7 +66,7 @@ pub fn get_special_file_info(filename: &str) -> Option<SpecialFileInfo> {
         "(listfile)" => Some(SpecialFileInfo {
             name: "(listfile)",
             encrypted: false,
-            compressed: false,
+            compressed: true,
         }),
         "(attributes)" => Some(SpecialFileInfo {
             name: "(attributes)",

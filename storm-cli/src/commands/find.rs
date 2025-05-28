@@ -1,6 +1,7 @@
 //! Find command implementation
 
 use anyhow::{Context, Result};
+use colored::*;
 use mopaq::{tables::BlockEntry, Archive};
 
 /// Find a specific file in an MPQ archive
@@ -8,69 +9,99 @@ pub fn find(archive_path: &str, filename: &str, verbose: bool) -> Result<()> {
     let archive = Archive::open(archive_path)
         .with_context(|| format!("Failed to open archive: {}", archive_path))?;
 
-    println!("Searching for '{}' in archive: {}", filename, archive_path);
+    println!(
+        "{} '{}' in archive: {}",
+        "Searching for".bold(),
+        filename.cyan(),
+        archive_path.bright_blue()
+    );
     println!();
 
     match archive.find_file(filename)? {
         Some(file_info) => {
-            println!("✓ File found!");
+            println!("{} File found!", "✓".green().bold());
             println!();
 
             // Basic information
-            println!("File Information:");
-            println!("  Filename: {}", file_info.filename);
-            println!("  Hash table index: {}", file_info.hash_index);
-            println!("  Block table index: {}", file_info.block_index);
+            println!("{}", "File Information:".bold().underline());
+            println!("  {}: {}", "Filename".bold(), file_info.filename.cyan());
             println!(
-                "  File size: {} bytes ({})",
-                file_info.file_size,
-                format_size(file_info.file_size)
+                "  {}: {}",
+                "Hash table index".bold(),
+                file_info.hash_index.to_string().bright_blue()
             );
             println!(
-                "  Compressed size: {} bytes ({})",
-                file_info.compressed_size,
-                format_size(file_info.compressed_size)
+                "  {}: {}",
+                "Block table index".bold(),
+                file_info.block_index.to_string().bright_blue()
+            );
+            println!(
+                "  {}: {} ({})",
+                "File size".bold(),
+                file_info.file_size.to_string().green(),
+                format_size(file_info.file_size).dimmed()
+            );
+            println!(
+                "  {}: {} ({})",
+                "Compressed size".bold(),
+                file_info.compressed_size.to_string().yellow(),
+                format_size(file_info.compressed_size).dimmed()
             );
 
             // Compression ratio
             if file_info.file_size > 0 {
                 let ratio = 100.0 * file_info.compressed_size as f64 / file_info.file_size as f64;
-                println!("  Compression ratio: {:.1}%", ratio);
+                let ratio_colored = if ratio < 50.0 {
+                    format!("{:.1}%", ratio).green()
+                } else if ratio < 80.0 {
+                    format!("{:.1}%", ratio).yellow()
+                } else {
+                    format!("{:.1}%", ratio).red()
+                };
+                println!("  {}: {}", "Compression ratio".bold(), ratio_colored);
             }
 
             // File position
             println!(
-                "  File position: 0x{:08X} (offset {} in archive)",
-                file_info.file_pos,
-                file_info.file_pos - archive.archive_offset()
+                "  {}: {} (offset {} in archive)",
+                "File position".bold(),
+                format!("0x{:08X}", file_info.file_pos).bright_magenta(),
+                (file_info.file_pos - archive.archive_offset())
+                    .to_string()
+                    .dimmed()
             );
 
             // Locale information
             println!(
-                "  Locale: {} (0x{:04X})",
+                "  {}: {} ({})",
+                "Locale".bold(),
                 format_locale(file_info.locale),
-                file_info.locale
+                format!("0x{:04X}", file_info.locale).dimmed()
             );
 
             // Flags
-            println!("  Flags: 0x{:08X}", file_info.flags);
+            println!(
+                "  {}: {}",
+                "Flags".bold(),
+                format!("0x{:08X}", file_info.flags).bright_magenta()
+            );
             if file_info.is_compressed() {
-                println!("    - COMPRESSED");
+                println!("    {} COMPRESSED", "-".dimmed());
             }
             if file_info.is_encrypted() {
-                println!("    - ENCRYPTED");
+                println!("    {} ENCRYPTED", "-".dimmed());
                 if file_info.has_fix_key() {
-                    println!("    - FIX_KEY");
+                    println!("    {} FIX_KEY", "-".dimmed());
                 }
             }
             if file_info.is_single_unit() {
-                println!("    - SINGLE_UNIT");
+                println!("    {} SINGLE_UNIT", "-".dimmed());
             }
             if file_info.has_sector_crc() {
-                println!("    - SECTOR_CRC");
+                println!("    {} SECTOR_CRC", "-".dimmed());
             }
             if file_info.flags & BlockEntry::FLAG_PATCH_FILE != 0 {
-                println!("    - PATCH_FILE");
+                println!("    {} PATCH_FILE", "-".dimmed());
             }
 
             if verbose {
@@ -146,7 +177,11 @@ pub fn find(archive_path: &str, filename: &str, verbose: bool) -> Result<()> {
             Ok(())
         }
         None => {
-            println!("✗ File not found in archive");
+            println!(
+                "{} File '{}' not found in archive",
+                "✗".red().bold(),
+                filename
+            );
 
             if verbose {
                 // Show hash calculation details
