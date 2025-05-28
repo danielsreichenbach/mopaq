@@ -21,7 +21,30 @@
 - [x] Rename core library to mopaq to avoid FFI conflicts
 - [x] Changelog started
 
-## Core Library (`storm`)
+## Core Library (`mopaq`)
+
+### Immediate Implementation Priorities
+
+Based on our design decisions, focusing on simple, safe approach first:
+
+1. **Archive Creation (Phase 1)**
+   - [ ] `ArchiveBuilder` type (write-only, separate from `Archive`)
+   - [ ] Full archive rewrite strategy (no in-place modification)
+   - [ ] Explicit compression settings per file
+   - [ ] User-specified hash table size
+   - [ ] Temp file + atomic rename for safety
+   - [ ] Basic v1 format support first
+
+2. **API Design**
+   - [ ] Clear separation: `Archive` (read), `ArchiveBuilder` (write)
+   - [ ] Explicit over implicit (no automatic compression/version detection)
+   - [ ] Builder pattern for configuration
+   - [ ] No concurrent access support initially
+
+3. **Error Handling**
+   - [ ] Simple rollback on failure
+   - [ ] Clear error messages for unsupported operations
+   - [ ] Document thread-safety limitations
 
 ### Archive Structure Support
 
@@ -34,7 +57,7 @@
 - [x] User data header support (`MPQ\x1B` signature)
 - [x] Header location algorithm (512-byte aligned scanning)
 - [x] Archive size calculation for v2+ (using 64-bit values)
-- [ ] Write header support for archive creation
+- [ ] Write header support for archive creation (part of ArchiveBuilder)
 
 #### Table Implementations
 
@@ -142,16 +165,29 @@
 - [x] Multi-sector file reading
 - [x] Single unit file reading
 - [X] Sector CRC validation
-- [ ] Patch file support
+- [ ] Sector-based file writing (part of ArchiveBuilder)
+- [ ] Sector offset table generation (part of ArchiveBuilder)
+- [ ] Patch file support (Phase 2)
 
-#### File Management
+#### File Management (Phase 1 - Simple Approach)
 
-- [ ] File addition
+- [ ] Archive creation with full rewrite strategy
+  - [ ] Implement `OpenOptions::create()`
+  - [ ] Basic `ArchiveBuilder` type (write-only)
+  - [ ] Add files with explicit compression settings
+  - [ ] Write to temp file and atomic rename
+  - [ ] Fixed hash table size (user-specified)
+- [ ] Basic error recovery (rollback on failure)
+- [x] File lookup by name (find_file implemented)
+
+#### File Management (Phase 2 - Deferred)
+
+- [ ] In-place file addition/modification
 - [ ] File deletion (mark as deleted)
 - [ ] File replacement
 - [ ] File renaming
 - [ ] Compact archive (remove deleted entries)
-- [x] File lookup by name (find_file implemented)
+- [ ] `ArchiveMutator` type for read-write operations
 
 ### Special Files
 
@@ -216,6 +252,8 @@
 - [x] Unit tests for table structures
 - [x] Integration tests for table parsing
 - [x] Unit tests for compression methods (zlib, bzip2, sparse)
+- [ ] Integration tests for archive creation (ArchiveBuilder)
+- [ ] Round-trip tests (create → write → read → verify)
 - [ ] Integration tests with test archives
 - [ ] Fuzzing tests for security
 - [x] Test vector validation (crypto)
@@ -279,9 +317,9 @@
 - [x] Basic CLI integration tests
 - [x] list - List files in archive
 - [x] extract - Extract files
-- [ ] create - Create new archive
-- [ ] add - Add files to archive
-- [ ] remove - Remove files from archive
+- [ ] create - Create new archive (depends on ArchiveBuilder implementation)
+- [ ] add - Add files to archive (Phase 2 - requires in-place modification)
+- [ ] remove - Remove files from archive (Phase 2 - requires in-place modification)
 - [x] verify - Verify archive integrity
 
 ### Debug Commands
@@ -349,3 +387,63 @@
 - [ ] Archive repair functionality
 - [ ] Archive optimization tool
 - [ ] WASM support for web usage
+
+## Deferred Design Decisions
+
+These are design decisions and features we've identified but are deferring to later iterations:
+
+### Archive Modification Strategy
+
+- [ ] In-place modification support (vs current full rewrite)
+- [ ] Free space tracking for in-place updates
+- [ ] Fragmentation management
+- [ ] Block allocation strategies (first-fit, best-fit, etc.)
+
+### Advanced Hash Table Management
+
+- [ ] Dynamic hash table resizing based on load factor
+- [ ] Configurable load factor thresholds
+- [ ] Better collision handling strategies
+- [ ] Hash table optimization for pathological cases
+
+### Compression Policies
+
+- [ ] Automatic compression based on file type/size
+- [ ] Try multiple compression methods and pick best
+- [ ] Compression exclusion lists
+- [ ] Per-file-type compression strategies
+
+### Memory Management
+
+- [ ] Streaming API for large files
+- [ ] Memory-mapped file support for writing
+- [ ] Chunked processing for reduced memory usage
+- [ ] Configurable memory limits
+
+### Concurrent Access
+
+- [ ] File-based locking mechanisms
+- [ ] Read-write lock support
+- [ ] Multi-process safety
+- [ ] Transaction log for concurrent modifications
+
+### Advanced Error Recovery
+
+- [ ] Journal/WAL approach for atomic operations
+- [ ] Incremental backup of tables
+- [ ] Corruption recovery tools
+- [ ] Partial write recovery
+
+### File Name Handling
+
+- [ ] UTF-8 filename support (non-standard)
+- [ ] Configurable path normalization
+- [ ] Locale-aware case handling
+- [ ] Custom filename validation rules
+
+### Version Management
+
+- [ ] Automatic version upgrade when needed
+- [ ] Feature compatibility matrix
+- [ ] Version downgrade with feature loss warnings
+- [ ] Version-specific optimizations
