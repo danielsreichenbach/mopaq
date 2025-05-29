@@ -64,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Encryption table generation changed from `once_cell::Lazy` to `const fn` for compile-time generation
 - CLI commands now show some colors.
 - MPQ test data generation scripts have been merged into a single swiss army knife
+- Replaced `rust-lzma` with `lzma-rs` for pure Rust LZMA compression support
+  - No system dependencies required
+  - Supports both raw LZMA and XZ formats
+  - Better cross-platform compatibility
 
 ### Fixed
 

@@ -33,7 +33,7 @@ crc32fast = { workspace = true }
 # Compression algorithms
 flate2 = { workspace = true }
 bzip2 = { workspace = true }
-rust-lzma = { workspace = true }
+lzma-rs = { workspace = true }
 
 # I/O and performance
 memmap2 = { workspace = true, optional = true }

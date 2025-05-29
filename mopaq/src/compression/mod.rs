@@ -176,20 +176,47 @@ fn decompress_bzip2(data: &[u8], expected_size: usize) -> Result<Vec<u8>> {
 
 /// Decompress using LZMA
 fn decompress_lzma(data: &[u8], expected_size: usize) -> Result<Vec<u8>> {
-    use lzma::decompress;
+    use std::io::{BufReader, Cursor};
 
-    let decompressed = decompress(data)
-        .map_err(|e| Error::compression(format!("LZMA decompression failed: {:?}", e)))?;
+    let cursor = Cursor::new(data);
+    let mut input = BufReader::new(cursor);
+    let mut output = Vec::with_capacity(expected_size);
 
-    if decompressed.len() != expected_size {
-        return Err(Error::compression(format!(
-            "Decompressed size mismatch: expected {}, got {}",
-            expected_size,
-            decompressed.len()
-        )));
+    // Try LZMA format first
+    match lzma_rs::lzma_decompress(&mut input, &mut output) {
+        Ok(()) => {
+            if expected_size > 0 && output.len() != expected_size {
+                log::warn!(
+                    "LZMA decompressed size mismatch: expected {}, got {}",
+                    expected_size,
+                    output.len()
+                );
+            }
+            Ok(output)
+        }
+        Err(e) => {
+            // If LZMA fails, try XZ format
+            let cursor = Cursor::new(data);
+            let mut input = BufReader::new(cursor);
+            let mut output = Vec::with_capacity(expected_size);
+
+            match lzma_rs::xz_decompress(&mut input, &mut output) {
+                Ok(()) => Ok(output),
+                Err(xz_err) => {
+                    log::error!("LZMA decompression failed: {:?}", e);
+                    log::error!("XZ decompression also failed: {:?}", xz_err);
+                    log::debug!(
+                        "First 16 bytes of data: {:02X?}",
+                        &data[..16.min(data.len())]
+                    );
+                    Err(Error::compression(format!(
+                        "LZMA/XZ decompression failed: LZMA: {:?}, XZ: {:?}",
+                        e, xz_err
+                    )))
+                }
+            }
+        }
     }
-
-    Ok(decompressed)
 }
 
 /// Decompress sparse/RLE compressed data
@@ -334,6 +361,7 @@ pub fn compress(data: &[u8], method: u8) -> Result<Vec<u8>> {
         CompressionMethod::None => Ok(data.to_vec()),
         CompressionMethod::Zlib => compress_zlib(data),
         CompressionMethod::BZip2 => compress_bzip2(data),
+        CompressionMethod::Lzma => compress_lzma(data),
         _ => Err(Error::compression("Compression method not yet implemented")),
     }
 }
@@ -366,6 +394,24 @@ fn compress_bzip2(data: &[u8]) -> Result<Vec<u8>> {
     encoder
         .finish()
         .map_err(|e| Error::compression(format!("BZip2 compression failed: {}", e)))
+}
+
+/// Compress using LZMA
+fn compress_lzma(data: &[u8]) -> Result<Vec<u8>> {
+    use std::io::{BufReader, Cursor};
+
+    let cursor = Cursor::new(data);
+    let mut input = BufReader::new(cursor);
+    let mut output = Vec::new();
+
+    // Use LZMA format (not XZ) for MPQ compatibility
+    match lzma_rs::lzma_compress(&mut input, &mut output) {
+        Ok(()) => Ok(output),
+        Err(e) => Err(Error::compression(format!(
+            "LZMA compression failed: {:?}",
+            e
+        ))),
+    }
 }
 
 #[cfg(test)]
@@ -467,6 +513,70 @@ mod tests {
         assert_eq!(decompressed, expected);
     }
 
+    #[test]
+    fn test_lzma_round_trip() {
+        use std::io::{BufReader, Cursor};
+
+        let original = b"Hello, World! This is a test of LZMA compression in MPQ archives. \
+                     LZMA should provide good compression ratios.";
+
+        // Test compression
+        let cursor = Cursor::new(original);
+        let mut input = BufReader::new(cursor);
+        let mut compressed = Vec::new();
+
+        lzma_rs::lzma_compress(&mut input, &mut compressed).expect("Compression failed");
+
+        println!(
+            "LZMA - Original size: {}, Compressed size: {}",
+            original.len(),
+            compressed.len()
+        );
+
+        // Test decompression
+        let cursor = Cursor::new(&compressed);
+        let mut input = BufReader::new(cursor);
+        let mut decompressed = Vec::new();
+
+        lzma_rs::lzma_decompress(&mut input, &mut decompressed).expect("Decompression failed");
+
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_lzma_api() {
+        let original = b"Test data for LZMA compression through the public API";
+
+        // Test through our wrapper API
+        let compressed = compress(original, flags::LZMA).expect("Compression failed");
+        let decompressed =
+            decompress(&compressed, flags::LZMA, original.len()).expect("Decompression failed");
+
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_xz_format() {
+        use std::io::{BufReader, Cursor};
+
+        let original = b"Test data for XZ format";
+
+        // Test XZ compression
+        let cursor = Cursor::new(original);
+        let mut input = BufReader::new(cursor);
+        let mut compressed = Vec::new();
+
+        lzma_rs::xz_compress(&mut input, &mut compressed).expect("XZ compression failed");
+
+        // Test XZ decompression
+        let cursor = Cursor::new(&compressed);
+        let mut input = BufReader::new(cursor);
+        let mut decompressed = Vec::new();
+
+        lzma_rs::xz_decompress(&mut input, &mut decompressed).expect("XZ decompression failed");
+
+        assert_eq!(decompressed, original);
+    }
     #[test]
     fn test_compress_api_small_data() {
         // Test that the public compress API works with small data

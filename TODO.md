@@ -20,6 +20,7 @@
 - [x] Rename CLI binary to storm-cli to avoid conflicts
 - [x] Rename core library to mopaq to avoid FFI conflicts
 - [x] Changelog started
+- [x] Replace rust-lzma with lzma-rs for pure Rust LZMA support
 
 ## Core Library (`mopaq`)
 
@@ -179,7 +180,7 @@ Based on our design decisions, focusing on simple, safe approach first:
 - [x] Sparse/RLE (0x20) - v3+
 - [ ] ADPCM mono (0x40)
 - [ ] ADPCM stereo (0x80)
-- [x] LZMA (0x12) - v3+ (basic support)
+- [x] LZMA (0x12) - v3+ (full support with lzma-rs)
 - [x] Multiple compression support (partial - PKWare not implemented)
 
 #### Compression Infrastructure
