@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 bytes = { workspace = true }
 byteorder = { workspace = true }
 bitflags = { workspace = true }
+tempfile = { workspace = true }
 
 # Hashing and cryptography
 sha1 = { workspace = true }
@@ -51,7 +52,6 @@ log = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
 pretty_assertions = { workspace = true }
-tempfile = { workspace = true }
 env_logger = { workspace = true }
 
 [[bench]]

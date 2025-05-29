@@ -46,6 +46,38 @@ Based on our design decisions, focusing on simple, safe approach first:
    - [ ] Clear error messages for unsupported operations
    - [ ] Document thread-safety limitations
 
+### New Tasks Identified
+
+#### Immediate Follow-ups
+
+- [ ] Add encryption support to ArchiveBuilder
+  - [ ] Implement FIX_KEY flag support
+  - [ ] Test encrypted file round-trips
+- [ ] Add sector CRC support for file integrity
+- [ ] Implement v4 header writing with MD5 checksums
+- [ ] Add progress callback support for long operations
+
+#### Builder Enhancements
+
+- [ ] Add `add_directory` method to recursively add folders
+- [ ] Add file filtering/exclusion patterns
+- [ ] Add compression level configuration
+- [ ] Support for adding files with specific block indices
+- [ ] Validate filenames for MPQ compatibility
+
+#### Performance Optimizations
+
+- [ ] Parallel compression for multiple files
+- [ ] Streaming API for very large files
+- [ ] Memory usage limits and buffering strategies
+
+#### Error Handling Improvements
+
+- [ ] Better error messages for common failures
+- [ ] Validate hash table collisions before writing
+- [ ] Check for filesystem errors during write
+- [ ] Add archive size estimation before creation
+
 ### Archive Structure Support
 
 #### Headers and Version Support
@@ -57,7 +89,8 @@ Based on our design decisions, focusing on simple, safe approach first:
 - [x] User data header support (`MPQ\x1B` signature)
 - [x] Header location algorithm (512-byte aligned scanning)
 - [x] Archive size calculation for v2+ (using 64-bit values)
-- [ ] Write header support for archive creation (part of ArchiveBuilder)
+- [x] Write header support for archive creation (v1, v2, v3)
+- [ ] Write header support for v4 (MD5 checksums)
 
 #### Table Implementations
 
@@ -171,13 +204,18 @@ Based on our design decisions, focusing on simple, safe approach first:
 
 #### File Management (Phase 1 - Simple Approach)
 
-- [ ] Archive creation with full rewrite strategy
-  - [ ] Implement `OpenOptions::create()`
-  - [ ] Basic `ArchiveBuilder` type (write-only)
-  - [ ] Add files with explicit compression settings
-  - [ ] Write to temp file and atomic rename
-  - [ ] Fixed hash table size (user-specified)
-- [ ] Basic error recovery (rollback on failure)
+- [x] Archive creation with full rewrite strategy
+  - [x] Implement `ArchiveBuilder` type (write-only)
+  - [x] Add files with explicit compression settings
+  - [x] Write to temp file and atomic rename
+  - [x] Automatic hash table sizing based on file count
+  - [x] Basic v1-v3 format support
+- [x] Basic error recovery (rollback on failure via temp file)
+- [x] File addition API with builder pattern
+- [x] Listfile generation
+  - [x] Automatic generation from added files
+  - [x] External listfile support
+  - [x] Option to omit listfile
 - [x] File lookup by name (find_file implemented)
 
 #### File Management (Phase 2 - Deferred)
@@ -252,8 +290,8 @@ Based on our design decisions, focusing on simple, safe approach first:
 - [x] Unit tests for table structures
 - [x] Integration tests for table parsing
 - [x] Unit tests for compression methods (zlib, bzip2, sparse)
-- [ ] Integration tests for archive creation (ArchiveBuilder)
-- [ ] Round-trip tests (create → write → read → verify)
+- [x] Integration tests for archive creation (ArchiveBuilder)
+- [x] Round-trip tests (create → write → read → verify)
 - [ ] Integration tests with test archives
 - [ ] Fuzzing tests for security
 - [x] Test vector validation (crypto)

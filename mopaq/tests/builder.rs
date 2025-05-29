@@ -1,0 +1,379 @@
+//! Integration tests for archive creation
+
+use mopaq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption, OpenOptions};
+use std::fs;
+use tempfile::TempDir;
+
+#[test]
+fn test_create_empty_archive() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("empty.mpq");
+
+    // Create empty archive
+    let result = OpenOptions::new()
+        .version(FormatVersion::V1)
+        .create(&archive_path);
+
+    assert!(result.is_ok());
+    assert!(archive_path.exists());
+
+    // Verify we can open it
+    let archive = Archive::open(&archive_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V1);
+}
+
+#[test]
+fn test_create_archive_with_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("test.mpq");
+
+    // Create test files
+    let file1_path = temp_dir.path().join("file1.txt");
+    let file2_path = temp_dir.path().join("file2.dat");
+    fs::write(&file1_path, b"Hello, MPQ!").unwrap();
+    fs::write(&file2_path, b"Binary data here").unwrap();
+
+    // Build archive
+    ArchiveBuilder::new()
+        .version(FormatVersion::V1)
+        .add_file(&file1_path, "test/file1.txt")
+        .add_file(&file2_path, "test/file2.dat")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify archive contents
+    let mut archive = Archive::open(&archive_path).unwrap();
+
+    // Check that files exist
+    assert!(archive.find_file("test/file1.txt").unwrap().is_some());
+    assert!(archive.find_file("test/file2.dat").unwrap().is_some());
+
+    // Read and verify file contents
+    let data1 = archive.read_file("test/file1.txt").unwrap();
+    assert_eq!(data1, b"Hello, MPQ!");
+
+    let data2 = archive.read_file("test/file2.dat").unwrap();
+    assert_eq!(data2, b"Binary data here");
+}
+
+#[test]
+fn test_create_archive_with_memory_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("memory.mpq");
+
+    // Build archive with in-memory files
+    ArchiveBuilder::new()
+        .add_file_data(b"Memory file 1".to_vec(), "mem1.txt")
+        .add_file_data(b"Memory file 2".to_vec(), "mem2.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify contents
+    let mut archive = Archive::open(&archive_path).unwrap();
+
+    let data1 = archive.read_file("mem1.txt").unwrap();
+    assert_eq!(data1, b"Memory file 1");
+
+    let data2 = archive.read_file("mem2.txt").unwrap();
+    assert_eq!(data2, b"Memory file 2");
+}
+
+#[test]
+fn test_listfile_generation() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("listfile.mpq");
+
+    // Build archive with automatic listfile
+    ArchiveBuilder::new()
+        .add_file_data(b"File 1".to_vec(), "file1.txt")
+        .add_file_data(b"File 2".to_vec(), "folder/file2.txt")
+        .listfile_option(ListfileOption::Generate)
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify listfile exists and contains expected entries
+    let mut archive = Archive::open(&archive_path).unwrap();
+
+    let listfile_data = archive.read_file("(listfile)").unwrap();
+    let listfile_content = String::from_utf8(listfile_data).unwrap();
+
+    assert!(listfile_content.contains("file1.txt"));
+    assert!(listfile_content.contains("folder/file2.txt"));
+    assert!(listfile_content.contains("(listfile)"));
+}
+
+#[test]
+fn test_external_listfile() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("external_list.mpq");
+    let listfile_path = temp_dir.path().join("external.txt");
+
+    // Create external listfile
+    fs::write(
+        &listfile_path,
+        "file1.txt\r\nfile2.txt\r\ncustom_entry.txt\r\n",
+    )
+    .unwrap();
+
+    // Build archive with external listfile
+    ArchiveBuilder::new()
+        .add_file_data(b"File 1".to_vec(), "file1.txt")
+        .add_file_data(b"File 2".to_vec(), "file2.txt")
+        .listfile_option(ListfileOption::External(listfile_path))
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify listfile contains external content
+    let mut archive = Archive::open(&archive_path).unwrap();
+
+    let listfile_data = archive.read_file("(listfile)").unwrap();
+    let listfile_content = String::from_utf8(listfile_data).unwrap();
+
+    assert!(listfile_content.contains("custom_entry.txt"));
+}
+
+#[test]
+fn test_no_listfile() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("no_list.mpq");
+
+    // Build archive without listfile
+    ArchiveBuilder::new()
+        .add_file_data(b"File 1".to_vec(), "file1.txt")
+        .listfile_option(ListfileOption::None)
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify no listfile exists
+    let mut archive = Archive::open(&archive_path).unwrap();
+    assert!(archive.find_file("(listfile)").unwrap().is_none());
+}
+
+#[test]
+fn test_compression_options() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("compressed.mpq");
+
+    // Create some compressible data
+    let data = "This is a test string that should compress well. ".repeat(100);
+
+    // Build archive with compressed file
+    ArchiveBuilder::new()
+        .default_compression(mopaq::compression::flags::ZLIB)
+        .add_file_data(data.as_bytes().to_vec(), "compressed.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file is compressed
+    let archive = Archive::open(&archive_path).unwrap();
+
+    if let Some(file_info) = archive.find_file("compressed.txt").unwrap() {
+        assert!(file_info.is_compressed());
+        assert!(file_info.compressed_size < file_info.file_size);
+
+        // Verify we can still read it correctly
+        let mut archive = Archive::open(&archive_path).unwrap();
+        let read_data = archive.read_file("compressed.txt").unwrap();
+        assert_eq!(read_data, data.as_bytes());
+    } else {
+        panic!("File not found in archive");
+    }
+}
+
+#[test]
+fn test_uncompressed_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("uncompressed.mpq");
+
+    // Build archive with uncompressed file
+    ArchiveBuilder::new()
+        .add_file_data_with_options(
+            b"Uncompressed data".to_vec(),
+            "uncompressed.txt",
+            0,     // No compression
+            false, // No encryption
+            0,     // Default locale
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file is not compressed
+    let archive = Archive::open(&archive_path).unwrap();
+
+    if let Some(file_info) = archive.find_file("uncompressed.txt").unwrap() {
+        assert!(!file_info.is_compressed());
+        assert_eq!(file_info.compressed_size, file_info.file_size);
+    } else {
+        panic!("File not found in archive");
+    }
+}
+
+#[test]
+fn test_large_file_sectors() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("large.mpq");
+
+    // Create a large file that will span multiple sectors
+    let large_data = vec![0xAB; 16 * 1024]; // 16KB should span multiple 4KB sectors
+
+    // Build archive
+    ArchiveBuilder::new()
+        .block_size(3) // 4KB sectors
+        .add_file_data(large_data.clone(), "large.dat")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify we can read it back correctly
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let read_data = archive.read_file("large.dat").unwrap();
+    assert_eq!(read_data, large_data);
+}
+
+#[test]
+fn test_hash_table_sizing() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("sized.mpq");
+
+    // Add many files to test hash table sizing
+    let mut builder = ArchiveBuilder::new();
+    for i in 0..50 {
+        builder = builder.add_file_data(
+            format!("File {}", i).into_bytes(),
+            &format!("file_{:03}.txt", i),
+        );
+    }
+
+    builder.build(&archive_path).unwrap();
+
+    // Verify all files can be found
+    let mut archive = Archive::open(&archive_path).unwrap();
+    for i in 0..50 {
+        let filename = format!("file_{:03}.txt", i);
+        assert!(archive.find_file(&filename).unwrap().is_some());
+
+        let data = archive.read_file(&filename).unwrap();
+        assert_eq!(data, format!("File {}", i).as_bytes());
+    }
+}
+
+#[test]
+fn test_path_normalization() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("paths.mpq");
+
+    // Build archive with forward slashes
+    ArchiveBuilder::new()
+        .add_file_data(b"Test file".to_vec(), "folder/subfolder/file.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify we can find it with backslashes
+    let mut archive = Archive::open(&archive_path).unwrap();
+    assert!(archive
+        .find_file("folder\\subfolder\\file.txt")
+        .unwrap()
+        .is_some());
+
+    // And with forward slashes
+    assert!(archive
+        .find_file("folder/subfolder/file.txt")
+        .unwrap()
+        .is_some());
+}
+
+#[test]
+fn test_case_insensitive_lookup() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("case.mpq");
+
+    // Build archive
+    ArchiveBuilder::new()
+        .add_file_data(b"Test".to_vec(), "TestFile.TXT")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify case-insensitive lookup works
+    let mut archive = Archive::open(&archive_path).unwrap();
+    assert!(archive.find_file("testfile.txt").unwrap().is_some());
+    assert!(archive.find_file("TESTFILE.TXT").unwrap().is_some());
+    assert!(archive.find_file("TestFile.TXT").unwrap().is_some());
+}
+
+#[test]
+fn test_duplicate_file_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("duplicate.mpq");
+
+    // Try to build archive with duplicate files
+    let result = ArchiveBuilder::new()
+        .add_file_data(b"File 1".to_vec(), "test.txt")
+        .add_file_data(b"File 2".to_vec(), "test.txt") // Duplicate name
+        .build(&archive_path);
+
+    // Should fail with duplicate file error
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("Duplicate file"));
+}
+
+#[test]
+fn test_atomic_write_on_failure() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("atomic.mpq");
+
+    // Create a file at the target location
+    fs::write(&archive_path, b"Original content").unwrap();
+
+    // Try to create an archive with an invalid configuration that will fail
+    // For example, try to read a non-existent file
+    let result = ArchiveBuilder::new()
+        .add_file("/non/existent/file.txt", "test.txt")
+        .build(&archive_path);
+
+    // Build should fail
+    assert!(result.is_err());
+
+    // Original file should be unchanged
+    let content = fs::read(&archive_path).unwrap();
+    assert_eq!(content, b"Original content");
+}
+
+#[test]
+fn test_different_format_versions() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Test V1 format
+    let v1_path = temp_dir.path().join("v1.mpq");
+    ArchiveBuilder::new()
+        .version(FormatVersion::V1)
+        .add_file_data(b"V1 data".to_vec(), "test.txt")
+        .build(&v1_path)
+        .unwrap();
+
+    let archive = Archive::open(&v1_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V1);
+    assert_eq!(archive.header().header_size, 32);
+
+    // Test V2 format
+    let v2_path = temp_dir.path().join("v2.mpq");
+    ArchiveBuilder::new()
+        .version(FormatVersion::V2)
+        .add_file_data(b"V2 data".to_vec(), "test.txt")
+        .build(&v2_path)
+        .unwrap();
+
+    let archive = Archive::open(&v2_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V2);
+    assert_eq!(archive.header().header_size, 44);
+
+    // Test V3 format
+    let v3_path = temp_dir.path().join("v3.mpq");
+    ArchiveBuilder::new()
+        .version(FormatVersion::V3)
+        .add_file_data(b"V3 data".to_vec(), "test.txt")
+        .build(&v3_path)
+        .unwrap();
+
+    let archive = Archive::open(&v3_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V3);
+    assert_eq!(archive.header().header_size, 68);
+}

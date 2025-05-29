@@ -250,6 +250,34 @@ impl HashTable {
             }
         }
     }
+
+    /// Create a new hash table with mutable entries
+    pub fn new_mut(size: usize) -> Result<Self> {
+        // Validate size is power of 2
+        if !crate::is_power_of_two(size as u32) {
+            return Err(Error::hash_table("Hash table size must be power of 2"));
+        }
+
+        let entries = vec![HashEntry::empty(); size];
+        Ok(Self { entries })
+    }
+
+    /// Get a mutable reference to a specific entry
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut HashEntry> {
+        self.entries.get_mut(index)
+    }
+
+    /// Get mutable access to all entries
+    pub fn entries_mut(&mut self) -> &mut [HashEntry] {
+        &mut self.entries
+    }
+
+    /// Clear all entries to empty state
+    pub fn clear(&mut self) {
+        for entry in &mut self.entries {
+            *entry = HashEntry::empty();
+        }
+    }
 }
 
 /// Block table
@@ -317,6 +345,42 @@ impl BlockTable {
     /// Get the size of the block table
     pub fn size(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Create a new block table with mutable entries
+    pub fn new_mut(size: usize) -> Result<Self> {
+        let entries = vec![
+            BlockEntry {
+                file_pos: 0,
+                compressed_size: 0,
+                file_size: 0,
+                flags: 0,
+            };
+            size
+        ];
+        Ok(Self { entries })
+    }
+
+    /// Get a mutable reference to a specific entry
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut BlockEntry> {
+        self.entries.get_mut(index)
+    }
+
+    /// Get mutable access to all entries
+    pub fn entries_mut(&mut self) -> &mut [BlockEntry] {
+        &mut self.entries
+    }
+
+    /// Clear all entries
+    pub fn clear(&mut self) {
+        for entry in &mut self.entries {
+            *entry = BlockEntry {
+                file_pos: 0,
+                compressed_size: 0,
+                file_size: 0,
+                flags: 0,
+            };
+        }
     }
 }
 

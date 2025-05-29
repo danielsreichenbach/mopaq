@@ -47,6 +47,7 @@
 )]
 
 pub mod archive;
+pub mod builder;
 pub mod compression;
 pub mod crypto;
 pub mod error;
@@ -58,6 +59,7 @@ pub mod tables;
 
 // Re-export commonly used types
 pub use archive::{Archive, FileEntry, FileInfo, OpenOptions};
+pub use builder::{ArchiveBuilder, ListfileOption};
 pub use error::{Error, Result};
 pub use header::{FormatVersion, MpqHeader};
 pub use tables::{BlockEntry, BlockTable, HashEntry, HashTable};

@@ -9,8 +9,9 @@
 //! - Multi-sector and single-unit files
 
 use crate::{
+    builder::ArchiveBuilder,
     compression,
-    crypto::{decrypt_block, decrypt_dword},
+    crypto::{decrypt_block, decrypt_dword, encrypt_block},
     hash::{hash_string, hash_type},
     header::{self, MpqHeader, UserDataHeader},
     special_files,
@@ -27,12 +28,17 @@ use std::path::{Path, PathBuf};
 pub struct OpenOptions {
     /// Load tables immediately when opening
     pub load_tables: bool,
+    /// Version for new archives
+    version: Option<crate::header::FormatVersion>,
 }
 
 impl OpenOptions {
     /// Create new default options
     pub fn new() -> Self {
-        Self { load_tables: true }
+        Self {
+            load_tables: true,
+            version: None,
+        }
     }
 
     /// Set whether to load tables immediately
@@ -42,14 +48,29 @@ impl OpenOptions {
     }
 
     /// Set the MPQ version for new archives
-    pub fn version(mut self, _version: crate::header::FormatVersion) -> Self {
-        // TODO: Implement when creating archives
+    pub fn version(mut self, version: crate::header::FormatVersion) -> Self {
+        self.version = Some(version);
         self
     }
 
+    /// Open an existing MPQ archive
+    pub fn open<P: AsRef<Path>>(self, path: P) -> Result<Archive> {
+        Archive::open_with_options(path, self)
+    }
+
     /// Create a new MPQ archive
-    pub fn create<P: AsRef<Path>>(self, _path: P) -> Result<Archive> {
-        todo!("Implement archive creation")
+    pub fn create<P: AsRef<Path>>(self, path: P) -> Result<Archive> {
+        let path = path.as_ref();
+
+        // Create an empty archive with the specified version
+        let builder =
+            ArchiveBuilder::new().version(self.version.unwrap_or(crate::header::FormatVersion::V1));
+
+        // Build the empty archive
+        builder.build(&path)?;
+
+        // Open the newly created archive
+        Self::new().load_tables(self.load_tables).open(path)
     }
 }
 
@@ -557,7 +578,9 @@ impl Archive {
 
     /// Add a file to the archive
     pub fn add_file(&mut self, _name: &str, _data: &[u8]) -> Result<()> {
-        todo!("Implement file addition")
+        Err(Error::invalid_format(
+            "In-place file addition not yet implemented. Use ArchiveBuilder to create new archives."
+        ))
     }
 }
 
