@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `storm-cli extract` will now convert archive file paths to the local systems path separators
 - archive, compression and CLI tests now handle more edge cases and are green
+- missing compression type byte in compressed sectors for non-ZLIB compression
 
 ### Removed
 

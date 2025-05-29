@@ -345,8 +345,36 @@ impl ArchiveBuilder {
 
             // Compress if needed
             let compressed_data = if compression != 0 && file_data.len() > 0 {
-                flags |= BlockEntry::FLAG_COMPRESS;
-                compress(file_data, compression)?
+                log::debug!(
+                    "Compressing {} with method 0x{:02X}",
+                    archive_name,
+                    compression
+                );
+                let compressed = compress(file_data, compression)?;
+
+                // Only use compression if it actually reduces size
+                if compressed.len() < file_data.len() {
+                    log::debug!(
+                        "Compression successful: {} -> {} bytes",
+                        file_data.len(),
+                        compressed.len()
+                    );
+                    flags |= BlockEntry::FLAG_COMPRESS;
+                    // For non-zlib compression, prepend the compression type byte
+                    if compression != compression_flags::ZLIB {
+                        let mut final_data = Vec::with_capacity(1 + compressed.len());
+                        final_data.push(compression);
+                        final_data.extend_from_slice(&compressed);
+                        final_data
+                    } else {
+                        // Zlib can be stored without type byte for compatibility
+                        compressed
+                    }
+                } else {
+                    // Don't compress if it doesn't help
+                    log::debug!("Compression not beneficial, storing uncompressed");
+                    file_data.to_vec()
+                }
             } else {
                 file_data.to_vec()
             };
