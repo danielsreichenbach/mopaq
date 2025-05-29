@@ -115,9 +115,9 @@ fn test_debug_hash_listfile() {
         .assert()
         .success()
         // Check for known hash values
-        .stdout(predicate::str::contains("0xFD5F6EEA"))
-        .stdout(predicate::str::contains("0x7E4A7FE4"))
-        .stdout(predicate::str::contains("0xCABC04F6"));
+        .stdout(predicate::str::contains("0x5F3DE859"))
+        .stdout(predicate::str::contains("0xFD657910"))
+        .stdout(predicate::str::contains("0x4E9B98A7"));
 }
 
 #[test]

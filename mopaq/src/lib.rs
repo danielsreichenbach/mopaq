@@ -25,7 +25,7 @@
 //!
 //! # fn main() -> Result<(), mopaq::Error> {
 //! // Open an existing MPQ archive
-//! let archive = Archive::open("example.mpq")?;
+//! let mut archive = Archive::open("example.mpq")?;
 //!
 //! // List files in the archive
 //! for entry in archive.list()? {

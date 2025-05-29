@@ -398,7 +398,33 @@ mod tests {
         let original = b"Hello, World! This is a test of zlib compression in MPQ archives.";
 
         let compressed = compress_zlib(original).expect("Compression failed");
-        assert!(compressed.len() < original.len());
+
+        // Note: Small data might not compress well due to compression headers
+        // In MPQ, the implementation would check if compression actually helps
+        println!(
+            "Original size: {}, Compressed size: {}",
+            original.len(),
+            compressed.len()
+        );
+
+        let decompressed =
+            decompress_zlib(&compressed, original.len()).expect("Decompression failed");
+
+        assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_zlib_compression_efficiency() {
+        // Create highly compressible data
+        let original: Vec<u8> = "A".repeat(1000).into_bytes();
+
+        let compressed = compress_zlib(&original).expect("Compression failed");
+
+        // This highly repetitive data should compress well
+        assert!(
+            compressed.len() < original.len() / 2,
+            "Highly repetitive data should compress to less than 50% of original size"
+        );
 
         let decompressed =
             decompress_zlib(&compressed, original.len()).expect("Decompression failed");
@@ -411,6 +437,13 @@ mod tests {
         let original = b"Hello, World! This is a test of bzip2 compression in MPQ archives.";
 
         let compressed = compress_bzip2(original).expect("Compression failed");
+
+        // Note: Small data might not compress well
+        println!(
+            "Original size: {}, Compressed size: {}",
+            original.len(),
+            compressed.len()
+        );
 
         let decompressed =
             decompress_bzip2(&compressed, original.len()).expect("Decompression failed");
@@ -432,6 +465,22 @@ mod tests {
         let expected = b"Hello\0\0\0\0\0World";
 
         assert_eq!(decompressed, expected);
+    }
+
+    #[test]
+    fn test_compress_api_small_data() {
+        // Test that the public compress API works with small data
+        let original = b"Small data";
+
+        // Test uncompressed
+        let result = compress(original, 0).expect("Compression failed");
+        assert_eq!(result, original);
+
+        // Test zlib - might not reduce size for small data
+        let compressed = compress(original, flags::ZLIB).expect("Compression failed");
+        let decompressed =
+            decompress(&compressed, flags::ZLIB, original.len()).expect("Decompression failed");
+        assert_eq!(decompressed, original);
     }
 
     #[test]

@@ -747,13 +747,47 @@ mod tests {
         let mut data = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
         let original = data.clone();
 
-        // Encrypt
-        decrypt_file_data(&mut data, 0xDEADBEEF);
-        assert_ne!(data, original);
+        // For testing, we need an encrypt function
+        fn encrypt_test_data(data: &mut [u8], key: u32) {
+            if data.is_empty() || key == 0 {
+                return;
+            }
 
-        // Decrypt (same operation)
+            // Convert to u32 for encryption
+            let chunks = data.len() / 4;
+            if chunks > 0 {
+                let mut u32_data = Vec::with_capacity(chunks);
+                for i in 0..chunks {
+                    let offset = i * 4;
+                    let value = u32::from_le_bytes([
+                        data[offset],
+                        data[offset + 1],
+                        data[offset + 2],
+                        data[offset + 3],
+                    ]);
+                    u32_data.push(value);
+                }
+
+                encrypt_block(&mut u32_data, key);
+
+                for (i, &value) in u32_data.iter().enumerate() {
+                    let offset = i * 4;
+                    let bytes = value.to_le_bytes();
+                    data[offset] = bytes[0];
+                    data[offset + 1] = bytes[1];
+                    data[offset + 2] = bytes[2];
+                    data[offset + 3] = bytes[3];
+                }
+            }
+        }
+
+        // Encrypt
+        encrypt_test_data(&mut data, 0xDEADBEEF);
+        assert_ne!(data, original, "Data should be changed after encryption");
+
+        // Decrypt
         decrypt_file_data(&mut data, 0xDEADBEEF);
-        assert_eq!(data, original);
+        assert_eq!(data, original, "Data should be restored after decryption");
     }
 
     #[test]

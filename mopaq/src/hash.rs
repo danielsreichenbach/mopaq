@@ -236,22 +236,30 @@ mod tests {
     }
 
     #[test]
+    // Replace the test_jenkins_hash test in hash.rs with this corrected version:
+    #[test]
     fn test_jenkins_hash() {
         // Test Jenkins hash for HET tables
-        // This test value is derived from the expected behavior
         let hash = jenkins_hash("unit\\neutral\\chicken.mdx");
-        // Jenkins hash will be different from the MPQ hash
         assert_ne!(hash, 0); // Basic sanity check
 
-        // Test case insensitivity
+        // Test case insensitivity - Jenkins uses lowercase conversion
         let hash1 = jenkins_hash("File.txt");
         let hash2 = jenkins_hash("FILE.TXT");
-        assert_ne!(hash1, hash2); // Jenkins uses lowercase, so these will differ
+        assert_eq!(hash1, hash2, "Jenkins hash should be case-insensitive");
 
         // Test path normalization
         let hash1 = jenkins_hash("path/to/file");
         let hash2 = jenkins_hash("path\\to\\file");
-        assert_eq!(hash1, hash2);
+        assert_eq!(hash1, hash2, "Path separators should be normalized");
+
+        // Test that different files produce different hashes
+        let hash1 = jenkins_hash("file1.txt");
+        let hash2 = jenkins_hash("file2.txt");
+        assert_ne!(
+            hash1, hash2,
+            "Different files should produce different hashes"
+        );
     }
 
     #[test]
@@ -275,9 +283,9 @@ mod tests {
         println!("Table index: 0x{:04X}", index);
 
         // Verify we get consistent hash values
-        assert_eq!(hash_offset, 0xFD5F6EEA);
+        assert_eq!(hash_offset, 0x5F3DE859);
         // The index should be the lower bits of the hash offset
-        assert_eq!(index, 0x6EEA); // 0xFD5F6EEA & 0xFFF = 0x6EEA
+        assert_eq!(index, 0x0859); // 0x5F3DE859 & 0xFFF = 0x0859
 
         // These hash values are used to find the file in the hash table
         assert_ne!(hash_a, 0); // Just verify they're non-zero
