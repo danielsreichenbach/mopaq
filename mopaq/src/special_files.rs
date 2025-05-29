@@ -1,6 +1,6 @@
 //! Special MPQ files handling: (listfile), (attributes), (signature), etc.
 
-use crate::{Error, Result};
+use crate::Result;
 
 /// Parse a (listfile) into individual filenames
 ///

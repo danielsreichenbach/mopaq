@@ -10,6 +10,7 @@ pub trait MpqRead: Read + Seek {
 }
 
 /// Buffered reader for MPQ archives
+#[derive(Debug)]
 pub struct BufferedMpqReader<R> {
     inner: R,
 }

@@ -237,7 +237,6 @@ mod tests {
 
     #[test]
     // Replace the test_jenkins_hash test in hash.rs with this corrected version:
-    #[test]
     fn test_jenkins_hash() {
         // Test Jenkins hash for HET tables
         let hash = jenkins_hash("unit\\neutral\\chicken.mdx");

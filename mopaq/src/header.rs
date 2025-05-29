@@ -151,7 +151,7 @@ impl MpqHeader {
         let block_table_size = reader.read_u32::<LittleEndian>()?;
 
         let format_version = FormatVersion::from_raw(format_version_raw)
-            .ok_or_else(|| Error::UnsupportedVersion(format_version_raw))?;
+            .ok_or(Error::UnsupportedVersion(format_version_raw))?;
 
         // Validate header size
         if header_size < format_version.header_size() {

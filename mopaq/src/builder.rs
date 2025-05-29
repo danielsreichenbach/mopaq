@@ -2,16 +2,15 @@
 
 use crate::{
     compression::{compress, flags as compression_flags},
-    crypto::{encrypt_block, ENCRYPTION_TABLE},
+    crypto::encrypt_block,
     hash::{hash_string, hash_type},
-    header::{FormatVersion, MpqHeader},
+    header::FormatVersion,
     tables::{BlockEntry, BlockTable, HashEntry, HashTable},
     Error, Result,
 };
 use byteorder::{LittleEndian, WriteBytesExt};
-use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::fs::{self};
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -48,6 +47,7 @@ pub enum ListfileOption {
 }
 
 /// Builder for creating new MPQ archives
+#[derive(Debug)]
 pub struct ArchiveBuilder {
     /// Target MPQ version
     version: FormatVersion,
@@ -256,7 +256,7 @@ impl ArchiveBuilder {
 
         // Write all files and populate tables
         for (block_index, pending_file) in self.pending_files.iter().enumerate() {
-            let file_pos = writer.seek(SeekFrom::Current(0))? as u32;
+            let file_pos = writer.stream_position()? as u32;
 
             // Read file data
             let file_data = match &pending_file.source {
@@ -300,15 +300,15 @@ impl ArchiveBuilder {
         }
 
         // Write hash table
-        let hash_table_pos = writer.seek(SeekFrom::Current(0))? as u32;
+        let hash_table_pos = writer.stream_position()? as u32;
         self.write_hash_table(writer, &hash_table)?;
 
         // Write block table
-        let block_table_pos = writer.seek(SeekFrom::Current(0))? as u32;
+        let block_table_pos = writer.stream_position()? as u32;
         self.write_block_table(writer, &block_table)?;
 
         // Calculate archive size
-        let archive_size = writer.seek(SeekFrom::Current(0))? as u32;
+        let archive_size = writer.stream_position()? as u32;
 
         // Write header at the beginning
         writer.seek(SeekFrom::Start(0))?;
@@ -344,7 +344,7 @@ impl ArchiveBuilder {
             flags |= BlockEntry::FLAG_SINGLE_UNIT;
 
             // Compress if needed
-            let compressed_data = if compression != 0 && file_data.len() > 0 {
+            let compressed_data = if compression != 0 && !file_data.is_empty() {
                 log::debug!(
                     "Compressing {} with method 0x{:02X}",
                     archive_name,
@@ -397,7 +397,7 @@ impl ArchiveBuilder {
             Ok((final_data.len(), flags))
         } else {
             // Multi-sector file
-            let sector_count = (file_data.len() + sector_size - 1) / sector_size;
+            let sector_count = file_data.len().div_ceil(sector_size);
 
             // Reserve space for sector offset table
             let offset_table_size = (sector_count + 1) * 4;
@@ -415,7 +415,7 @@ impl ArchiveBuilder {
                 sector_offsets[i] = (data_start + sector_data.len()) as u32;
 
                 // Compress sector if needed
-                let compressed_sector = if compression != 0 && sector_bytes.len() > 0 {
+                let compressed_sector = if compression != 0 && !sector_bytes.is_empty() {
                     // Check if compression actually helps
                     let compressed = compress(sector_bytes, compression)?;
                     if compressed.len() < sector_bytes.len() {
@@ -657,9 +657,7 @@ impl ArchiveBuilder {
         if remainder > 0 {
             let offset = chunks * 4;
             let mut last_dword = [0u8; 4];
-            for i in 0..remainder {
-                last_dword[i] = data[offset + i];
-            }
+            last_dword[..remainder].copy_from_slice(&data[offset..(remainder + offset)]);
 
             let mut last_u32 = u32::from_le_bytes(last_dword);
             encrypt_block(
@@ -668,9 +666,7 @@ impl ArchiveBuilder {
             );
 
             let encrypted_bytes = last_u32.to_le_bytes();
-            for i in 0..remainder {
-                data[offset + i] = encrypted_bytes[i];
-            }
+            data[offset..(remainder + offset)].copy_from_slice(&encrypted_bytes[..remainder]);
         }
     }
 

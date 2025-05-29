@@ -161,8 +161,7 @@ pub fn find(archive_path: &str, filename: &str, verbose: bool) -> Result<()> {
                 // Sector information
                 if !file_info.is_single_unit() && file_info.file_size > 0 {
                     let sector_size = archive.header().sector_size();
-                    let sector_count =
-                        (file_info.file_size as usize + sector_size - 1) / sector_size;
+                    let sector_count = (file_info.file_size as usize).div_ceil(sector_size);
                     println!();
                     println!("  Sector information:");
                     println!("    Sector size: {} bytes", sector_size);

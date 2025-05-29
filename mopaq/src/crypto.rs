@@ -1,7 +1,5 @@
 //! Encryption and decryption algorithms for MPQ files
 
-use crate::Result;
-
 /// Generate the MPQ encryption table at compile time
 const fn generate_encryption_table() -> [u32; 0x500] {
     let mut table = [0u32; 0x500];

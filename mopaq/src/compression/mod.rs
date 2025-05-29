@@ -346,7 +346,7 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
 
             Err(Error::compression(format!(
                 "Failed to decompress with any method. First byte: 0x{:02X}, flags: 0x{:02X}",
-                data.get(0).unwrap_or(&0),
+                data.first().unwrap_or(&0),
                 flags
             )))
         }

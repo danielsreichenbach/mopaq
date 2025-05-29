@@ -52,7 +52,7 @@ fn test_large_data_encryption() {
 
 #[test]
 fn test_different_data_patterns() {
-    let test_patterns = vec![
+    let test_patterns = [
         vec![0u32; 8],                      // All zeros
         vec![0xFFFFFFFF; 8],                // All ones
         vec![0x55555555; 8],                // Alternating bits

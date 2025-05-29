@@ -2,9 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use mopaq::{hash_string, hash_type, Archive};
-    use std::io::Write;
-    use tempfile::NamedTempFile;
+    use mopaq::{hash_string, hash_type};
 
     #[test]
     fn test_table_decryption_keys() {

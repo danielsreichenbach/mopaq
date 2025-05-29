@@ -145,7 +145,7 @@ fn test_no_listfile() {
         .unwrap();
 
     // Verify no listfile exists
-    let mut archive = Archive::open(&archive_path).unwrap();
+    let archive = Archive::open(&archive_path).unwrap();
     assert!(archive.find_file("(listfile)").unwrap().is_none());
 }
 
@@ -268,7 +268,7 @@ fn test_path_normalization() {
         .unwrap();
 
     // Verify we can find it with backslashes
-    let mut archive = Archive::open(&archive_path).unwrap();
+    let archive = Archive::open(&archive_path).unwrap();
     assert!(archive
         .find_file("folder\\subfolder\\file.txt")
         .unwrap()
@@ -293,7 +293,7 @@ fn test_case_insensitive_lookup() {
         .unwrap();
 
     // Verify case-insensitive lookup works
-    let mut archive = Archive::open(&archive_path).unwrap();
+    let archive = Archive::open(&archive_path).unwrap();
     assert!(archive.find_file("testfile.txt").unwrap().is_some());
     assert!(archive.find_file("TESTFILE.TXT").unwrap().is_some());
     assert!(archive.find_file("TestFile.TXT").unwrap().is_some());

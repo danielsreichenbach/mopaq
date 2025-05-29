@@ -4,7 +4,6 @@ use anyhow::Result;
 use colored::*;
 use mopaq::hash::{hash_string, hash_type, jenkins_hash};
 use mopaq::{Archive, FormatVersion};
-use std::path::Path;
 
 /// Display detailed information about an MPQ archive
 pub fn info(archive_path: &str) -> Result<()> {
@@ -430,7 +429,7 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
             println!("------|------------|------------|--------|----------|-------------|--------");
 
             let entries = hash_table.entries();
-            let count = if show_all {
+            let _count = if show_all {
                 limit.min(entries.len())
             } else {
                 entries.len()
@@ -480,7 +479,7 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
             println!("------|------------|------------|------------|------------|--------");
 
             let entries = block_table.entries();
-            let count = if show_all {
+            let _count = if show_all {
                 limit.min(entries.len())
             } else {
                 entries.len()

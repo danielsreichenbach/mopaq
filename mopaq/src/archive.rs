@@ -11,11 +11,11 @@
 use crate::{
     builder::ArchiveBuilder,
     compression,
-    crypto::{decrypt_block, decrypt_dword, encrypt_block},
+    crypto::{decrypt_block, decrypt_dword},
     hash::{hash_string, hash_type},
     header::{self, MpqHeader, UserDataHeader},
     special_files,
-    tables::{BlockEntry, BlockTable, HashTable, HiBlockTable},
+    tables::{BlockTable, HashTable, HiBlockTable},
     Error, Result,
 };
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -67,7 +67,7 @@ impl OpenOptions {
             ArchiveBuilder::new().version(self.version.unwrap_or(crate::header::FormatVersion::V1));
 
         // Build the empty archive
-        builder.build(&path)?;
+        builder.build(path)?;
 
         // Open the newly created archive
         Self::new().load_tables(self.load_tables).open(path)
@@ -241,7 +241,7 @@ impl Archive {
     /// List files in the archive
     pub fn list(&mut self) -> Result<Vec<FileEntry>> {
         // Try to find and read (listfile)
-        if let Some(listfile_info) = self.find_file("(listfile)")? {
+        if let Some(_listfile_info) = self.find_file("(listfile)")? {
             // Read the listfile
             let listfile_data = self.read_file("(listfile)")?;
 
@@ -363,12 +363,11 @@ impl Archive {
                     // We need to decompress first to check CRC
                     let compression_type = data[0];
                     let compressed_data = &data[1..];
-                    let decompressed = compression::decompress(
+                    compression::decompress(
                         compressed_data,
                         compression_type,
                         file_info.file_size as usize,
-                    )?;
-                    decompressed
+                    )?
                 } else {
                     data.clone()
                 };
@@ -426,7 +425,7 @@ impl Archive {
     /// Read a file that is split into sectors
     fn read_sectored_file(&mut self, file_info: &FileInfo, key: u32) -> Result<Vec<u8>> {
         let sector_size = self.header.sector_size();
-        let sector_count = ((file_info.file_size as usize + sector_size - 1) / sector_size) as u32;
+        let sector_count = (file_info.file_size as usize).div_ceil(sector_size);
 
         log::debug!(
             "Reading sectored file: {} sectors of {} bytes each",
@@ -496,7 +495,7 @@ impl Archive {
         // Read and decompress each sector
         let mut decompressed_data = Vec::with_capacity(file_info.file_size as usize);
 
-        for i in 0..sector_count as usize {
+        for i in 0..sector_count {
             let sector_start = sector_offsets[i] as u64;
             let sector_end = sector_offsets[i + 1] as u64;
 
@@ -629,9 +628,7 @@ fn decrypt_file_data(data: &mut [u8], key: u32) {
 
         // Read remaining bytes into a u32 (padding with zeros)
         let mut last_bytes = [0u8; 4];
-        for i in 0..remainder {
-            last_bytes[i] = data[offset + i];
-        }
+        last_bytes[..remainder].copy_from_slice(&data[offset..(remainder + offset)]);
         let last_dword = u32::from_le_bytes(last_bytes);
 
         // Decrypt with adjusted key
@@ -639,9 +636,7 @@ fn decrypt_file_data(data: &mut [u8], key: u32) {
 
         // Write back only the remainder bytes
         let decrypted_bytes = decrypted.to_le_bytes();
-        for i in 0..remainder {
-            data[offset + i] = decrypted_bytes[i];
-        }
+        data[offset..(remainder + offset)].copy_from_slice(&decrypted_bytes[..remainder]);
     }
 }
 
@@ -714,6 +709,7 @@ pub struct FileEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encrypt_block;
 
     #[test]
     fn test_open_options() {
