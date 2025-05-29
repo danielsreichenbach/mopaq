@@ -66,6 +66,10 @@ harness = false
 name = "compression"
 harness = false
 
+[[bench]]
+name = "builder"
+harness = false
+
 [features]
 default = ["mmap", "all-compressions"]
 mmap = ["memmap2"]

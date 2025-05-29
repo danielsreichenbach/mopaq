@@ -639,37 +639,43 @@ impl ArchiveBuilder {
     }
 
     /// Encrypt data in place
-    fn encrypt_data(&self, data: &mut [u8], key: u32) {
+    pub fn encrypt_data(&self, data: &mut [u8], key: u32) {
         if data.is_empty() || key == 0 {
             return;
         }
 
-        // Ensure we have full u32s
-        let chunks = data.len() / 4;
-        if chunks > 0 {
-            let ptr = data.as_mut_ptr() as *mut u32;
-            let u32_slice = unsafe { std::slice::from_raw_parts_mut(ptr, chunks) };
-            encrypt_block(u32_slice, key);
+        // Process full u32 chunks
+        let (chunks, remainder) = data.split_at_mut((data.len() / 4) * 4);
+
+        // Convert chunks to u32 values, encrypt, and write back
+        let mut u32_buffer = Vec::with_capacity(chunks.len() / 4);
+        for chunk in chunks.chunks_exact(4) {
+            u32_buffer.push(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        }
+
+        encrypt_block(&mut u32_buffer, key);
+
+        // Write encrypted u32s back to bytes
+        for (i, &encrypted) in u32_buffer.iter().enumerate() {
+            let bytes = encrypted.to_le_bytes();
+            chunks[i * 4..(i + 1) * 4].copy_from_slice(&bytes);
         }
 
         // Handle remaining bytes
-        let remainder = data.len() % 4;
-        if remainder > 0 {
-            let offset = chunks * 4;
+        if !remainder.is_empty() {
             let mut last_dword = [0u8; 4];
-            last_dword[..remainder].copy_from_slice(&data[offset..(remainder + offset)]);
+            last_dword[..remainder.len()].copy_from_slice(remainder);
 
             let mut last_u32 = u32::from_le_bytes(last_dword);
             encrypt_block(
                 std::slice::from_mut(&mut last_u32),
-                key.wrapping_add(chunks as u32),
+                key.wrapping_add((chunks.len() / 4) as u32),
             );
 
             let encrypted_bytes = last_u32.to_le_bytes();
-            data[offset..(remainder + offset)].copy_from_slice(&encrypted_bytes[..remainder]);
+            remainder.copy_from_slice(&encrypted_bytes[..remainder.len()]);
         }
     }
-
     /// Encrypt u32 data in place
     fn encrypt_data_u32(&self, data: &mut [u32], key: u32) {
         encrypt_block(data, key);

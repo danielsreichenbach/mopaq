@@ -176,15 +176,21 @@ impl HashTable {
         let mut raw_data = vec![0u8; byte_size];
         reader.read_exact(&mut raw_data)?;
 
-        // Decrypt the table
+        // Decrypt the table - SAFE VERSION
         let key = hash_string("(hash table)", hash_type::FILE_KEY);
 
-        // Cast to u32 array for decryption
-        let ptr = raw_data.as_mut_ptr() as *mut u32;
-        let u32_len = byte_size / 4;
-        let u32_data = unsafe { std::slice::from_raw_parts_mut(ptr, u32_len) };
+        // Convert to u32s, decrypt, then convert back
+        let mut u32_buffer: Vec<u32> = raw_data
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
 
-        decrypt_block(u32_data, key);
+        decrypt_block(&mut u32_buffer, key);
+
+        // Write decrypted u32s back to bytes
+        for (chunk, &decrypted) in raw_data.chunks_exact_mut(4).zip(&u32_buffer) {
+            chunk.copy_from_slice(&decrypted.to_le_bytes());
+        }
 
         // Parse entries
         let mut entries = Vec::with_capacity(size as usize);
@@ -310,15 +316,21 @@ impl BlockTable {
         let mut raw_data = vec![0u8; byte_size];
         reader.read_exact(&mut raw_data)?;
 
-        // Decrypt the table
+        // Decrypt the table - SAFE VERSION
         let key = hash_string("(block table)", hash_type::FILE_KEY);
 
-        // Cast to u32 array for decryption
-        let ptr = raw_data.as_mut_ptr() as *mut u32;
-        let u32_len = byte_size / 4;
-        let u32_data = unsafe { std::slice::from_raw_parts_mut(ptr, u32_len) };
+        // Convert to u32s, decrypt, then convert back
+        let mut u32_buffer: Vec<u32> = raw_data
+            .chunks_exact(4)
+            .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .collect();
 
-        decrypt_block(u32_data, key);
+        decrypt_block(&mut u32_buffer, key);
+
+        // Write decrypted u32s back to bytes
+        for (chunk, &decrypted) in raw_data.chunks_exact_mut(4).zip(&u32_buffer) {
+            chunk.copy_from_slice(&decrypted.to_le_bytes());
+        }
 
         // Parse entries
         let mut entries = Vec::with_capacity(size as usize);

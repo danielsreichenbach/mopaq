@@ -223,7 +223,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Safety
 
-- Safe Rust with minimal unsafe blocks
+- Safe Rust with zero unsafe blocks
 - Comprehensive bounds checking
 - Memory-safe table operations
 - Atomic file operations (temp + rename)

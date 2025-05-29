@@ -68,10 +68,6 @@ cargo build -p storm-cli
 
 ## Common Issues
 
-### Edition 2021
-
-We use Rust edition 2021. If you see errors about `unsafe(no_mangle)`, ensure your Rust version is up to date.
-
 ### Missing Dependencies
 
 The FFI crate requires `cbindgen` for header generation. It will be automatically installed as a build dependency.
