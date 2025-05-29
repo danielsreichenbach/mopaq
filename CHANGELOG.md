@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No system dependencies required
   - Supports both raw LZMA and XZ formats
   - Better cross-platform compatibility
+- Code coverage in CI upgrade to v5
 
 ### Fixed
 
