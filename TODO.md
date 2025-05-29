@@ -127,15 +127,15 @@
 
 ### Core API Functions
 
-- [ ] `SFileOpenArchive`
+- [X] `SFileOpenArchive`
 - [ ] `SFileCreateArchive`
-- [ ] `SFileCloseArchive`
-- [ ] `SFileOpenFileEx`
-- [ ] `SFileCloseFile`
-- [ ] `SFileReadFile`
-- [ ] `SFileGetFileSize`
-- [ ] `SFileSetFilePointer`
-- [ ] `SFileGetFileInfo`
+- [X] `SFileCloseArchive`
+- [X] `SFileOpenFileEx`
+- [X] `SFileCloseFile`
+- [X] `SFileReadFile`
+- [X] `SFileGetFileSize`
+- [X] `SFileSetFilePointer`
+- [X] `SFileGetFileInfo`
 
 ### File Operations
 
@@ -150,9 +150,9 @@
 
 - [ ] `SFileVerifyFile`
 - [ ] `SFileVerifyArchive`
-- [ ] `SFileEnumFiles`
-- [ ] `SFileGetLocale`
-- [ ] `SFileSetLocale`
+- [X] `SFileEnumFiles`
+- [X] `SFileGetLocale`
+- [X] `SFileSetLocale`
 
 ### Infrastructure
 

@@ -26,35 +26,66 @@ extern "C" {
 #endif // __cplusplus
 
 // Open an MPQ archive
-bool SFileOpenArchive(const char *_filename, uint32_t _priority, uint32_t _flags, HANDLE *_handle);
+bool SFileOpenArchive(const char *filename, uint32_t priority, uint32_t flags, HANDLE *handle);
 
 // Close an MPQ archive
-bool SFileCloseArchive(HANDLE _handle);
+bool SFileCloseArchive(HANDLE handle);
 
 // Open a file in the archive
-bool SFileOpenFileEx(HANDLE _archive,
-                     const char *_filename,
-                     uint32_t _search_scope,
-                     HANDLE *_file_handle);
+bool SFileOpenFileEx(HANDLE archive,
+                     const char *filename,
+                     uint32_t search_scope,
+                     HANDLE *file_handle);
 
 // Close a file
-bool SFileCloseFile(HANDLE _file);
+bool SFileCloseFile(HANDLE file);
 
 // Read from a file
-bool SFileReadFile(HANDLE _file,
-                   void *_buffer,
-                   uint32_t _to_read,
-                   uint32_t *_read,
-                   void *_overlapped);
+bool SFileReadFile(HANDLE file, void *buffer, uint32_t to_read, uint32_t *read, void *overlapped);
 
 // Get file size
-uint32_t SFileGetFileSize(HANDLE _file, uint32_t *_high);
+uint32_t SFileGetFileSize(HANDLE file, uint32_t *high);
+
+// Set file position
+uint32_t SFileSetFilePointer(HANDLE file,
+                             int32_t file_pos,
+                             int32_t *file_pos_high,
+                             uint32_t move_method);
+
+// Check if file exists in archive
+bool SFileHasFile(HANDLE archive, const char *filename);
+
+// Get file information
+bool SFileGetFileInfo(HANDLE file_or_archive,
+                      uint32_t info_class,
+                      void *buffer,
+                      uint32_t buffer_size,
+                      uint32_t *size_needed);
+
+// Get archive name from handle
+bool SFileGetArchiveName(HANDLE archive, char *buffer, uint32_t buffer_size);
+
+// Enumerate files in archive
+bool SFileEnumFiles(HANDLE archive,
+                    const char *search_mask,
+                    const char *list_file,
+                    bool (*callback)(const char*, void*),
+                    void *user_data);
+
+// Set locale for file operations
+uint32_t SFileSetLocale(uint32_t locale);
+
+// Get current locale
+uint32_t SFileGetLocale(void);
 
 // Get last error
 uint32_t GetLastError(void);
 
 // Set last error
-void SetLastError(uint32_t _error);
+void SetLastError(uint32_t error);
+
+// Get file name from handle
+bool SFileGetFileName(HANDLE file, char *buffer);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Basic StormLib API implementation
 - C header generation
+- Core API functions
+  - `SFileOpenArchive`
+  - `SFileCloseArchive`
+  - `SFileOpenFileEx`
+  - `SFileCloseFile`
+  - `SFileReadFile`
+  - `SFileGetFileSize`
+  - `SFileSetFilePointer`
+  - `SFileGetFileInfo`
+  - `SFileEnumFiles`
+  - `SFileGetLocale`
+  - `SFileSetLocale`
 
 ### Changed
 

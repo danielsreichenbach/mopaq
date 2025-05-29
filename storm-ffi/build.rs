@@ -46,6 +46,27 @@ extern "C" {
 #endif /* STORMLIB_H */"#
                 .to_string(),
         ),
+        export: cbindgen::ExportConfig {
+            include: vec![
+                "SFileOpenArchive".to_string(),
+                "SFileCloseArchive".to_string(),
+                "SFileOpenFileEx".to_string(),
+                "SFileCloseFile".to_string(),
+                "SFileReadFile".to_string(),
+                "SFileGetFileSize".to_string(),
+                "SFileSetFilePointer".to_string(),
+                "SFileHasFile".to_string(),
+                "SFileGetArchiveName".to_string(),
+                "SFileGetFileName".to_string(),
+                "SFileGetFileInfo".to_string(),
+                "SFileEnumFiles".to_string(),
+                "SFileSetLocale".to_string(),
+                "SFileGetLocale".to_string(),
+                "GetLastError".to_string(),
+                "SetLastError".to_string(),
+            ],
+            ..Default::default()
+        },
         ..Default::default()
     };
 
