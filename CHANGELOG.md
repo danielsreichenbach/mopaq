@@ -7,84 +7,228 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### 🚧 Work in Progress
 
-- Initial project structure with three crates: mopaq, storm-ffi, storm-cli
-- Basic module structure for MPQ functionality
-- Error types and result aliases
-- CI/CD pipeline with GitHub Actions
-- Documentation structure
-- Development tooling (Makefile, scripts)
-- MPQ header parsing for all versions (v1-v4)
-- User data header support
-- Header location algorithm (512-byte aligned scanning)
-- CLI debug info command to display archive information
-- Test MPQ file generator script
-- Complete encryption table generation (1280 values)
-- Encryption and decryption algorithms with test vectors
-- CLI debug crypto command for testing crypto functions
-- Comprehensive crypto benchmarks and tests
-- Complete MPQ hash function implementation with all hash types
-- ASCII case conversion tables (uppercase/lowercase)
-- Path separator normalization in hash functions
-- Jenkins hash implementation for HET tables
-- Hash function benchmarks
-- Test vector validation for hash functions
-- CLI debug hash command to generate hash values
-- CLI debug hash-compare command to compare hashes between files
-- Hash table structure parsing and decryption
-- Block table structure parsing and decryption
-- Hi-block table support for archives > 4GB
-- File lookup functionality (find_file method)
-- CLI debug tables command to display table contents
-- Table entry state tracking (valid/deleted/empty)
-- Compression module implementation with multiple algorithms
-- Zlib compression/decompression support
-- BZip2 compression/decompression support
-- Sparse/RLE decompression support
-- LZMA decompression support (basic)
-- Multi-sector file reading with compression
-- File encryption/decryption support with key calculation
-- CLI extract command (basic implementation)
-- Sector offset table parsing and decryption
-- Single unit and multi-sector file handling
-- Compression benchmarks for performance testing
-- Integration tests for compression functionality
-- Refactored CLI commands into separate modules for better organization
-- CLI list command with verbose and all-entries options
-- CLI verify command for archive integrity checking
-- CLI find command to search for specific files with detailed information
-- Special file handling introduced for listfiles
-- CRC validation arrvied
+#### Core Library (`mopaq`)
+
+- Encryption support in ArchiveBuilder
+- Sector CRC generation for file integrity
+- v4 format header writing with MD5 checksums
+- HET/BET table support (v3+)
+
+#### CLI Tool (`storm-cli`)
+
+- `create` command implementation
+- Progress bars for long operations
+- JSON output mode
+
+#### FFI Library (`storm-ffi`)
+
+- Basic StormLib API implementation
+- C header generation
 
 ### Changed
 
-- CLI binary renamed from `storm` to `storm-cli` to avoid naming conflicts with the library crate
-- Core library renamed from `storm` to `mopaq` to avoid conflicts with FFI output
-- Encryption table generation changed from `once_cell::Lazy` to `const fn` for compile-time generation
-- CLI commands now show some colors.
-- MPQ test data generation scripts have been merged into a single swiss army knife
-- Replaced `rust-lzma` with `lzma-rs` for pure Rust LZMA compression support
+- Replaced `rust-lzma` with `lzma-rs` for pure Rust LZMA support
   - No system dependencies required
   - Supports both raw LZMA and XZ formats
   - Better cross-platform compatibility
-- Code coverage in CI upgrade to v5
 
-### Fixed
+## [0.1.0] - 2025-06-XX (Upcoming)
 
-- `storm-cli extract` will now convert archive file paths to the local systems path separators
-- archive, compression and CLI tests now handle more edge cases and are green
-- missing compression type byte in compressed sectors for non-ZLIB compression
-- fixed a bunch of clippy issues
+### ✨ Core Library (`mopaq`)
 
-### Removed
+#### Archive Reading
 
-- `scripts/test_encryption_table.py` has been removed, since the topic is covered in Rust by tests
+- **Full MPQ format support** (v1-v4)
+  - ✅ Header parsing for all versions
+  - ✅ User data header support
+  - ✅ Header location with 512-byte alignment scanning
+  - ✅ Archive size calculation for v2+ (64-bit values)
 
-### Technical Details
+- **Table implementations**
+  - ✅ Hash table parsing with encryption/decryption
+  - ✅ Block table parsing with encryption/decryption
+  - ✅ Hi-block table support for archives > 4GB
+  - ✅ Hash table collision resolution with linear probing
+  - ✅ Locale and platform support in hash entries
 
-- Using Rust edition 2021 with MSRV 1.86
-- Dual-licensed under MIT and Apache 2.0
-- StormLib-compatible FFI interface planned
-- Crypto implementation uses const fn for compile-time table generation
-- Compression uses feature flags for optional algorithms (bzip2, lzma)
+- **File operations**
+  - ✅ File lookup by name with hash algorithm
+  - ✅ Multi-sector file reading
+  - ✅ Single unit file support
+  - ✅ File extraction with automatic decompression
+  - ✅ Sector CRC validation
+  - ✅ File enumeration via (listfile)
+
+#### Archive Creation
+
+- **ArchiveBuilder API**
+  - ✅ Create new archives (v1-v3 format)
+  - ✅ Add files from disk or memory
+  - ✅ Automatic hash table sizing
+  - ✅ Custom compression per file
+  - ✅ Multi-sector file writing
+  - ✅ Atomic writes with temp file + rename
+
+- **Listfile support**
+  - ✅ Automatic listfile generation
+  - ✅ External listfile support
+  - ✅ Option to omit listfile
+
+#### Compression
+
+- ✅ **Zlib/Deflate** - Full support
+- ✅ **BZip2** - Full support (v2+)
+- ✅ **LZMA** - Full support with lzma-rs (v3+)
+- ✅ **Sparse/RLE** - Full decompression support (v3+)
+- ✅ Multiple compression detection and handling
+- ✅ Compression method auto-detection
+
+#### Cryptography
+
+- ✅ **Encryption table generation** (compile-time const)
+- ✅ **MPQ hash algorithm** with all hash types
+  - Hash type 0: Table offset
+  - Hash type 1: Name hash A
+  - Hash type 2: Name hash B
+  - Hash type 3: File key
+  - Hash type 4: Key2 mix
+- ✅ **Jenkins hash** for HET tables
+- ✅ **Encryption/decryption algorithms**
+  - Block encryption/decryption
+  - Single DWORD decryption
+  - Table encryption/decryption
+- ✅ **File key calculation** with FIX_KEY support
+- ✅ **ASCII conversion tables** for case-insensitive hashing
+- ✅ **Path normalization** (forward slash to backslash)
+
+#### Special Files
+
+- ✅ (listfile) parsing and generation
+- ✅ Special file detection and metadata
+
+#### Error Handling
+
+- ✅ Comprehensive error types with context
+- ✅ Table-specific error types
+- ✅ Corruption detection
+- ✅ Recovery classification
+
+### 🛠️ CLI Tool (`storm-cli`)
+
+#### Commands
+
+- ✅ **list** - List files in archive
+  - With and without (listfile)
+  - Verbose mode with compression ratios
+  - Show all entries by index
+
+- ✅ **find** - Find specific files
+  - Detailed file information
+  - Hash value display
+  - Verbose debugging info
+
+- ✅ **extract** - Extract files from archive
+  - Single file extraction
+  - Bulk extraction via (listfile)
+  - Path normalization for OS compatibility
+
+- ✅ **verify** - Archive integrity verification
+  - Header validation
+  - Table consistency checks
+  - File accessibility tests
+  - CRC validation
+
+#### Debug Commands
+
+- ✅ **info** - Detailed archive information
+  - All header fields
+  - Version-specific data
+  - MD5 checksums (v4)
+
+- ✅ **crypto** - Test encryption/decryption
+  - Encryption table values
+  - Round-trip testing
+
+- ✅ **hash** - Hash calculation utilities
+  - All hash types
+  - Jenkins hash support
+  - Path normalization demo
+
+- ✅ **hash-compare** - Compare hash values
+  - Collision detection
+  - Multiple table size tests
+
+- ✅ **tables** - Table content inspection
+  - Hash table entries
+  - Block table entries
+  - Entry statistics
+
+### 🔧 FFI Library (`storm-ffi`)
+
+- ✅ Basic structure and type definitions
+- ✅ Build configuration with cbindgen
+- ✅ C header auto-generation setup
+- ✅ Error code definitions
+
+### 📊 Testing & Benchmarks
+
+#### Unit Tests
+
+- ✅ Comprehensive crypto tests
+- ✅ Hash algorithm verification
+- ✅ Table structure tests
+- ✅ Compression round-trip tests
+- ✅ Archive creation tests
+- ✅ Error handling tests
+
+#### Integration Tests
+
+- ✅ Table parsing tests
+- ✅ Builder functionality tests
+- ✅ CLI command tests
+- ✅ CRC validation tests
+- ✅ Compression tests
+
+#### Benchmarks
+
+- ✅ Hash function performance
+- ✅ Encryption/decryption performance
+- ✅ Compression method comparison
+
+### 🏗️ Infrastructure
+
+- ✅ Workspace structure with three crates
+- ✅ Comprehensive error types with thiserror
+- ✅ Logging support with env_logger
+- ✅ Documentation with inline examples
+- ✅ CI/CD pipeline configuration
+- ✅ Cross-platform build support
+
+## Design Decisions
+
+### Architecture
+
+- Separation of read (`Archive`) and write (`ArchiveBuilder`) operations
+- Pure Rust implementation with no system dependencies
+- Const-time encryption table generation
+- Zero-copy operations where possible
+
+### Compatibility
+
+- Full compatibility with StormLib file formats
+- Support for all known MPQ versions
+- Preservation of original hash algorithms and encryption
+
+### Safety
+
+- Safe Rust with minimal unsafe blocks
+- Comprehensive bounds checking
+- Memory-safe table operations
+- Atomic file operations (temp + rename)
+
+---
+
+[Unreleased]: https://github.com/danielsreichenbach/mopaq/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/danielsreichenbach/mopaq/releases/tag/v0.1.0
