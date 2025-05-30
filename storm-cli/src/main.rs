@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{generate, Generator, Shell};
+use clap_complete::{generate, Shell};
 use std::io;
 use std::sync::OnceLock;
 

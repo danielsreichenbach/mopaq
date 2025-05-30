@@ -135,7 +135,6 @@ pub fn create(archive_path: &str, source: &str, options: CreateOptions) -> Resul
     // Add files
     let start_time = std::time::Instant::now();
     let mut total_size = 0u64;
-    let mut compressed_size = 0u64;
 
     for file_entry in &files {
         pb.set_message(format!("Adding {}", file_entry.archive_name));
@@ -161,7 +160,7 @@ pub fn create(archive_path: &str, source: &str, options: CreateOptions) -> Resul
 
     // Get final archive size
     let archive_metadata = fs::metadata(archive_path)?;
-    compressed_size = archive_metadata.len();
+    let compressed_size = archive_metadata.len();
 
     let elapsed = start_time.elapsed();
 

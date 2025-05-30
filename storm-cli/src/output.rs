@@ -1,7 +1,7 @@
-use crate::{GlobalOptions, OutputFormat, GLOBAL_OPTS};
+use crate::{OutputFormat, GLOBAL_OPTS};
 use colored::*;
 use serde::Serialize;
-use std::io::{self, Write};
+use std::io;
 
 /// Print output according to the global format settings
 pub fn print_output<T: Serialize>(data: &T) -> Result<(), io::Error> {
@@ -32,10 +32,8 @@ pub fn print_csv<T: Serialize>(data: &T) -> Result<(), io::Error> {
 
     if let serde_json::Value::Array(arr) = json_value {
         // Print headers (assuming all objects have same fields)
-        if let Some(first) = arr.first() {
-            if let serde_json::Value::Object(obj) = first {
-                println!("{}", obj.keys().cloned().collect::<Vec<_>>().join(","));
-            }
+        if let Some(serde_json::Value::Object(obj)) = arr.first() {
+            println!("{}", obj.keys().cloned().collect::<Vec<_>>().join(","));
         }
 
         // Print rows
@@ -62,15 +60,6 @@ pub fn verbose_println(level: u8, message: &str) {
 
     if !opts.quiet && opts.verbose >= level {
         eprintln!("{} {}", "[VERBOSE]".dimmed(), message);
-    }
-}
-
-/// Print info message (respects quiet mode)
-pub fn info_println(message: &str) {
-    let opts = GLOBAL_OPTS.get().expect("Global options not initialized");
-
-    if !opts.quiet {
-        println!("{}", message);
     }
 }
 

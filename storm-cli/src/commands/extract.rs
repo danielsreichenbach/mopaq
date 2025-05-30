@@ -1,6 +1,6 @@
 //! Extract command implementation
 
-use crate::{output, GlobalOptions, OutputFormat, GLOBAL_OPTS};
+use crate::{output, OutputFormat, GLOBAL_OPTS};
 use anyhow::{Context, Result};
 use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
