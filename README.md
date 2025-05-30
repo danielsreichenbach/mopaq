@@ -134,7 +134,7 @@ storm-cli list StarCraft.mpq
 # Extract files
 storm-cli extract StarCraft.mpq --output ./extracted
 
-# Create a new archive (in development)
+# Create a new archive
 storm-cli create my_mod.mpq ./mod_files
 
 # Verify archive integrity

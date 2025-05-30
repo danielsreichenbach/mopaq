@@ -102,7 +102,7 @@
 
 ### High Priority
 
-- [ ] Implement `create` command (depends on ArchiveBuilder)
+- [X] Implement `create` command (depends on ArchiveBuilder)
 - [ ] Add progress bars for long operations
 - [X] Add JSON output mode for scripting
 

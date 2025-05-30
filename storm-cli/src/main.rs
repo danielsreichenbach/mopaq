@@ -9,6 +9,8 @@ use std::sync::OnceLock;
 mod commands;
 mod output;
 
+use mopaq::{FormatVersion, ListfileOption};
+
 // Global context for commands to access
 pub static GLOBAL_OPTS: OnceLock<GlobalOptions> = OnceLock::new();
 
@@ -80,12 +82,45 @@ enum Commands {
         #[arg(short, long)]
         file: Option<String>,
     },
-    /// Create a new archive
+    /// Create a new MPQ archive
     Create {
         /// Path to the new MPQ archive
         archive: String,
-        /// Directory containing files to add
+
+        /// Source file or directory
         source: String,
+
+        /// MPQ format version (1-4)
+        #[arg(short = 'V', long, value_parser = clap::value_parser!(u16).range(1..=4))]
+        version: Option<u16>,
+
+        /// Compression method
+        #[arg(short = 'c', long, value_enum)]
+        compression: Option<CompressionMethod>,
+
+        /// Block size (0-23, sector size = 512 * 2^n)
+        #[arg(short = 'b', long, value_parser = clap::value_parser!(u16).range(0..=23))]
+        block_size: Option<u16>,
+
+        /// Don't include a (listfile)
+        #[arg(long)]
+        no_listfile: bool,
+
+        /// Include external listfile
+        #[arg(long, conflicts_with = "no_listfile")]
+        listfile: Option<String>,
+
+        /// Don't recurse into subdirectories
+        #[arg(long)]
+        no_recursive: bool,
+
+        /// Follow symbolic links
+        #[arg(long)]
+        follow_symlinks: bool,
+
+        /// Additional patterns to ignore (can be used multiple times)
+        #[arg(short = 'i', long = "ignore")]
+        ignore_patterns: Vec<String>,
     },
     /// Verify archive integrity
     Verify {
@@ -140,6 +175,14 @@ enum DebugCommands {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+enum CompressionMethod {
+    None,
+    Zlib,
+    Bzip2,
+    Lzma,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -191,9 +234,63 @@ fn main() -> Result<()> {
         } => {
             commands::extract::extract(&archive, &target, file.as_deref())?;
         }
-        Commands::Create { archive, source } => {
-            println!("Creating {} from {}", archive, source);
-            // TODO: Implement creation
+        Commands::Create {
+            archive,
+            source,
+            version,
+            compression,
+            block_size,
+            no_listfile,
+            listfile,
+            no_recursive,
+            follow_symlinks,
+            ignore_patterns,
+        } => {
+            let mut options = commands::create::CreateOptions::default();
+
+            // Set version
+            if let Some(v) = version {
+                options.version = match v {
+                    1 => FormatVersion::V1,
+                    2 => FormatVersion::V2,
+                    3 => FormatVersion::V3,
+                    4 => FormatVersion::V4,
+                    _ => unreachable!(),
+                };
+            }
+
+            // Set compression
+            if let Some(comp) = compression {
+                options.compression = match comp {
+                    CompressionMethod::None => 0,
+                    CompressionMethod::Zlib => mopaq::compression::flags::ZLIB,
+                    CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2,
+                    CompressionMethod::Lzma => mopaq::compression::flags::LZMA,
+                };
+            }
+
+            // Set block size
+            if let Some(bs) = block_size {
+                options.block_size = bs;
+            }
+
+            // Set listfile option
+            options.listfile = if no_listfile {
+                ListfileOption::None
+            } else if let Some(lf) = listfile {
+                ListfileOption::External(lf.into())
+            } else {
+                ListfileOption::Generate
+            };
+
+            // Set other options
+            options.recursive = !no_recursive;
+            options.follow_symlinks = follow_symlinks;
+            if !ignore_patterns.is_empty() {
+                options.ignore_patterns.extend(ignore_patterns);
+            }
+
+            commands::create::create(&archive, &source, options)?;
         }
         Commands::Verify { archive } => {
             let verbose = cli.verbose > 0;

@@ -18,9 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### CLI Tool (`storm-cli`)
 
-- `create` command implementation
 - Progress bars for long operations
-- text, JSON and CSV output mode
 
 #### FFI Library (`storm-ffi`)
 
@@ -152,6 +150,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Table consistency checks
   - File accessibility tests
   - CRC validation
+
+- ✅ **create** - Archive creation
+  - configurable archive settings
+  - custom and generated listfile
 
 #### Debug Commands
 
