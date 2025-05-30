@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Automatic fallback to classic hash/block tables
   - ✅ Transparent integration with existing Archive API
 
+- **(attributes) File Support** - Complete implementation for file metadata
+  - ✅ Full parsing of (attributes) special file format
+  - ✅ Support for all attribute types:
+    - CRC32 checksums of uncompressed data
+    - Windows FILETIME timestamps
+    - MD5 hashes of uncompressed data
+    - Patch file bit indicators
+  - ✅ Dynamic attribute loading from archives
+  - ✅ Per-file attribute access API
+  - ✅ Comprehensive test coverage
+
 ### 🚧 Work in Progress
 
 #### Core Library (`mopaq`)

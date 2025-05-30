@@ -103,6 +103,8 @@ pub struct Archive {
     het_table: Option<HetTable>,
     /// BET table for v3+ archives
     bet_table: Option<BetTable>,
+    /// File attributes from (attributes) file
+    attributes: Option<special_files::Attributes>,
 }
 
 impl Archive {
@@ -131,6 +133,7 @@ impl Archive {
             hi_block_table: None,
             bet_table: None,
             het_table: None,
+            attributes: None,
         };
 
         // Load tables if requested
@@ -748,6 +751,55 @@ impl Archive {
         }
 
         Ok(decompressed_data)
+    }
+
+    /// Load attributes from the (attributes) file if present
+    pub fn load_attributes(&mut self) -> Result<()> {
+        // Check if attributes are already loaded
+        if self.attributes.is_some() {
+            return Ok(());
+        }
+
+        // Try to read the (attributes) file
+        match self.read_file("(attributes)") {
+            Ok(data) => {
+                // Get block count for parsing
+                let block_count = if let Some(ref block_table) = self.block_table {
+                    block_table.entries().len()
+                } else if let Some(ref bet_table) = self.bet_table {
+                    bet_table.header.file_count as usize
+                } else {
+                    return Err(Error::invalid_format(
+                        "No block/BET table available for attributes",
+                    ));
+                };
+
+                // Parse attributes
+                let attributes = special_files::Attributes::parse(&data.into(), block_count)?;
+                self.attributes = Some(attributes);
+
+                log::info!("Loaded (attributes) file with {} entries", block_count);
+                Ok(())
+            }
+            Err(Error::FileNotFound(_)) => {
+                log::debug!("No (attributes) file found in archive");
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get attributes for a specific file by block index
+    pub fn get_file_attributes(
+        &self,
+        block_index: usize,
+    ) -> Option<&special_files::FileAttributes> {
+        self.attributes.as_ref()?.get_file_attributes(block_index)
+    }
+
+    /// Get all loaded attributes
+    pub fn attributes(&self) -> Option<&special_files::Attributes> {
+        self.attributes.as_ref()
     }
 
     /// Add a file to the archive

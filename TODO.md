@@ -84,9 +84,12 @@
 
 ### Special Files Support
 
-- [ ] `(attributes)` support
-  - [ ] Attribute parsing
-  - [ ] Attribute generation
+- [X] `(attributes)` support ✅
+  - [X] Attribute parsing ✅
+  - [X] Per-file attribute access API ✅
+  - [ ] Attribute generation in ArchiveBuilder
+  - [ ] CRC32 calculation during file writing
+  - [ ] MD5 calculation during file writing
 - [ ] `(signature)` support (beyond basic parsing)
   - [ ] Weak signature generation
   - [ ] Strong signature generation

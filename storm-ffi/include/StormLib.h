@@ -18,6 +18,24 @@ extern "C" {
 #include <stdint.h>
 #include <stdlib.h>
 
+// CRC32 checksums are present
+#define AttributeFlags_CRC32 1
+
+// File timestamps are present
+#define AttributeFlags_FILETIME 2
+
+// MD5 hashes are present
+#define AttributeFlags_MD5 4
+
+// Patch bit indicators are present
+#define AttributeFlags_PATCH_BIT 8
+
+// All attributes are present
+#define AttributeFlags_ALL 15
+
+// Expected version for the attributes file
+#define Attributes_EXPECTED_VERSION 100
+
 // Archive handle type
 typedef void *HANDLE;
 

@@ -109,6 +109,36 @@ decrypt_block(&mut data, key);
 println!("Decrypted: {:08X?}", data);
 ```
 
+### Attributes Example
+
+```rust
+use mopaq::Archive;
+
+fn main() -> mopaq::Result<()> {
+    let mut archive = Archive::open("game.mpq")?;
+
+    // Load attributes if present
+    archive.load_attributes()?;
+
+    // Get attributes for a specific file
+    if let Some(entry) = archive.find_file("units\\human\\footman.mdx")? {
+        if let Some(attrs) = archive.get_file_attributes(entry.block_index) {
+            if let Some(crc32) = attrs.crc32 {
+                println!("CRC32: 0x{:08X}", crc32);
+            }
+            if let Some(md5) = attrs.md5 {
+                println!("MD5: {:02X?}", md5);
+            }
+            if let Some(timestamp) = attrs.filetime {
+                println!("Timestamp: {}", timestamp);
+            }
+        }
+    }
+
+    Ok(())
+}
+```
+
 ### Hash Example
 
 ```rust
@@ -169,6 +199,8 @@ storm-cli debug hash-compare "file1.txt" "file2.txt"
   - ✅ Sector-based file reading
   - ✅ CRC validation
   - ✅ Archive integrity verification
+  - ✅ (attributes) file parsing
+    - CRC32 checksums, MD5 hashes, timestamps, patch indicators
 
 - **Archive Creation**
   - ✅ Create new archives (v1-v3)
