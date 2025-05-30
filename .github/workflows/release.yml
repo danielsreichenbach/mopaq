@@ -190,7 +190,7 @@ jobs:
       - name: Publish mopaq
         run: cargo publish --package mopaq
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Wait for crates.io
         run: sleep 30
@@ -198,7 +198,7 @@ jobs:
       - name: Publish storm-ffi
         run: cargo publish --package storm-ffi
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
       - name: Wait for crates.io
         run: sleep 30
@@ -206,4 +206,4 @@ jobs:
       - name: Publish storm-cli
         run: cargo publish --package storm-cli
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
