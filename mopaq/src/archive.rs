@@ -272,6 +272,9 @@ impl Archive {
             }
         }
 
+        // Load attributes if present
+        self.load_attributes()?;
+
         Ok(())
     }
 

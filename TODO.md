@@ -88,7 +88,7 @@
   - [X] Attribute parsing ✅
   - [X] Per-file attribute access API ✅
   - [X] Manual attributes loading via `load_attributes()` ✅
-  - [ ] Automatic attributes loading on archive open
+  - [X] Automatic attributes loading on archive open ✅
   - [ ] Attribute generation in ArchiveBuilder
   - [ ] CRC32 calculation during file writing
   - [ ] MD5 calculation during file writing

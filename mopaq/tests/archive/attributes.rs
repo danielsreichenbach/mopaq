@@ -185,3 +185,52 @@ fn test_archive_load_attributes() {
         }
     }
 }
+
+#[test]
+fn test_attributes_loaded_automatically() {
+    // Test that attributes are loaded automatically when opening an archive
+    let path = get_test_path("attributes/archive_with_attributes.mpq");
+
+    // Skip test if the file doesn't exist
+    if !path.exists() {
+        eprintln!("Test archive not found at {:?}, skipping test", path);
+        return;
+    }
+
+    // Open archive without explicitly loading attributes
+    let archive = Archive::open(&path).unwrap();
+
+    // Attributes should be loaded automatically
+    assert!(
+        archive.attributes().is_some(),
+        "Attributes should be loaded automatically when opening an archive"
+    );
+
+    if let Some(attrs) = archive.attributes() {
+        println!(
+            "Automatically loaded attributes with flags: {:08X}",
+            attrs.flags.as_u32()
+        );
+    }
+}
+
+#[test]
+fn test_no_attributes_archive() {
+    // Test that archives without attributes work correctly
+    let path = get_test_path("comprehensive/empty.mpq");
+
+    // This archive should exist in our test data
+    assert!(
+        path.exists(),
+        "Test archive comprehensive/empty.mpq should exist"
+    );
+
+    // Open archive - attributes loading should not fail even if no attributes exist
+    let archive = Archive::open(&path).unwrap();
+
+    // No attributes should be present
+    assert!(
+        archive.attributes().is_none(),
+        "Empty archive should not have attributes"
+    );
+}
