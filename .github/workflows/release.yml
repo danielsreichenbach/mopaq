@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: Release v${{ steps.get_version.outputs.version }}
+          draft: true
+          prerelease: false
+
+  build-binaries:
+    name: Build (${{ matrix.target }})
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: storm-cli
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            binary: storm-cli
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: storm-cli
+
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary: storm-cli.exe
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            binary: storm-cli.exe
+
+          # macOS
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary: storm-cli
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary: storm-cli
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          case "${{ matrix.target }}" in
+            aarch64-unknown-linux-gnu)
+              sudo apt-get install -y gcc-aarch64-linux-gnu
+              ;;
+            x86_64-unknown-linux-musl)
+              sudo apt-get install -y musl-tools
+              ;;
+          esac
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --package storm-cli
+
+      - name: Package binary
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            7z a ../../../storm-cli-${{ matrix.target }}.zip ${{ matrix.binary }}
+          else
+            tar czf ../../../storm-cli-${{ matrix.target }}.tar.gz ${{ matrix.binary }}
+          fi
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: storm-cli-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_name: storm-cli-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_content_type: ${{ matrix.os == 'windows-latest' && 'application/zip' || 'application/gzip' }}
+
+  build-ffi:
+    name: Build FFI (${{ matrix.target }})
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build FFI library
+        run: cargo build --release --target ${{ matrix.target }} --package storm-ffi
+
+      - name: Package library
+        shell: bash
+        run: |
+          mkdir -p storm-ffi-${{ matrix.target }}
+          cp storm-ffi/include/StormLib.h storm-ffi-${{ matrix.target }}/
+
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp target/${{ matrix.target }}/release/storm_ffi.dll storm-ffi-${{ matrix.target }}/
+            cp target/${{ matrix.target }}/release/storm_ffi.dll.lib storm-ffi-${{ matrix.target }}/
+            7z a storm-ffi-${{ matrix.target }}.zip storm-ffi-${{ matrix.target }}/*
+          elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            cp target/${{ matrix.target }}/release/libstorm_ffi.dylib storm-ffi-${{ matrix.target }}/
+            tar czf storm-ffi-${{ matrix.target }}.tar.gz storm-ffi-${{ matrix.target }}
+          else
+            cp target/${{ matrix.target }}/release/libstorm_ffi.so storm-ffi-${{ matrix.target }}/
+            tar czf storm-ffi-${{ matrix.target }}.tar.gz storm-ffi-${{ matrix.target }}
+          fi
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: storm-ffi-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_name: storm-ffi-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
+          asset_content_type: ${{ matrix.os == 'windows-latest' && 'application/zip' || 'application/gzip' }}
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [build-binaries, build-ffi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Publish mopaq
+        run: cargo publish --package mopaq
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io
+        run: sleep 30
+
+      - name: Publish storm-ffi
+        run: cargo publish --package storm-ffi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io
+        run: sleep 30
+
+      - name: Publish storm-cli
+        run: cargo publish --package storm-cli
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

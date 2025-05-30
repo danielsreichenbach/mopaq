@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -D warnings
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Quick checks that should fail fast
+  quick-checks:
+    name: Quick Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'quick-checks'
+
+      # Format check (fastest)
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      # Check compilation
+      - name: Check compilation
+        run: cargo check --all-features --all-targets
+
+      # Clippy lints
+      - name: Clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
+
+  # Main test suite
+  test:
+    name: Test (${{ matrix.rust }} on ${{ matrix.os }})
+    needs: quick-checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust: [1.86.0, stable]
+        include:
+          # Add beta on Linux only
+          - os: ubuntu-latest
+            rust: beta
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'tests-${{ matrix.os }}-${{ matrix.rust }}'
+
+      # Test with all features
+      - name: Test all features
+        run: cargo test --all-features --workspace
+
+      # Test with no default features
+      - name: Test no default features
+        run: cargo test --no-default-features --workspace
+
+      # Test each feature individually
+      - name: Test feature combinations
+        if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
+        run: |
+          cargo test --features mmap
+          cargo test --features async
+          cargo test --features parallel
+
+  # Documentation build
+  docs:
+    name: Documentation
+    needs: quick-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'docs'
+      - name: Build documentation
+        run: cargo doc --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Check for broken links
+        run: cargo doc --all-features --no-deps --document-private-items
+
+  # Coverage collection
+  coverage:
+    name: Code Coverage
+    needs: quick-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'coverage'
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Collect coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # Success marker for branch protection
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [quick-checks, test, docs, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          else
+            echo "All jobs succeeded"
+          fi
