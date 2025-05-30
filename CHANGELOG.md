@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `create` command implementation
 - Progress bars for long operations
-- JSON output mode
+- text, JSON and CSV output mode
 
 #### FFI Library (`storm-ffi`)
 

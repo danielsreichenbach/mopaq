@@ -3,15 +3,51 @@
 //! The binary is named `storm-cli` to avoid conflicts with the `storm` library crate.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use std::sync::OnceLock;
 
 mod commands;
+mod output;
+
+// Global context for commands to access
+pub static GLOBAL_OPTS: OnceLock<GlobalOptions> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+pub struct GlobalOptions {
+    pub output: OutputFormat,
+    pub verbose: u8,
+    pub quiet: bool,
+    pub no_color: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Csv,
+}
 
 #[derive(Parser)]
 #[command(name = "storm-cli")]
 #[command(about = "Command-line tool for working with MPQ archives", long_about = None)]
 #[command(version)]
 struct Cli {
+    /// Output format
+    #[arg(global = true, short = 'o', long, value_enum, default_value = "text")]
+    output: OutputFormat,
+
+    /// Increase verbosity (-v, -vv, -vvv)
+    #[arg(global = true, short = 'v', long, action = clap::ArgAction::Count)]
+    verbose: u8,
+
+    /// Suppress all output except errors
+    #[arg(global = true, short = 'q', long, conflicts_with = "verbose")]
+    quiet: bool,
+
+    /// Disable colored output
+    #[arg(global = true, long)]
+    no_color: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -22,9 +58,6 @@ enum Commands {
     List {
         /// Path to the MPQ archive
         archive: String,
-        /// Show detailed information about each file
-        #[arg(short, long)]
-        verbose: bool,
         /// Show all entries even without filenames
         #[arg(short, long)]
         all: bool,
@@ -35,17 +68,14 @@ enum Commands {
         archive: String,
         /// Filename to search for
         filename: String,
-        /// Show detailed information
-        #[arg(short, long)]
-        verbose: bool,
     },
     /// Extract files from an archive
     Extract {
         /// Path to the MPQ archive
         archive: String,
-        /// Output directory
+        /// Target directory
         #[arg(short, long, default_value = ".")]
-        output: String,
+        target: String,
         /// Specific file to extract (if not specified, extracts all)
         #[arg(short, long)]
         file: Option<String>,
@@ -61,9 +91,6 @@ enum Commands {
     Verify {
         /// Path to the MPQ archive
         archive: String,
-        /// Show detailed verification progress
-        #[arg(short, long)]
-        verbose: bool,
     },
     /// Debug commands
     #[command(subcommand)]
@@ -114,37 +141,62 @@ enum DebugCommands {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
-
     let cli = Cli::parse();
 
+    // Set up colored output based on flags
+    if cli.no_color || cli.output != OutputFormat::Text {
+        colored::control::set_override(false);
+    }
+
+    // Configure logging based on verbosity
+    let log_level = match (cli.quiet, cli.verbose) {
+        (true, _) => "error",
+        (false, 0) => "warn",
+        (false, 1) => "info",
+        (false, 2) => "debug",
+        (false, _) => "trace",
+    };
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level))
+        .format_timestamp(None)
+        .init();
+
+    // Store global options for commands to access
+    let global_opts = GlobalOptions {
+        output: cli.output,
+        verbose: cli.verbose,
+        quiet: cli.quiet,
+        no_color: cli.no_color,
+    };
+
+    GLOBAL_OPTS
+        .set(global_opts)
+        .expect("Failed to set global options");
+
+    // Execute command
     match cli.command {
-        Commands::List {
-            archive,
-            verbose,
-            all,
-        } => {
+        Commands::List { archive, all } => {
+            // Pass the global verbose value instead
+            let verbose = cli.verbose > 0;
             commands::list::list(&archive, verbose, all)?;
         }
-        Commands::Find {
-            archive,
-            filename,
-            verbose,
-        } => {
+        Commands::Find { archive, filename } => {
+            let verbose = cli.verbose > 0;
             commands::find::find(&archive, &filename, verbose)?;
         }
         Commands::Extract {
             archive,
-            output,
+            target,
             file,
         } => {
-            commands::extract::extract(&archive, &output, file.as_deref())?;
+            commands::extract::extract(&archive, &target, file.as_deref())?;
         }
         Commands::Create { archive, source } => {
             println!("Creating {} from {}", archive, source);
             // TODO: Implement creation
         }
-        Commands::Verify { archive, verbose } => {
+        Commands::Verify { archive } => {
+            let verbose = cli.verbose > 0;
             commands::verify::verify(&archive, verbose)?;
         }
         Commands::Debug(debug_cmd) => match debug_cmd {

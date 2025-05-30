@@ -104,7 +104,7 @@
 
 - [ ] Implement `create` command (depends on ArchiveBuilder)
 - [ ] Add progress bars for long operations
-- [ ] Add JSON output mode for scripting
+- [X] Add JSON output mode for scripting
 
 ### Medium Priority
 
