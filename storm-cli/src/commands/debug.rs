@@ -2,8 +2,7 @@
 
 use anyhow::Result;
 use colored::*;
-use mopaq::hash::{hash_string, hash_type, jenkins_hash};
-use mopaq::{Archive, FormatVersion};
+use mopaq::{hash_string, hash_type, jenkins_hash, Archive, FormatVersion};
 
 /// Display detailed information about an MPQ archive
 pub fn info(archive_path: &str) -> Result<()> {

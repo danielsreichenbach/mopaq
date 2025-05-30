@@ -6,16 +6,16 @@ use mopaq::compression::{compress, decompress, flags};
 fn test_zlib_round_trip() {
     let test_cases = vec![
         b"Hello, World!".to_vec(),
-        b"A".repeat(1000), // Highly compressible
-        vec![0u8; 100],    // All zeros
+        b"A".repeat(1000),               // Highly compressible
+        vec![0u8; 100],                  // All zeros
         (0u8..255).collect::<Vec<u8>>(), // All byte values
     ];
 
     for original in test_cases {
         let compressed = compress(&original, flags::ZLIB).expect("Compression failed");
-        let decompressed = decompress(&compressed, flags::ZLIB, original.len())
-            .expect("Decompression failed");
-        
+        let decompressed =
+            decompress(&compressed, flags::ZLIB, original.len()).expect("Decompression failed");
+
         assert_eq!(decompressed, original);
     }
 }
@@ -30,9 +30,9 @@ fn test_bzip2_round_trip() {
 
     for original in test_cases {
         let compressed = compress(&original, flags::BZIP2).expect("Compression failed");
-        let decompressed = decompress(&compressed, flags::BZIP2, original.len())
-            .expect("Decompression failed");
-        
+        let decompressed =
+            decompress(&compressed, flags::BZIP2, original.len()).expect("Decompression failed");
+
         assert_eq!(decompressed, original);
     }
 }
@@ -48,9 +48,9 @@ fn test_lzma_round_trip() {
 
     for original in test_cases {
         let compressed = compress(&original, flags::LZMA).expect("Compression failed");
-        let decompressed = decompress(&compressed, flags::LZMA, original.len())
-            .expect("Decompression failed");
-        
+        let decompressed =
+            decompress(&compressed, flags::LZMA, original.len()).expect("Decompression failed");
+
         assert_eq!(decompressed, original);
     }
 }
@@ -66,9 +66,9 @@ fn test_sparse_round_trip() {
 
     for original in test_cases {
         let compressed = compress(&original, flags::SPARSE).expect("Compression failed");
-        let decompressed = decompress(&compressed, flags::SPARSE, original.len())
-            .expect("Decompression failed");
-        
+        let decompressed =
+            decompress(&compressed, flags::SPARSE, original.len()).expect("Decompression failed");
+
         assert_eq!(decompressed, original);
     }
 }
@@ -76,11 +76,10 @@ fn test_sparse_round_trip() {
 #[test]
 fn test_no_compression() {
     let original = b"This is uncompressed data";
-    
+
     let compressed = compress(original, 0).expect("Compression failed");
     assert_eq!(compressed, original);
-    
-    let decompressed = decompress(&compressed, 0, original.len())
-        .expect("Decompression failed");
+
+    let decompressed = decompress(&compressed, 0, original.len()).expect("Decompression failed");
     assert_eq!(decompressed, original);
 }

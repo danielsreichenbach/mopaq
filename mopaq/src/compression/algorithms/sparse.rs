@@ -54,7 +54,7 @@ pub(crate) fn compress(data: &[u8]) -> Result<Vec<u8>> {
         while pos < data.len() && data[pos] == 0 {
             pos += 1;
         }
-        
+
         let mut zero_count = pos - zero_start;
         if zero_count > 0 {
             // Encode runs of zeros

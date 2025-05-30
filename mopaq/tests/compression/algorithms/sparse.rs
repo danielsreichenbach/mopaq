@@ -29,7 +29,7 @@ fn test_sparse_compression_decompression() {
     let test_data = b"Data\0\0\0\0\0\0\0\0with\0\0\0\0lots\0\0\0\0\0\0\0\0of\0\0\0zeros";
 
     let compressed = compress(test_data, flags::SPARSE).expect("Compression failed");
-    
+
     // Sparse should be very efficient for data with lots of zeros
     assert!(compressed.len() < test_data.len());
     println!(
@@ -39,7 +39,7 @@ fn test_sparse_compression_decompression() {
 
     let decompressed =
         decompress(&compressed, flags::SPARSE, test_data.len()).expect("Decompression failed");
-    
+
     assert_eq!(decompressed, test_data);
 }
 
@@ -47,19 +47,19 @@ fn test_sparse_compression_decompression() {
 fn test_sparse_all_zeros() {
     // Test compression of all zeros - should be extremely efficient
     let all_zeros = vec![0u8; 1000];
-    
+
     let compressed = compress(&all_zeros, flags::SPARSE).expect("Compression failed");
-    
+
     // Should compress to just a few bytes (control bytes + end marker)
     assert!(compressed.len() < 20);
     println!(
         "Sparse compression of 1000 zeros: {} bytes",
         compressed.len()
     );
-    
+
     let decompressed =
         decompress(&compressed, flags::SPARSE, all_zeros.len()).expect("Decompression failed");
-    
+
     assert_eq!(decompressed, all_zeros);
 }
 
@@ -67,14 +67,14 @@ fn test_sparse_all_zeros() {
 fn test_sparse_no_zeros() {
     // Test compression of data with no zeros - should not compress well
     let no_zeros: Vec<u8> = (1..=255).collect();
-    
+
     let compressed = compress(&no_zeros, flags::SPARSE).expect("Compression failed");
-    
+
     // Should be larger than original due to control bytes
     assert!(compressed.len() > no_zeros.len());
-    
+
     let decompressed =
         decompress(&compressed, flags::SPARSE, no_zeros.len()).expect("Decompression failed");
-    
+
     assert_eq!(decompressed, no_zeros);
 }

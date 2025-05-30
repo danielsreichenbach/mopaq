@@ -103,9 +103,9 @@ fn test_unimplemented_compression_methods() {
 fn test_empty_data_decompression_error() {
     // Decompressing empty data should fail for all methods
     let empty = b"";
-    
+
     let methods = [flags::ZLIB, flags::BZIP2, flags::LZMA, flags::SPARSE];
-    
+
     for method in &methods {
         let result = decompress(empty, *method, 100);
         assert!(

@@ -51,7 +51,6 @@ pub mod builder;
 pub mod compression;
 pub mod crypto;
 pub mod error;
-pub mod hash;
 pub mod header;
 pub mod io;
 pub mod special_files;
@@ -65,10 +64,9 @@ pub use header::{FormatVersion, MpqHeader};
 pub use tables::{BetFileInfo, BetTable, BlockEntry, BlockTable, HashEntry, HashTable, HetTable};
 
 // Re-export crypto for CLI usage
-pub use crypto::{decrypt_block, decrypt_dword, encrypt_block};
-
-// Re-export hash functions for CLI usage
-pub use hash::{hash_string, hash_type, jenkins_hash};
+pub use crypto::{
+    decrypt_block, decrypt_dword, encrypt_block, hash_string, hash_type, jenkins_hash,
+};
 
 // Re-export compression for testing
 pub use compression::{compress, decompress};

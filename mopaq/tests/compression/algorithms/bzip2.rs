@@ -42,7 +42,7 @@ fn test_bzip2_large_data() {
         100.0 * compressed.len() as f64 / large_data.len() as f64
     );
 
-    let decompressed = decompress(&compressed, flags::BZIP2, large_data.len())
-        .expect("Decompression failed");
+    let decompressed =
+        decompress(&compressed, flags::BZIP2, large_data.len()).expect("Decompression failed");
     assert_eq!(decompressed, large_data);
 }

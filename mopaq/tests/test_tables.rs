@@ -1,4 +1,4 @@
 //! Table functionality tests
 
-mod tables;
 mod common;
+mod tables;

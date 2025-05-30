@@ -1,8 +1,8 @@
 //! Main decompression logic and multi-compression handling
 
-use crate::{Error, Result};
 use super::algorithms;
-use super::methods::{CompressionMethod, flags};
+use super::methods::{flags, CompressionMethod};
+use crate::{Error, Result};
 
 /// Decompress data using the specified compression method
 pub fn decompress(data: &[u8], method: u8, decompressed_size: usize) -> Result<Vec<u8>> {

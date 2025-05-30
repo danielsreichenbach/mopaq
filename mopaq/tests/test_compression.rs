@@ -1,4 +1,4 @@
 //! Compression functionality tests
 
-mod compression;
 mod common;
+mod compression;

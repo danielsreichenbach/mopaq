@@ -1,8 +1,8 @@
 //! Main compression logic
 
-use crate::{Error, Result};
 use super::algorithms;
 use super::methods::CompressionMethod;
+use crate::{Error, Result};
 
 /// Compress data using the specified compression method
 pub fn compress(data: &[u8], method: u8) -> Result<Vec<u8>> {
@@ -34,8 +34,9 @@ mod tests {
 
         // Test zlib - might not reduce size for small data
         let compressed = compress(original, flags::ZLIB).expect("Compression failed");
-        let decompressed = super::super::decompress::decompress(&compressed, flags::ZLIB, original.len())
-            .expect("Decompression failed");
+        let decompressed =
+            super::super::decompress::decompress(&compressed, flags::ZLIB, original.len())
+                .expect("Decompression failed");
         assert_eq!(decompressed, original);
     }
 
@@ -45,8 +46,9 @@ mod tests {
 
         // Test through our wrapper API
         let compressed = compress(original, flags::LZMA).expect("Compression failed");
-        let decompressed = super::super::decompress::decompress(&compressed, flags::LZMA, original.len())
-            .expect("Decompression failed");
+        let decompressed =
+            super::super::decompress::decompress(&compressed, flags::LZMA, original.len())
+                .expect("Decompression failed");
 
         assert_eq!(decompressed, original);
     }

@@ -44,36 +44,68 @@ extern "C" {
 #endif // __cplusplus
 
 // Open an MPQ archive
-bool SFileOpenArchive(const char *filename, uint32_t priority, uint32_t flags, HANDLE *handle);
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
+// - `handle` must be a valid pointer to write the output handle
+bool SFileOpenArchive(const char *filename, uint32_t _priority, uint32_t _flags, HANDLE *handle);
 
 // Close an MPQ archive
 bool SFileCloseArchive(HANDLE handle);
 
 // Open a file in the archive
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
+// - `file_handle` must be a valid pointer to write the output handle
 bool SFileOpenFileEx(HANDLE archive,
                      const char *filename,
-                     uint32_t search_scope,
+                     uint32_t _search_scope,
                      HANDLE *file_handle);
 
 // Close a file
 bool SFileCloseFile(HANDLE file);
 
 // Read from a file
-bool SFileReadFile(HANDLE file, void *buffer, uint32_t to_read, uint32_t *read, void *overlapped);
+//
+// # Safety
+//
+// - `buffer` must be a valid pointer with at least `to_read` bytes available
+// - `read` if not null, must be a valid pointer to write the bytes read
+bool SFileReadFile(HANDLE file, void *buffer, uint32_t to_read, uint32_t *read, void *_overlapped);
 
 // Get file size
+//
+// # Safety
+//
+// - `high` if not null, must be a valid pointer to write the high 32 bits
 uint32_t SFileGetFileSize(HANDLE file, uint32_t *high);
 
 // Set file position
+//
+// # Safety
+//
+// - `file_pos_high` if not null, must be a valid pointer to read/write the high 32 bits
 uint32_t SFileSetFilePointer(HANDLE file,
                              int32_t file_pos,
                              int32_t *file_pos_high,
                              uint32_t move_method);
 
 // Check if file exists in archive
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
 bool SFileHasFile(HANDLE archive, const char *filename);
 
 // Get file information
+//
+// # Safety
+//
+// - `buffer` if not null, must be a valid pointer with at least `buffer_size` bytes
+// - `size_needed` if not null, must be a valid pointer to write the required size
 bool SFileGetFileInfo(HANDLE file_or_archive,
                       uint32_t info_class,
                       void *buffer,
@@ -81,12 +113,22 @@ bool SFileGetFileInfo(HANDLE file_or_archive,
                       uint32_t *size_needed);
 
 // Get archive name from handle
+//
+// # Safety
+//
+// - `buffer` must be a valid pointer with at least `buffer_size` bytes available
 bool SFileGetArchiveName(HANDLE archive, char *buffer, uint32_t buffer_size);
 
 // Enumerate files in archive
+//
+// # Safety
+//
+// - `search_mask` if not null, must be a valid null-terminated C string
+// - `_list_file` if not null, must be a valid null-terminated C string (ignored)
+// - `callback` function pointer must be valid for the duration of enumeration
 bool SFileEnumFiles(HANDLE archive,
                     const char *search_mask,
-                    const char *list_file,
+                    const char *_list_file,
                     bool (*callback)(const char*, void*),
                     void *user_data);
 
@@ -103,6 +145,10 @@ uint32_t GetLastError(void);
 void SetLastError(uint32_t error);
 
 // Get file name from handle
+//
+// # Safety
+//
+// - `buffer` must be a valid pointer with sufficient space for the filename
 bool SFileGetFileName(HANDLE file, char *buffer);
 
 #ifdef __cplusplus

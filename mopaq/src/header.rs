@@ -10,13 +10,13 @@ trait ReadLittleEndian: Read {
         self.read_exact(&mut buf)?;
         Ok(u16::from_le_bytes(buf))
     }
-    
+
     fn read_u32_le(&mut self) -> Result<u32> {
         let mut buf = [0u8; 4];
         self.read_exact(&mut buf)?;
         Ok(u32::from_le_bytes(buf))
     }
-    
+
     fn read_u64_le(&mut self) -> Result<u64> {
         let mut buf = [0u8; 8];
         self.read_exact(&mut buf)?;

@@ -4,11 +4,10 @@ use libc::{c_char, c_void};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::io::{Read, Seek, SeekFrom};
 use std::ptr;
 use std::sync::{LazyLock, Mutex};
 
-use mopaq::{Archive, FileInfo};
+use mopaq::Archive;
 
 /// Archive handle type
 pub type HANDLE = *mut c_void;
@@ -25,8 +24,8 @@ static FILES: LazyLock<Mutex<HashMap<usize, FileHandle>>> =
 
 // Thread-local error storage
 thread_local! {
-    static LAST_ERROR: RefCell<u32> = RefCell::new(ERROR_SUCCESS);
-    static LOCALE: RefCell<u32> = RefCell::new(LOCALE_NEUTRAL);
+    static LAST_ERROR: RefCell<u32> = const { RefCell::new(ERROR_SUCCESS) };
+    static LOCALE: RefCell<u32> = const { RefCell::new(LOCALE_NEUTRAL) };
 }
 
 // Internal handle structures
@@ -48,10 +47,10 @@ const ERROR_SUCCESS: u32 = 0;
 const ERROR_FILE_NOT_FOUND: u32 = 2;
 const ERROR_ACCESS_DENIED: u32 = 5;
 const ERROR_INVALID_HANDLE: u32 = 6;
-const ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
+const _ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
 const ERROR_INVALID_PARAMETER: u32 = 87;
 const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
-const ERROR_ALREADY_EXISTS: u32 = 183;
+const _ERROR_ALREADY_EXISTS: u32 = 183;
 const ERROR_FILE_CORRUPT: u32 = 1392;
 const ERROR_NOT_SUPPORTED: u32 = 50;
 
@@ -59,27 +58,27 @@ const ERROR_NOT_SUPPORTED: u32 = 50;
 const LOCALE_NEUTRAL: u32 = 0;
 
 // Search scope flags (for SFileOpenFileEx)
-const SFILE_OPEN_FROM_MPQ: u32 = 0x00000000;
+const _SFILE_OPEN_FROM_MPQ: u32 = 0x00000000;
 
 // Info classes for SFileGetFileInfo
 const SFILE_INFO_ARCHIVE_SIZE: u32 = 1;
 const SFILE_INFO_HASH_TABLE_SIZE: u32 = 2;
 const SFILE_INFO_BLOCK_TABLE_SIZE: u32 = 3;
 const SFILE_INFO_SECTOR_SIZE: u32 = 4;
-const SFILE_INFO_NUM_FILES: u32 = 5;
-const SFILE_INFO_STREAM_FLAGS: u32 = 6;
+const _SFILE_INFO_NUM_FILES: u32 = 5;
+const _SFILE_INFO_STREAM_FLAGS: u32 = 6;
 const SFILE_INFO_FILE_SIZE: u32 = 7;
-const SFILE_INFO_COMPRESSED_SIZE: u32 = 8;
-const SFILE_INFO_FLAGS: u32 = 9;
+const _SFILE_INFO_COMPRESSED_SIZE: u32 = 8;
+const _SFILE_INFO_FLAGS: u32 = 9;
 const SFILE_INFO_POSITION: u32 = 10;
-const SFILE_INFO_KEY: u32 = 11;
-const SFILE_INFO_KEY_UNFIXED: u32 = 12;
+const _SFILE_INFO_KEY: u32 = 11;
+const _SFILE_INFO_KEY_UNFIXED: u32 = 12;
 
 // Archive open flags
-const MPQ_OPEN_NO_LISTFILE: u32 = 0x0001;
-const MPQ_OPEN_NO_ATTRIBUTES: u32 = 0x0002;
-const MPQ_OPEN_FORCE_MPQ_V1: u32 = 0x0004;
-const MPQ_OPEN_CHECK_SECTOR_CRC: u32 = 0x0008;
+const _MPQ_OPEN_NO_LISTFILE: u32 = 0x0001;
+const _MPQ_OPEN_NO_ATTRIBUTES: u32 = 0x0002;
+const _MPQ_OPEN_FORCE_MPQ_V1: u32 = 0x0004;
+const _MPQ_OPEN_CHECK_SECTOR_CRC: u32 = 0x0008;
 
 // Helper functions
 fn set_last_error(error: u32) {
@@ -99,11 +98,16 @@ fn id_to_handle(id: usize) -> HANDLE {
 }
 
 /// Open an MPQ archive
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
+/// - `handle` must be a valid pointer to write the output handle
 #[no_mangle]
-pub extern "C" fn SFileOpenArchive(
+pub unsafe extern "C" fn SFileOpenArchive(
     filename: *const c_char,
-    priority: u32, // Ignored - StormLib legacy parameter
-    flags: u32,    // Archive open flags
+    _priority: u32, // Ignored - StormLib legacy parameter
+    _flags: u32,    // Archive open flags
     handle: *mut HANDLE,
 ) -> bool {
     // Validate parameters
@@ -113,13 +117,11 @@ pub extern "C" fn SFileOpenArchive(
     }
 
     // Convert filename from C string
-    let filename_str = unsafe {
-        match CStr::from_ptr(filename).to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                set_last_error(ERROR_INVALID_PARAMETER);
-                return false;
-            }
+    let filename_str = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
         }
     };
 
@@ -140,7 +142,7 @@ pub extern "C" fn SFileOpenArchive(
             ARCHIVES.lock().unwrap().insert(handle_id, archive_handle);
 
             // Return handle
-            unsafe { *handle = id_to_handle(handle_id) };
+            *handle = id_to_handle(handle_id);
             set_last_error(ERROR_SUCCESS);
             true
         }
@@ -183,11 +185,16 @@ pub extern "C" fn SFileCloseArchive(handle: HANDLE) -> bool {
 }
 
 /// Open a file in the archive
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
+/// - `file_handle` must be a valid pointer to write the output handle
 #[no_mangle]
-pub extern "C" fn SFileOpenFileEx(
+pub unsafe extern "C" fn SFileOpenFileEx(
     archive: HANDLE,
     filename: *const c_char,
-    search_scope: u32,
+    _search_scope: u32,
     file_handle: *mut HANDLE,
 ) -> bool {
     // Validate parameters
@@ -202,13 +209,11 @@ pub extern "C" fn SFileOpenFileEx(
     };
 
     // Convert filename
-    let filename_str = unsafe {
-        match CStr::from_ptr(filename).to_str() {
-            Ok(s) => s,
-            Err(_) => {
-                set_last_error(ERROR_INVALID_PARAMETER);
-                return false;
-            }
+    let filename_str = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
         }
     };
 
@@ -244,7 +249,7 @@ pub extern "C" fn SFileOpenFileEx(
                     FILES.lock().unwrap().insert(file_id, file);
 
                     // Return handle
-                    unsafe { *file_handle = id_to_handle(file_id) };
+                    *file_handle = id_to_handle(file_id);
                     set_last_error(ERROR_SUCCESS);
                     true
                 }
@@ -283,13 +288,18 @@ pub extern "C" fn SFileCloseFile(file: HANDLE) -> bool {
 }
 
 /// Read from a file
+///
+/// # Safety
+///
+/// - `buffer` must be a valid pointer with at least `to_read` bytes available
+/// - `read` if not null, must be a valid pointer to write the bytes read
 #[no_mangle]
-pub extern "C" fn SFileReadFile(
+pub unsafe extern "C" fn SFileReadFile(
     file: HANDLE,
     buffer: *mut c_void,
     to_read: u32,
     read: *mut u32,
-    overlapped: *mut c_void, // Ignored - no async I/O support
+    _overlapped: *mut c_void, // Ignored - no async I/O support
 ) -> bool {
     // Validate parameters
     if buffer.is_null() {
@@ -315,7 +325,7 @@ pub extern "C" fn SFileReadFile(
 
     if bytes_to_read == 0 {
         if !read.is_null() {
-            unsafe { *read = 0 };
+            *read = 0;
         }
         set_last_error(ERROR_SUCCESS);
         return true;
@@ -323,16 +333,14 @@ pub extern "C" fn SFileReadFile(
 
     // Copy data to buffer
     let src = &file_handle.data[file_handle.position..file_handle.position + bytes_to_read];
-    unsafe {
-        std::ptr::copy_nonoverlapping(src.as_ptr(), buffer as *mut u8, bytes_to_read);
-    }
+    std::ptr::copy_nonoverlapping(src.as_ptr(), buffer as *mut u8, bytes_to_read);
 
     // Update position
     file_handle.position += bytes_to_read;
 
     // Set bytes read
     if !read.is_null() {
-        unsafe { *read = bytes_to_read as u32 };
+        *read = bytes_to_read as u32;
     }
 
     set_last_error(ERROR_SUCCESS);
@@ -340,8 +348,12 @@ pub extern "C" fn SFileReadFile(
 }
 
 /// Get file size
+///
+/// # Safety
+///
+/// - `high` if not null, must be a valid pointer to write the high 32 bits
 #[no_mangle]
-pub extern "C" fn SFileGetFileSize(file: HANDLE, high: *mut u32) -> u32 {
+pub unsafe extern "C" fn SFileGetFileSize(file: HANDLE, high: *mut u32) -> u32 {
     let Some(file_id) = handle_to_id(file) else {
         set_last_error(ERROR_INVALID_HANDLE);
         return 0xFFFFFFFF; // INVALID_FILE_SIZE
@@ -357,7 +369,7 @@ pub extern "C" fn SFileGetFileSize(file: HANDLE, high: *mut u32) -> u32 {
 
     // Split 64-bit size into high and low parts
     if !high.is_null() {
-        unsafe { *high = (size >> 32) as u32 };
+        *high = (size >> 32) as u32;
     }
 
     set_last_error(ERROR_SUCCESS);
@@ -365,8 +377,12 @@ pub extern "C" fn SFileGetFileSize(file: HANDLE, high: *mut u32) -> u32 {
 }
 
 /// Set file position
+///
+/// # Safety
+///
+/// - `file_pos_high` if not null, must be a valid pointer to read/write the high 32 bits
 #[no_mangle]
-pub extern "C" fn SFileSetFilePointer(
+pub unsafe extern "C" fn SFileSetFilePointer(
     file: HANDLE,
     file_pos: i32,
     file_pos_high: *mut i32,
@@ -386,7 +402,7 @@ pub extern "C" fn SFileSetFilePointer(
     // Combine high and low parts into 64-bit offset
     let mut offset = file_pos as i64;
     if !file_pos_high.is_null() {
-        let high = unsafe { *file_pos_high } as i64;
+        let high = *file_pos_high as i64;
         offset |= high << 32;
     }
 
@@ -407,7 +423,7 @@ pub extern "C" fn SFileSetFilePointer(
     // Return new position
     let pos = file_handle.position as u64;
     if !file_pos_high.is_null() {
-        unsafe { *file_pos_high = (pos >> 32) as i32 };
+        *file_pos_high = (pos >> 32) as i32;
     }
 
     set_last_error(ERROR_SUCCESS);
@@ -415,8 +431,12 @@ pub extern "C" fn SFileSetFilePointer(
 }
 
 /// Check if file exists in archive
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
 #[no_mangle]
-pub extern "C" fn SFileHasFile(archive: HANDLE, filename: *const c_char) -> bool {
+pub unsafe extern "C" fn SFileHasFile(archive: HANDLE, filename: *const c_char) -> bool {
     if filename.is_null() {
         return false;
     }
@@ -425,11 +445,9 @@ pub extern "C" fn SFileHasFile(archive: HANDLE, filename: *const c_char) -> bool
         return false;
     };
 
-    let filename_str = unsafe {
-        match CStr::from_ptr(filename).to_str() {
-            Ok(s) => s,
-            Err(_) => return false,
-        }
+    let filename_str = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => return false,
     };
 
     let archives = ARCHIVES.lock().unwrap();
@@ -441,8 +459,13 @@ pub extern "C" fn SFileHasFile(archive: HANDLE, filename: *const c_char) -> bool
 }
 
 /// Get file information
+///
+/// # Safety
+///
+/// - `buffer` if not null, must be a valid pointer with at least `buffer_size` bytes
+/// - `size_needed` if not null, must be a valid pointer to write the required size
 #[no_mangle]
-pub extern "C" fn SFileGetFileInfo(
+pub unsafe extern "C" fn SFileGetFileInfo(
     file_or_archive: HANDLE,
     info_class: u32,
     buffer: *mut c_void,
@@ -478,7 +501,7 @@ pub extern "C" fn SFileGetFileInfo(
 }
 
 // Helper function for file info
-fn get_file_info(
+unsafe fn get_file_info(
     file_handle: &FileHandle,
     info_class: u32,
     buffer: *mut c_void,
@@ -489,12 +512,10 @@ fn get_file_info(
         SFILE_INFO_FILE_SIZE => {
             let needed = 8u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u64) = file_handle.size;
-                }
+                *(buffer as *mut u64) = file_handle.size;
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -505,12 +526,10 @@ fn get_file_info(
         SFILE_INFO_POSITION => {
             let needed = 8u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u64) = file_handle.position as u64;
-                }
+                *(buffer as *mut u64) = file_handle.position as u64;
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -526,7 +545,7 @@ fn get_file_info(
 }
 
 // Helper function for archive info
-fn get_archive_info(
+unsafe fn get_archive_info(
     archive_handle: &ArchiveHandle,
     info_class: u32,
     buffer: *mut c_void,
@@ -539,12 +558,10 @@ fn get_archive_info(
         SFILE_INFO_ARCHIVE_SIZE => {
             let needed = 8u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u64) = header.get_archive_size();
-                }
+                *(buffer as *mut u64) = header.get_archive_size();
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -555,12 +572,10 @@ fn get_archive_info(
         SFILE_INFO_HASH_TABLE_SIZE => {
             let needed = 4u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u32) = header.hash_table_size;
-                }
+                *(buffer as *mut u32) = header.hash_table_size;
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -571,12 +586,10 @@ fn get_archive_info(
         SFILE_INFO_BLOCK_TABLE_SIZE => {
             let needed = 4u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u32) = header.block_table_size;
-                }
+                *(buffer as *mut u32) = header.block_table_size;
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -587,12 +600,10 @@ fn get_archive_info(
         SFILE_INFO_SECTOR_SIZE => {
             let needed = 4u32;
             if !size_needed.is_null() {
-                unsafe { *size_needed = needed };
+                *size_needed = needed;
             }
             if buffer_size >= needed {
-                unsafe {
-                    *(buffer as *mut u32) = header.sector_size() as u32;
-                }
+                *(buffer as *mut u32) = header.sector_size() as u32;
                 set_last_error(ERROR_SUCCESS);
                 true
             } else {
@@ -608,8 +619,12 @@ fn get_archive_info(
 }
 
 /// Get archive name from handle
+///
+/// # Safety
+///
+/// - `buffer` must be a valid pointer with at least `buffer_size` bytes available
 #[no_mangle]
-pub extern "C" fn SFileGetArchiveName(
+pub unsafe extern "C" fn SFileGetArchiveName(
     archive: HANDLE,
     buffer: *mut c_char,
     buffer_size: u32,
@@ -646,20 +661,24 @@ pub extern "C" fn SFileGetArchiveName(
     }
 
     // Copy to buffer
-    unsafe {
-        std::ptr::copy_nonoverlapping(path_bytes.as_ptr(), buffer as *mut u8, path_bytes.len());
-    }
+    std::ptr::copy_nonoverlapping(path_bytes.as_ptr(), buffer as *mut u8, path_bytes.len());
 
     set_last_error(ERROR_SUCCESS);
     true
 }
 
 /// Enumerate files in archive
+///
+/// # Safety
+///
+/// - `search_mask` if not null, must be a valid null-terminated C string
+/// - `_list_file` if not null, must be a valid null-terminated C string (ignored)
+/// - `callback` function pointer must be valid for the duration of enumeration
 #[no_mangle]
-pub extern "C" fn SFileEnumFiles(
+pub unsafe extern "C" fn SFileEnumFiles(
     archive: HANDLE,
     search_mask: *const c_char,
-    list_file: *const c_char, // Path to external listfile (ignored for now)
+    _list_file: *const c_char, // Path to external listfile (ignored for now)
     callback: Option<extern "C" fn(*const c_char, *mut c_void) -> bool>,
     user_data: *mut c_void,
 ) -> bool {
@@ -677,13 +696,11 @@ pub extern "C" fn SFileEnumFiles(
     let pattern = if search_mask.is_null() {
         "*".to_string()
     } else {
-        unsafe {
-            match CStr::from_ptr(search_mask).to_str() {
-                Ok(s) => s.to_string(),
-                Err(_) => {
-                    set_last_error(ERROR_INVALID_PARAMETER);
-                    return false;
-                }
+        match CStr::from_ptr(search_mask).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                set_last_error(ERROR_INVALID_PARAMETER);
+                return false;
             }
         }
     };
@@ -756,8 +773,12 @@ pub extern "C" fn SetLastError(error: u32) {
 // Additional utility functions
 
 /// Get file name from handle
+///
+/// # Safety
+///
+/// - `buffer` must be a valid pointer with sufficient space for the filename
 #[no_mangle]
-pub extern "C" fn SFileGetFileName(file: HANDLE, buffer: *mut c_char) -> bool {
+pub unsafe extern "C" fn SFileGetFileName(file: HANDLE, buffer: *mut c_char) -> bool {
     if buffer.is_null() {
         set_last_error(ERROR_INVALID_PARAMETER);
         return false;
@@ -782,9 +803,7 @@ pub extern "C" fn SFileGetFileName(file: HANDLE, buffer: *mut c_char) -> bool {
         }
     };
 
-    unsafe {
-        std::ptr::copy_nonoverlapping(c_name.as_ptr(), buffer, c_name.as_bytes_with_nul().len());
-    }
+    std::ptr::copy_nonoverlapping(c_name.as_ptr(), buffer, c_name.as_bytes_with_nul().len());
 
     set_last_error(ERROR_SUCCESS);
     true
@@ -793,7 +812,6 @@ pub extern "C" fn SFileGetFileName(file: HANDLE, buffer: *mut c_char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
 
     #[test]
     fn test_handle_conversion() {

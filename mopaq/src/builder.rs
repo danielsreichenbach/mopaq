@@ -2,8 +2,7 @@
 
 use crate::{
     compression::{compress, flags as compression_flags},
-    crypto::encrypt_block,
-    hash::{hash_string, hash_type},
+    crypto::{encrypt_block, hash_string, hash_type},
     header::FormatVersion,
     tables::{BlockEntry, BlockTable, HashEntry, HashTable},
     Error, Result,
@@ -19,12 +18,12 @@ trait WriteLittleEndian: Write {
         self.write_all(&value.to_le_bytes())?;
         Ok(())
     }
-    
+
     fn write_u32_le(&mut self, value: u32) -> Result<()> {
         self.write_all(&value.to_le_bytes())?;
         Ok(())
     }
-    
+
     fn write_u64_le(&mut self, value: u64) -> Result<()> {
         self.write_all(&value.to_le_bytes())?;
         Ok(())

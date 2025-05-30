@@ -1,7 +1,7 @@
 //! hash benchmarks
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mopaq::hash::{hash_string, hash_type, jenkins_hash};
+use mopaq::{hash_string, hash_type, jenkins_hash};
 
 fn bench_hash_string_short(c: &mut Criterion) {
     let filename = "file.txt";

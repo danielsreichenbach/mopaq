@@ -8,4 +8,4 @@ mod methods;
 // Re-export the main public API
 pub use compress::compress;
 pub use decompress::decompress;
-pub use methods::{CompressionMethod, flags};
+pub use methods::{flags, CompressionMethod};

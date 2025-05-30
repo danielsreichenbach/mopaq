@@ -71,7 +71,7 @@ fn test_v3_archive_fallback_to_classic_tables() {
 
 #[test]
 fn test_jenkins_hash_lookup() {
-    use mopaq::hash::jenkins_hash;
+    use mopaq::jenkins_hash;
 
     // Test Jenkins hash for known values
     let filenames = vec![

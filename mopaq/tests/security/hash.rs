@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use mopaq::crypto::{decrypt_block, encrypt_block};
-    use mopaq::hash::{hash_string, hash_type};
+    use mopaq::{hash_string, hash_type};
 
     #[test]
     fn test_hash_table_decryption_key() {
