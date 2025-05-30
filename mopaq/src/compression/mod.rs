@@ -287,22 +287,65 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
     // For multiple compression, we need to check which methods are actually used
     // The data format depends on which compressions are applied
 
-    // Check if PKWARE is in the flags - it's always applied first if present
+    // Check for ADPCM compression - it's always applied first if present
+    let has_adpcm_mono = (flags & flags::ADPCM_MONO) != 0;
+    let has_adpcm_stereo = (flags & flags::ADPCM_STEREO) != 0;
+    let has_adpcm = has_adpcm_mono || has_adpcm_stereo;
+
+    // If only ADPCM is set, it's not actually multiple compression
+    if flags == flags::ADPCM_MONO || flags == flags::ADPCM_STEREO {
+        return Err(Error::compression(format!(
+            "ADPCM compression (0x{:02X}) not yet implemented",
+            flags
+        )));
+    }
+
+    // Check if PKWARE is in the flags - it's applied before the final compression
     let has_pkware = (flags & flags::PKWARE) != 0;
 
-    // Determine the other compression method (applied last)
-    let final_compression = if flags & flags::ZLIB != 0 {
+    // Determine the final compression method (applied last)
+    let final_compression = if flags & flags::HUFFMAN != 0 {
+        flags::HUFFMAN
+    } else if flags & flags::ZLIB != 0 {
         flags::ZLIB
     } else if flags & flags::BZIP2 != 0 {
         flags::BZIP2
     } else if flags & flags::SPARSE != 0 {
         flags::SPARSE
+    } else if has_adpcm {
+        // ADPCM with no other compression - should have been caught above
+        return Err(Error::compression(format!(
+            "Invalid compression flags: 0x{:02X}",
+            flags
+        )));
     } else {
         return Err(Error::compression(format!(
             "Multiple compression flag set but no known compression methods: 0x{:02X}",
             flags
         )));
     };
+
+    // For ADPCM + other compression combinations
+    if has_adpcm {
+        // Common combinations:
+        // 0x41: Mono ADPCM + Huffman
+        // 0x48: Mono ADPCM + PKWare (Implode)
+        // 0x81: Stereo ADPCM + Huffman
+        // 0x88: Stereo ADPCM + PKWare (Implode)
+        log::warn!(
+            "ADPCM + {} compression (flags: 0x{:02X}) not yet implemented",
+            match final_compression {
+                flags::HUFFMAN => "Huffman",
+                flags::PKWARE => "PKWare",
+                _ => "other",
+            },
+            flags
+        );
+        return Err(Error::compression(format!(
+            "ADPCM compression combinations (0x{:02X}) not yet implemented",
+            flags
+        )));
+    }
 
     // If we have PKWare, the first byte tells us the actual compression used
     let (compression_used, compressed_data) = if has_pkware {
@@ -337,6 +380,12 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
 
     // Decompress using the detected method
     match compression_used {
+        flags::HUFFMAN => {
+            log::error!("Huffman decompression requested but not implemented");
+            Err(Error::compression(
+                "Huffman decompression not yet implemented",
+            ))
+        }
         flags::ZLIB => decompress_zlib(compressed_data, expected_size),
         flags::BZIP2 => decompress_bzip2(compressed_data, expected_size),
         flags::SPARSE => decompress_sparse(compressed_data, expected_size),
