@@ -219,7 +219,7 @@ enum DebugCommands {
     Tables {
         /// Path to the MPQ archive
         archive: String,
-        /// Table type (hash, block) or index number
+        /// Table type (hash, block, het, bet) or index number
         #[arg(short = 't', long)]
         table_type: Option<String>,
         /// Limit number of entries shown

@@ -66,7 +66,7 @@ pub fn info(archive_path: &str) -> Result<()> {
     println!("    Entries: {}", header.block_table_size);
 
     // Version-specific information
-    if header.format_version as u16 >= 1 {
+    if header.format_version >= FormatVersion::V2 {
         if let Some(hi_pos) = header.hi_block_table_pos {
             if hi_pos != 0 {
                 println!("  Hi-block table:");
@@ -75,7 +75,7 @@ pub fn info(archive_path: &str) -> Result<()> {
         }
     }
 
-    if header.format_version as u16 >= 2 {
+    if header.format_version >= FormatVersion::V3 {
         if let Some(het_pos) = header.het_table_pos {
             if het_pos != 0 {
                 println!("  HET table:");
@@ -421,10 +421,30 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
     let show_all = table_type.is_none();
     let limit = limit.unwrap_or(20);
 
+    // Check what tables are available
+    let has_het_bet = archive.het_table().is_some() && archive.bet_table().is_some();
+    let has_classic = archive.hash_table().is_some() && archive.block_table().is_some();
+
+    if has_het_bet {
+        println!("Archive uses HET/BET tables (v3+ format)");
+        if has_classic {
+            println!("Classic hash/block tables also present for compatibility");
+        }
+    } else if has_classic {
+        println!("Archive uses classic hash/block tables");
+    } else {
+        println!("Warning: No tables loaded!");
+        return Ok(());
+    }
+    println!();
+
     // Display hash table
     if show_all || table_type == Some("hash") {
         if let Some(hash_table) = archive.hash_table() {
             println!("Hash Table (size: {}):", hash_table.size());
+            if show_all {
+                println!("Showing first {} valid entries:", limit);
+            }
             println!("Index | Name1      | Name2      | Locale | Platform | Block Index | Status");
             println!("------|------------|------------|--------|----------|-------------|--------");
 
@@ -475,6 +495,9 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
         println!();
         if let Some(block_table) = archive.block_table() {
             println!("Block Table (size: {}):", block_table.size());
+            if show_all {
+                println!("Showing first {} valid entries:", limit);
+            }
             println!("Index | File Pos   | Compressed | File Size  | Flags      | Status");
             println!("------|------------|------------|------------|------------|--------");
 
@@ -529,6 +552,24 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
             println!("  Hash entry size: {} bits", hash_entry_size);
             println!("  Index size: {} bits", index_size);
             println!("  Hash table size: {} bytes", hash_table_size);
+
+            if !show_all {
+                // Show sample lookups
+                println!();
+                println!("  Sample file lookups:");
+                let test_files = ["(listfile)", "(attributes)", "(signature)", "test.txt"];
+                for filename in &test_files {
+                    let jenkins = jenkins_hash(filename);
+                    if let Some(file_index) = het_table.find_file(filename) {
+                        println!(
+                            "    {} -> index {} (hash: 0x{:016X})",
+                            filename, file_index, jenkins
+                        );
+                    } else {
+                        println!("    {} -> not found (hash: 0x{:016X})", filename, jenkins);
+                    }
+                }
+            }
         } else {
             println!("No HET table loaded");
         }
@@ -572,6 +613,27 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
                 "    Compressed size: {} bits at offset {}",
                 bit_count_cmp_size, bit_index_cmp_size
             );
+
+            if !show_all {
+                // Show sample entries
+                println!();
+                println!(
+                    "  Sample entries (first {}):",
+                    limit.min(file_count as usize)
+                );
+                println!("  Index | File Pos   | File Size  | Compressed | Flags");
+                println!("  ------|------------|------------|------------|------");
+
+                for i in 0..limit.min(file_count as usize) {
+                    if let Some(info) = bet_table.get_file_info(i as u32) {
+                        let flags_str = format_block_flags(info.flags);
+                        println!(
+                            "  {:5} | 0x{:08X} | {:10} | {:10} | {}",
+                            i, info.file_pos, info.file_size, info.compressed_size, flags_str
+                        );
+                    }
+                }
+            }
         } else {
             println!("No BET table loaded");
         }
@@ -583,7 +645,45 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
             println!();
             println!("Detailed entry at index {}:", index);
 
-            if let Some(hash_table) = archive.hash_table() {
+            // Try HET/BET tables first
+            if let Some(bet_table) = archive.bet_table() {
+                if let Some(bet_info) = bet_table.get_file_info(index as u32) {
+                    println!("BET Entry:");
+                    println!("  File Position: 0x{:08X}", bet_info.file_pos);
+                    println!("  File Size: {} bytes", bet_info.file_size);
+                    println!("  Compressed Size: {} bytes", bet_info.compressed_size);
+                    println!(
+                        "  Compression Ratio: {:.1}%",
+                        if bet_info.file_size > 0 {
+                            100.0 * bet_info.compressed_size as f64 / bet_info.file_size as f64
+                        } else {
+                            0.0
+                        }
+                    );
+                    println!("  Flags: 0x{:08X}", bet_info.flags);
+
+                    use mopaq::tables::BlockEntry;
+                    if bet_info.flags & BlockEntry::FLAG_EXISTS != 0 {
+                        println!("    - EXISTS");
+                    }
+                    if bet_info.flags & BlockEntry::FLAG_COMPRESS != 0 {
+                        println!("    - COMPRESSED");
+                    }
+                    if bet_info.flags & BlockEntry::FLAG_ENCRYPTED != 0 {
+                        println!("    - ENCRYPTED");
+                    }
+                    if bet_info.flags & BlockEntry::FLAG_FIX_KEY != 0 {
+                        println!("    - FIX_KEY");
+                    }
+                    if bet_info.flags & BlockEntry::FLAG_SINGLE_UNIT != 0 {
+                        println!("    - SINGLE_UNIT");
+                    }
+                    if bet_info.flags & BlockEntry::FLAG_SECTOR_CRC != 0 {
+                        println!("    - SECTOR_CRC");
+                    }
+                }
+            } else if let Some(hash_table) = archive.hash_table() {
+                // Fall back to classic tables
                 if let Some(hash_entry) = hash_table.get(index) {
                     println!("Hash Entry:");
                     println!("  Name 1: 0x{:08X}", hash_entry.name_1);

@@ -144,7 +144,7 @@ impl Archive {
     /// Load hash and block tables
     pub fn load_tables(&mut self) -> Result<()> {
         // For v3+ archives, check for HET/BET tables first
-        if self.header.format_version as u16 >= 2 {
+        if self.header.format_version >= header::FormatVersion::V3 {
             // Try to load HET table
             if let Some(het_pos) = self.header.het_table_pos {
                 if het_pos != 0 {
@@ -216,12 +216,20 @@ impl Archive {
             }
         }
 
-        // If we have HET/BET tables, we might not need hash/block tables
-        let has_het_bet = self.het_table.is_some() && self.bet_table.is_some();
+        // Check if we have valid HET/BET tables with actual entries
+        let has_valid_het_bet = match (&self.het_table, &self.bet_table) {
+            (Some(het), Some(bet)) => {
+                // Tables are valid if they have entries
+                het.header.max_file_count > 0 && bet.header.file_count > 0
+            }
+            _ => false,
+        };
 
-        // Always try to load hash/block tables unless we have complete HET/BET
-        if !has_het_bet || self.header.hash_table_size > 0 {
-            // Load hash table (existing code)
+        // Only load hash/block tables if:
+        // 1. We don't have valid HET/BET tables, OR
+        // 2. The hash table size is non-zero (indicating they exist and may be needed for compatibility)
+        if !has_valid_het_bet || self.header.hash_table_size > 0 {
+            // Load hash table
             let hash_table_offset = self.archive_offset + self.header.get_hash_table_pos();
             self.hash_table = Some(HashTable::read(
                 &mut self.reader,
@@ -229,13 +237,15 @@ impl Archive {
                 self.header.hash_table_size,
             )?);
 
-            // Load block table (existing code)
+            // Load block table
             let block_table_offset = self.archive_offset + self.header.get_block_table_pos();
             self.block_table = Some(BlockTable::read(
                 &mut self.reader,
                 block_table_offset,
                 self.header.block_table_size,
             )?);
+        } else {
+            log::info!("Skipping hash/block table loading - valid HET/BET tables present");
         }
 
         // Load hi-block table if present (v2+)
@@ -295,30 +305,37 @@ impl Archive {
 
     /// Find a file in the archive
     pub fn find_file(&self, filename: &str) -> Result<Option<FileInfo>> {
-        // Try HET/BET tables first for v3+ archives
+        // For v3+ archives, prioritize HET/BET tables if they exist and are valid
         if let (Some(het), Some(bet)) = (&self.het_table, &self.bet_table) {
-            if let Some(file_index) = het.find_file(filename) {
-                if let Some(bet_info) = bet.get_file_info(file_index) {
-                    return Ok(Some(FileInfo {
-                        filename: filename.to_string(),
-                        hash_index: 0, // Not applicable for HET/BET
-                        block_index: file_index as usize,
-                        file_pos: self.archive_offset + bet_info.file_pos,
-                        compressed_size: bet_info.compressed_size,
-                        file_size: bet_info.file_size,
-                        flags: bet_info.flags,
-                        locale: 0, // HET/BET don't store locale separately
-                    }));
+            // Check if tables have actual entries
+            if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+                if let Some(file_index) = het.find_file(filename) {
+                    if let Some(bet_info) = bet.get_file_info(file_index) {
+                        return Ok(Some(FileInfo {
+                            filename: filename.to_string(),
+                            hash_index: 0, // Not applicable for HET/BET
+                            block_index: file_index as usize,
+                            file_pos: self.archive_offset + bet_info.file_pos,
+                            compressed_size: bet_info.compressed_size,
+                            file_size: bet_info.file_size,
+                            flags: bet_info.flags,
+                            locale: 0, // HET/BET don't store locale separately
+                        }));
+                    }
                 }
-            }
 
-            // If HET/BET lookup failed but tables exist, file doesn't exist
-            if self.hash_table.is_none() {
-                return Ok(None);
+                // If HET/BET tables are valid but file not found, only fall back if hash tables exist
+                // Some v3+ archives may have both table types for compatibility
+                if self.hash_table.is_none() || self.block_table.is_none() {
+                    return Ok(None);
+                }
             }
         }
 
-        // Fall back to traditional hash/block tables
+        // Fall back to traditional hash/block tables if:
+        // 1. HET/BET tables don't exist
+        // 2. HET/BET tables are empty/invalid
+        // 3. File wasn't found in HET/BET but hash/block tables exist
         self.find_file_classic(filename)
     }
 
@@ -374,20 +391,15 @@ impl Archive {
 
             let mut entries = Vec::new();
 
-            // Look up each file in the hash table
+            // Look up each file
             for filename in filenames {
                 if let Some(file_info) = self.find_file(&filename)? {
-                    // Get the block entry for size information
-                    if let Some(block_table) = &self.block_table {
-                        if let Some(block_entry) = block_table.get(file_info.block_index) {
-                            entries.push(FileEntry {
-                                name: filename,
-                                size: block_entry.file_size as u64,
-                                compressed_size: block_entry.compressed_size as u64,
-                                flags: block_entry.flags,
-                            });
-                        }
-                    }
+                    entries.push(FileEntry {
+                        name: filename,
+                        size: file_info.file_size,
+                        compressed_size: file_info.compressed_size,
+                        flags: file_info.flags,
+                    });
                 } else {
                     // File is in listfile but not found in archive
                     log::warn!(
@@ -402,16 +414,46 @@ impl Archive {
             // No listfile, we'll need to enumerate entries without names
             log::info!("No (listfile) found, enumerating anonymous entries");
 
+            let mut entries = Vec::new();
+
+            // For v3+ archives, prioritize HET/BET tables if they exist and are valid
+            if let (Some(het), Some(bet)) = (&self.het_table, &self.bet_table) {
+                if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+                    log::info!("Enumerating files using HET/BET tables");
+
+                    // Enumerate using BET table
+                    for i in 0..bet.header.file_count {
+                        if let Some(bet_info) = bet.get_file_info(i) {
+                            // Only include files that actually exist
+                            if bet_info.flags & crate::tables::BlockEntry::FLAG_EXISTS != 0 {
+                                entries.push(FileEntry {
+                                    name: format!("file_{:08}.dat", i), // Unknown name with file index
+                                    size: bet_info.file_size,
+                                    compressed_size: bet_info.compressed_size,
+                                    flags: bet_info.flags,
+                                });
+                            }
+                        }
+                    }
+
+                    // If we enumerated from HET/BET successfully, return early
+                    if !entries.is_empty() {
+                        return Ok(entries);
+                    }
+                }
+            }
+
+            // Fall back to classic hash/block tables
             let hash_table = self
                 .hash_table
                 .as_ref()
-                .ok_or_else(|| Error::invalid_format("Hash table not loaded"))?;
+                .ok_or_else(|| Error::invalid_format("No tables loaded for enumeration"))?;
             let block_table = self
                 .block_table
                 .as_ref()
-                .ok_or_else(|| Error::invalid_format("Block table not loaded"))?;
+                .ok_or_else(|| Error::invalid_format("No block table loaded"))?;
 
-            let mut entries = Vec::new();
+            log::info!("Enumerating files using hash/block tables");
 
             // Scan hash table for valid entries
             for (i, hash_entry) in hash_table.entries().iter().enumerate() {
@@ -419,7 +461,7 @@ impl Archive {
                     if let Some(block_entry) = block_table.get(hash_entry.block_index as usize) {
                         if block_entry.exists() {
                             entries.push(FileEntry {
-                                name: format!("file_{:04}.dat", i), // Unknown name
+                                name: format!("file_{:08}.dat", i), // Unknown name with hash index
                                 size: block_entry.file_size as u64,
                                 compressed_size: block_entry.compressed_size as u64,
                                 flags: block_entry.flags,
@@ -439,14 +481,23 @@ impl Archive {
             .find_file(name)?
             .ok_or_else(|| Error::FileNotFound(name.to_string()))?;
 
-        // Get the block entry
-        let block_table = self
-            .block_table
-            .as_ref()
-            .ok_or_else(|| Error::invalid_format("Block table not loaded"))?;
-        let block_entry = block_table
-            .get(file_info.block_index)
-            .ok_or_else(|| Error::block_table("Invalid block index"))?;
+        // For v3+ archives with HET/BET tables, we already have all the info we need in FileInfo
+        // For classic archives, we need to get additional info from the block table
+        let (file_size_for_key, actual_file_size) =
+            if self.het_table.is_some() && self.bet_table.is_some() {
+                // Using HET/BET tables - FileInfo already has all the data
+                (file_info.file_size as u32, file_info.file_size)
+            } else {
+                // Using classic tables - need block entry for accurate sizes
+                let block_table = self
+                    .block_table
+                    .as_ref()
+                    .ok_or_else(|| Error::invalid_format("Block table not loaded"))?;
+                let block_entry = block_table
+                    .get(file_info.block_index)
+                    .ok_or_else(|| Error::block_table("Invalid block index"))?;
+                (block_entry.file_size, block_entry.file_size as u64)
+            };
 
         // Calculate encryption key if needed
         let key = if file_info.is_encrypted() {
@@ -454,7 +505,7 @@ impl Archive {
             if file_info.has_fix_key() {
                 // Apply FIX_KEY modification
                 let file_pos = (file_info.file_pos - self.archive_offset) as u32;
-                (base_key.wrapping_add(file_pos)) ^ block_entry.file_size
+                (base_key.wrapping_add(file_pos)) ^ file_size_for_key
             } else {
                 base_key
             }
@@ -490,7 +541,7 @@ impl Archive {
                     compression::decompress(
                         compressed_data,
                         compression_type,
-                        file_info.file_size as usize,
+                        actual_file_size as usize,
                     )?
                 } else {
                     data.clone()
@@ -514,7 +565,7 @@ impl Archive {
                 match compression::decompress(
                     &data,
                     compression::flags::ZLIB,
-                    file_info.file_size as usize,
+                    actual_file_size as usize,
                 ) {
                     Ok(decompressed) => Ok(decompressed),
                     Err(e) => {
@@ -530,7 +581,7 @@ impl Archive {
                             compression::decompress(
                                 compressed_data,
                                 compression_type,
-                                file_info.file_size as usize,
+                                actual_file_size as usize,
                             )
                         } else {
                             Err(Error::compression("Empty compressed data"))

@@ -102,37 +102,71 @@ fn list_structured(
         // Show all entries from tables
         mode = "table_entries".to_string();
 
-        let hash_table = archive
-            .hash_table()
-            .ok_or_else(|| anyhow::anyhow!("Hash table not loaded"))?;
-        let block_table = archive
-            .block_table()
-            .ok_or_else(|| anyhow::anyhow!("Block table not loaded"))?;
+        // Check if we have HET/BET tables first (v3+ archives)
+        if let (Some(het), Some(bet)) = (archive.het_table(), archive.bet_table()) {
+            if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+                // Use HET/BET tables
+                for i in 0..bet.header.file_count {
+                    if let Some(bet_info) = bet.get_file_info(i) {
+                        // Only include files that actually exist
+                        if bet_info.flags & BlockEntry::FLAG_EXISTS != 0 {
+                            let ratio = if bet_info.file_size > 0 {
+                                100.0 * bet_info.compressed_size as f64 / bet_info.file_size as f64
+                            } else {
+                                100.0
+                            };
 
-        for (i, hash_entry) in hash_table.entries().iter().enumerate() {
-            if hash_entry.is_valid() {
-                if let Some(block_entry) = block_table.get(hash_entry.block_index as usize) {
-                    if block_entry.exists() {
-                        let ratio = if block_entry.file_size > 0 {
-                            100.0 * block_entry.compressed_size as f64
-                                / block_entry.file_size as f64
-                        } else {
-                            100.0
-                        };
+                            entries.push(FileListEntry {
+                                filename: None,
+                                hash_index: None, // Not applicable for HET/BET
+                                block_index: Some(i as usize),
+                                name_hash_a: None, // HET uses Jenkins hash
+                                name_hash_b: None,
+                                locale: None, // Not stored in HET/BET
+                                platform: None,
+                                size: bet_info.file_size,
+                                compressed_size: bet_info.compressed_size,
+                                compression_ratio: ratio,
+                                flags: format_file_flags_vec(bet_info.flags),
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            // Fall back to hash/block tables
+            let hash_table = archive
+                .hash_table()
+                .ok_or_else(|| anyhow::anyhow!("Hash table not loaded"))?;
+            let block_table = archive
+                .block_table()
+                .ok_or_else(|| anyhow::anyhow!("Block table not loaded"))?;
 
-                        entries.push(FileListEntry {
-                            filename: None,
-                            hash_index: Some(i),
-                            block_index: Some(hash_entry.block_index as usize),
-                            name_hash_a: Some(format!("0x{:08X}", hash_entry.name_1)),
-                            name_hash_b: Some(format!("0x{:08X}", hash_entry.name_2)),
-                            locale: Some(hash_entry.locale),
-                            platform: Some(hash_entry.platform),
-                            size: block_entry.file_size as u64,
-                            compressed_size: block_entry.compressed_size as u64,
-                            compression_ratio: ratio,
-                            flags: format_file_flags_vec(block_entry.flags),
-                        });
+            for (i, hash_entry) in hash_table.entries().iter().enumerate() {
+                if hash_entry.is_valid() {
+                    if let Some(block_entry) = block_table.get(hash_entry.block_index as usize) {
+                        if block_entry.exists() {
+                            let ratio = if block_entry.file_size > 0 {
+                                100.0 * block_entry.compressed_size as f64
+                                    / block_entry.file_size as f64
+                            } else {
+                                100.0
+                            };
+
+                            entries.push(FileListEntry {
+                                filename: None,
+                                hash_index: Some(i),
+                                block_index: Some(hash_entry.block_index as usize),
+                                name_hash_a: Some(format!("0x{:08X}", hash_entry.name_1)),
+                                name_hash_b: Some(format!("0x{:08X}", hash_entry.name_2)),
+                                locale: Some(hash_entry.locale),
+                                platform: Some(hash_entry.platform),
+                                size: block_entry.file_size as u64,
+                                compressed_size: block_entry.compressed_size as u64,
+                                compression_ratio: ratio,
+                                flags: format_file_flags_vec(block_entry.flags),
+                            });
+                        }
                     }
                 }
             }
@@ -302,6 +336,81 @@ fn list_using_listfile(archive: &mut Archive, verbose: bool) -> Result<()> {
 
 /// List all entries from the tables (without filenames)
 fn list_all_entries(archive: &Archive) -> Result<()> {
+    // Check if we have HET/BET tables first (v3+ archives)
+    if let (Some(het), Some(bet)) = (archive.het_table(), archive.bet_table()) {
+        if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+            println!(
+                "{}",
+                "All entries in archive (using HET/BET tables):".bold()
+            );
+            println!();
+
+            println!(
+                "{:<10} {:>12} {:>12} {:>8} {:<20}",
+                "File Idx".bold().underline(),
+                "Size".bold().underline(),
+                "Compressed".bold().underline(),
+                "Ratio".bold().underline(),
+                "Flags".bold().underline()
+            );
+
+            let mut count = 0;
+            for i in 0..bet.header.file_count {
+                if let Some(bet_info) = bet.get_file_info(i) {
+                    // Only include files that actually exist
+                    if bet_info.flags & BlockEntry::FLAG_EXISTS != 0 {
+                        let ratio = if bet_info.file_size > 0 {
+                            let ratio_val =
+                                100.0 * bet_info.compressed_size as f64 / bet_info.file_size as f64;
+                            if ratio_val < 50.0 {
+                                format!("{:.1}%", ratio_val).green()
+                            } else if ratio_val < 80.0 {
+                                format!("{:.1}%", ratio_val).yellow()
+                            } else {
+                                format!("{:.1}%", ratio_val).normal()
+                            }
+                        } else {
+                            "N/A".dimmed()
+                        };
+
+                        let flags = format_file_flags(bet_info.flags);
+                        let flags_colored = if flags.contains("ENCRYPTED") {
+                            flags.red()
+                        } else if flags.contains("COMPRESSED") {
+                            flags.cyan()
+                        } else {
+                            flags.normal()
+                        };
+
+                        println!(
+                            "{:<10} {:>12} {:>12} {:>8} {:<20}",
+                            format!("#{}", i).bright_blue(),
+                            format_size(bet_info.file_size).bright_white(),
+                            format_size(bet_info.compressed_size).dimmed(),
+                            ratio,
+                            flags_colored
+                        );
+                        count += 1;
+                    }
+                }
+            }
+
+            println!();
+            println!("{}: {}", "Total entries".bold(), count.to_string().green());
+
+            // Note that HET/BET tables don't store locale/platform
+            println!();
+            println!(
+                "{}",
+                "Note: HET/BET tables don't store locale/platform data. Use debug tables command for more details."
+                    .dimmed()
+            );
+
+            return Ok(());
+        }
+    }
+
+    // Fall back to hash/block tables
     let hash_table = archive
         .hash_table()
         .ok_or_else(|| anyhow::anyhow!("Hash table not loaded"))?;

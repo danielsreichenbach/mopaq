@@ -257,7 +257,7 @@ impl ArchiveBuilder {
     /// Write the complete archive
     fn write_archive<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
         // For v3+, we should create HET/BET tables instead of/in addition to hash/block
-        let use_het_bet = self.version as u16 >= 2;
+        let use_het_bet = self.version >= FormatVersion::V3;
 
         if use_het_bet {
             // TODO: Implement HET/BET table creation

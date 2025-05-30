@@ -15,7 +15,7 @@ pub const HEADER_ALIGNMENT: u64 = 0x200;
 
 /// MPQ format version
 #[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FormatVersion {
     /// Version 1 - Original format (32-byte header)
     V1 = 0,
@@ -180,21 +180,21 @@ impl MpqHeader {
         };
 
         // Read version-specific fields
-        if format_version as u16 >= 1 {
+        if format_version >= FormatVersion::V2 {
             // Version 2+ fields
             header.hi_block_table_pos = Some(reader.read_u64::<LittleEndian>()?);
             header.hash_table_pos_hi = Some(reader.read_u16::<LittleEndian>()?);
             header.block_table_pos_hi = Some(reader.read_u16::<LittleEndian>()?);
         }
 
-        if format_version as u16 >= 2 {
+        if format_version >= FormatVersion::V3 {
             // Version 3+ fields
             header.archive_size_64 = Some(reader.read_u64::<LittleEndian>()?);
             header.bet_table_pos = Some(reader.read_u64::<LittleEndian>()?);
             header.het_table_pos = Some(reader.read_u64::<LittleEndian>()?);
         }
 
-        if format_version as u16 >= 3 {
+        if format_version >= FormatVersion::V4 {
             // Version 4 fields
             let mut v4_data = MpqHeaderV4Data {
                 hash_table_size_64: reader.read_u64::<LittleEndian>()?,
