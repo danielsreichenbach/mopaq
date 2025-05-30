@@ -155,13 +155,13 @@ fn test_attributes_roundtrip() {
 }
 
 #[test]
-#[ignore = "Requires test MPQ with (attributes) file"]
 fn test_archive_load_attributes() {
-    // This test would require an actual MPQ file with attributes
-    // For now, it's ignored but shows how the API would be used
+    // Test loading attributes from an actual MPQ archive
+    let path = get_test_path("attributes/archive_with_attributes.mpq");
 
-    let path = get_test_path("archive_with_attributes.mpq");
+    // Skip test if the file doesn't exist
     if !path.exists() {
+        eprintln!("Test archive not found at {:?}, skipping test", path);
         return;
     }
 
