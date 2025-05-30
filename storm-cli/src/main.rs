@@ -3,7 +3,9 @@
 //! The binary is named `storm-cli` to avoid conflicts with the `storm` library crate.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::{generate, Generator, Shell};
+use std::io;
 use std::sync::OnceLock;
 
 mod commands;
@@ -30,8 +32,52 @@ pub enum OutputFormat {
 }
 
 #[derive(Parser)]
-#[command(name = "storm-cli")]
-#[command(about = "Command-line tool for working with MPQ archives", long_about = None)]
+#[command(
+    name = "storm-cli",
+    about = "Command-line tool for working with MPQ archives",
+    long_about = None,
+    after_help = "EXAMPLES:
+    # List files in an archive
+    storm-cli list game.mpq
+
+    # Extract all files
+    storm-cli extract game.mpq -t extracted/
+
+    # Extract specific file
+    storm-cli extract game.mpq -f war3map.j
+
+    # Create new archive
+    storm-cli create new.mpq source_folder/
+
+    # Find a file
+    storm-cli find game.mpq \"*.mdx\"
+
+    # Verify archive integrity
+    storm-cli verify game.mpq
+
+    # Generate shell completions
+    storm-cli completion bash > ~/.bash_completion.d/storm-cli.bash
+    storm-cli completion zsh > ~/.zsh/completions/_storm-cli
+    storm-cli completion fish > ~/.config/fish/completions/storm-cli.fish
+    storm-cli completion powershell > $PROFILE\\storm-cli.ps1
+
+SHELL COMPLETION:
+    To enable tab completion, run:
+
+    Bash:
+        storm-cli completion bash > ~/.bash_completion.d/storm-cli.bash
+        source ~/.bash_completion.d/storm-cli.bash
+
+    Zsh:
+        storm-cli completion zsh > ~/.zsh/completions/_storm-cli
+        # Add to ~/.zshrc: fpath=(~/.zsh/completions $fpath)
+
+    Fish:
+        storm-cli completion fish > ~/.config/fish/completions/storm-cli.fish
+
+    PowerShell:
+        storm-cli completion powershell >> $PROFILE"
+)]
 #[command(version)]
 struct Cli {
     /// Output format
@@ -126,6 +172,13 @@ enum Commands {
     Verify {
         /// Path to the MPQ archive
         archive: String,
+    },
+    /// Generate shell completion scripts
+    #[command(about = "Generate completion scripts for your shell")]
+    Completion {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
     },
     /// Debug commands
     #[command(subcommand)]
@@ -295,6 +348,12 @@ fn main() -> Result<()> {
         Commands::Verify { archive } => {
             let verbose = cli.verbose > 0;
             commands::verify::verify(&archive, verbose)?;
+        }
+        Commands::Completion { shell } => {
+            // Generate completion script for the specified shell
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            generate(shell, &mut cmd, name, &mut io::stdout());
         }
         Commands::Debug(debug_cmd) => match debug_cmd {
             DebugCommands::Info { archive } => {

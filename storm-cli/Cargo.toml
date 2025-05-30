@@ -19,6 +19,7 @@ mopaq = { path = "../mopaq", version = "0.1.0", features = ["serde"] }
 
 # CLI framework
 clap = { workspace = true }
+clap_complete = "4.5"
 anyhow = { workspace = true }
 walkdir = "2.5"
 

@@ -127,6 +127,8 @@ println!("Table Index: 0x{:08X}", table_index);
 
 ### CLI Usage
 
+storm-cli supports tab completion for bash, zsh, fish, and PowerShell.
+
 ```bash
 # List files in an archive
 storm-cli list StarCraft.mpq
