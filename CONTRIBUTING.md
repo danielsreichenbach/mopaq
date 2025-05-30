@@ -1,6 +1,6 @@
-# Contributing to WoW MPQ
+# Contributing to `mopaq`
 
-First off, thank you for considering contributing to WoW MPQ! 🎉 We're excited to have you join our community. This document provides guidelines and instructions to make the contribution process smooth and effective for everyone.
+First off, thank you for considering contributing to `mopaq`! 🎉 We're excited to have you join our community. This document provides guidelines and instructions to make the contribution process smooth and effective for everyone.
 
 ## 📝 Table of Contents
 
