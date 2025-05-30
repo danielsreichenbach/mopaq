@@ -21,20 +21,34 @@
 
 ### Medium Priority - Advanced Tables
 
-- [ ] **HET Table (v3+)**
-  - [ ] Complete HET table header parsing
-  - [ ] Implement HET hash table parsing
-  - [ ] Add bit-based file index parsing
-  - [ ] HET table encryption support
-  - [ ] HET table compression support
+- [X] **HET Table Reading (v3+)** ✅
+  - [X] Complete HET table header parsing
+  - [X] Implement HET hash table parsing
+  - [X] Add bit-based file index parsing
+  - [X] HET table encryption support
+  - [X] HET table compression support
 
-- [ ] **BET Table (v3+)**
-  - [ ] Complete BET table header parsing
-  - [ ] Implement BET table entry bit extraction
-  - [ ] Add flag array parsing
-  - [ ] BET hash array parsing
-  - [ ] BET table encryption support
-  - [ ] BET table compression support
+- [ ] **HET Table Writing (v3+)**
+  - [ ] Implement HET table creation in ArchiveBuilder
+  - [ ] Add Jenkins hash generation for new files
+  - [ ] Implement bit-packing for file indices
+  - [ ] Add HET table compression during write
+  - [ ] Add HET table encryption during write
+
+- [X] **BET Table Reading (v3+)** ✅
+  - [X] Complete BET table header parsing
+  - [X] Implement BET table entry bit extraction
+  - [X] Add flag array parsing
+  - [X] BET hash array parsing
+  - [X] BET table encryption support
+  - [X] BET table compression support
+
+- [ ] **BET Table Writing (v3+)**
+  - [ ] Implement BET table creation in ArchiveBuilder
+  - [ ] Calculate optimal bit widths for fields
+  - [ ] Implement bit-packing for table entries
+  - [ ] Add BET table compression during write
+  - [ ] Add BET table encryption during write
 
 ### Medium Priority - Digital Signatures
 
@@ -102,9 +116,9 @@
 
 ### High Priority
 
-- [X] Implement `create` command (depends on ArchiveBuilder)
+- [X] Implement `create` command ✅
 - [ ] Add progress bars for long operations
-- [X] Add JSON output mode for scripting
+- [X] Add JSON output mode for scripting ✅
 
 ### Medium Priority
 

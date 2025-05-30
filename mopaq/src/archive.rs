@@ -15,7 +15,7 @@ use crate::{
     hash::{hash_string, hash_type},
     header::{self, MpqHeader, UserDataHeader},
     special_files,
-    tables::{BlockTable, HashTable, HiBlockTable},
+    tables::{BetTable, BlockTable, HashTable, HetTable, HiBlockTable},
     Error, Result,
 };
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -99,6 +99,10 @@ pub struct Archive {
     block_table: Option<BlockTable>,
     /// Hi-block table for v2+ archives (optional)
     hi_block_table: Option<HiBlockTable>,
+    /// HET table for v3+ archives
+    het_table: Option<HetTable>,
+    /// BET table for v3+ archives
+    bet_table: Option<BetTable>,
 }
 
 impl Archive {
@@ -125,6 +129,8 @@ impl Archive {
             hash_table: None,
             block_table: None,
             hi_block_table: None,
+            bet_table: None,
+            het_table: None,
         };
 
         // Load tables if requested
@@ -137,21 +143,100 @@ impl Archive {
 
     /// Load hash and block tables
     pub fn load_tables(&mut self) -> Result<()> {
-        // Load hash table
-        let hash_table_offset = self.archive_offset + self.header.get_hash_table_pos();
-        self.hash_table = Some(HashTable::read(
-            &mut self.reader,
-            hash_table_offset,
-            self.header.hash_table_size,
-        )?);
+        // For v3+ archives, check for HET/BET tables first
+        if self.header.format_version as u16 >= 2 {
+            // Try to load HET table
+            if let Some(het_pos) = self.header.het_table_pos {
+                if het_pos != 0 {
+                    let het_size = self
+                        .header
+                        .v4_data
+                        .as_ref()
+                        .map(|v4| v4.het_table_size_64)
+                        .unwrap_or(0);
 
-        // Load block table
-        let block_table_offset = self.archive_offset + self.header.get_block_table_pos();
-        self.block_table = Some(BlockTable::read(
-            &mut self.reader,
-            block_table_offset,
-            self.header.block_table_size,
-        )?);
+                    if het_size > 0 {
+                        log::debug!("Loading HET table from offset 0x{:X}", het_pos);
+
+                        // HET table key is based on table name
+                        let key = hash_string("(hash table)", hash_type::FILE_KEY);
+
+                        match HetTable::read(
+                            &mut self.reader,
+                            self.archive_offset + het_pos,
+                            het_size,
+                            key,
+                        ) {
+                            Ok(het) => {
+                                let file_count = het.header.max_file_count;
+                                log::info!("Loaded HET table with {} max files", file_count);
+                                self.het_table = Some(het);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load HET table: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Try to load BET table
+            if let Some(bet_pos) = self.header.bet_table_pos {
+                if bet_pos != 0 {
+                    let bet_size = self
+                        .header
+                        .v4_data
+                        .as_ref()
+                        .map(|v4| v4.bet_table_size_64)
+                        .unwrap_or(0);
+
+                    if bet_size > 0 {
+                        log::debug!("Loading BET table from offset 0x{:X}", bet_pos);
+
+                        // BET table key is based on table name
+                        let key = hash_string("(block table)", hash_type::FILE_KEY);
+
+                        match BetTable::read(
+                            &mut self.reader,
+                            self.archive_offset + bet_pos,
+                            bet_size,
+                            key,
+                        ) {
+                            Ok(bet) => {
+                                let file_count = bet.header.file_count;
+                                log::info!("Loaded BET table with {} files", file_count);
+                                self.bet_table = Some(bet);
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to load BET table: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // If we have HET/BET tables, we might not need hash/block tables
+        let has_het_bet = self.het_table.is_some() && self.bet_table.is_some();
+
+        // Always try to load hash/block tables unless we have complete HET/BET
+        if !has_het_bet || self.header.hash_table_size > 0 {
+            // Load hash table (existing code)
+            let hash_table_offset = self.archive_offset + self.header.get_hash_table_pos();
+            self.hash_table = Some(HashTable::read(
+                &mut self.reader,
+                hash_table_offset,
+                self.header.hash_table_size,
+            )?);
+
+            // Load block table (existing code)
+            let block_table_offset = self.archive_offset + self.header.get_block_table_pos();
+            self.block_table = Some(BlockTable::read(
+                &mut self.reader,
+                block_table_offset,
+                self.header.block_table_size,
+            )?);
+        }
 
         // Load hi-block table if present (v2+)
         if let Some(hi_block_pos) = self.header.hi_block_table_pos {
@@ -198,8 +283,47 @@ impl Archive {
         self.block_table.as_ref()
     }
 
+    /// Get HET table reference
+    pub fn het_table(&self) -> Option<&HetTable> {
+        self.het_table.as_ref()
+    }
+
+    /// Get BET table reference
+    pub fn bet_table(&self) -> Option<&BetTable> {
+        self.bet_table.as_ref()
+    }
+
     /// Find a file in the archive
     pub fn find_file(&self, filename: &str) -> Result<Option<FileInfo>> {
+        // Try HET/BET tables first for v3+ archives
+        if let (Some(het), Some(bet)) = (&self.het_table, &self.bet_table) {
+            if let Some(file_index) = het.find_file(filename) {
+                if let Some(bet_info) = bet.get_file_info(file_index) {
+                    return Ok(Some(FileInfo {
+                        filename: filename.to_string(),
+                        hash_index: 0, // Not applicable for HET/BET
+                        block_index: file_index as usize,
+                        file_pos: self.archive_offset + bet_info.file_pos,
+                        compressed_size: bet_info.compressed_size,
+                        file_size: bet_info.file_size,
+                        flags: bet_info.flags,
+                        locale: 0, // HET/BET don't store locale separately
+                    }));
+                }
+            }
+
+            // If HET/BET lookup failed but tables exist, file doesn't exist
+            if self.hash_table.is_none() {
+                return Ok(None);
+            }
+        }
+
+        // Fall back to traditional hash/block tables
+        self.find_file_classic(filename)
+    }
+
+    /// Classic file lookup using hash/block tables
+    fn find_file_classic(&self, filename: &str) -> Result<Option<FileInfo>> {
         let hash_table = self
             .hash_table
             .as_ref()
@@ -436,7 +560,7 @@ impl Archive {
         // Read sector offset table
         self.reader.seek(SeekFrom::Start(file_info.file_pos))?;
         let offset_table_size = (sector_count + 1) * 4;
-        let mut offset_data = vec![0u8; offset_table_size as usize];
+        let mut offset_data = vec![0u8; offset_table_size];
         self.reader.read_exact(&mut offset_data)?;
 
         // Decrypt sector offset table if needed
@@ -446,7 +570,7 @@ impl Archive {
         }
 
         // Parse sector offsets
-        let mut sector_offsets = Vec::with_capacity((sector_count + 1) as usize);
+        let mut sector_offsets = Vec::with_capacity(sector_count + 1);
         let mut cursor = std::io::Cursor::new(&offset_data);
         for _ in 0..=sector_count {
             sector_offsets.push(cursor.read_u32::<LittleEndian>()?);
@@ -464,8 +588,8 @@ impl Archive {
             // The first sector offset tells us where the data starts
             // If it's large enough to accommodate a CRC table, then CRCs are present
             let first_data_offset = sector_offsets[0] as usize;
-            let expected_crc_table_start = offset_table_size as usize;
-            let expected_crc_table_size = (sector_count * 4) as usize;
+            let expected_crc_table_start = offset_table_size;
+            let expected_crc_table_size = sector_count * 4;
 
             if first_data_offset >= expected_crc_table_start + expected_crc_table_size {
                 // CRC table follows the offset table
@@ -473,7 +597,7 @@ impl Archive {
                 self.reader.read_exact(&mut crc_data)?;
 
                 // CRC table is not encrypted
-                let mut crcs = Vec::with_capacity(sector_count as usize);
+                let mut crcs = Vec::with_capacity(sector_count);
                 let mut cursor = std::io::Cursor::new(&crc_data);
                 for _ in 0..sector_count {
                     crcs.push(cursor.read_u32::<LittleEndian>()?);

@@ -35,6 +35,22 @@ enum FileSource {
     Data(Vec<u8>),
 }
 
+/// Parameters for writing a file to the archive
+struct FileWriteParams<'a> {
+    /// File data to write
+    file_data: &'a [u8],
+    /// Archive name for the file
+    archive_name: &'a str,
+    /// Compression method
+    compression: u8,
+    /// Whether to encrypt
+    encrypt: bool,
+    /// Sector size
+    sector_size: usize,
+    /// File position in archive
+    file_pos: u32,
+}
+
 /// Options for listfile generation
 #[derive(Debug, Clone)]
 pub enum ListfileOption {
@@ -240,6 +256,16 @@ impl ArchiveBuilder {
 
     /// Write the complete archive
     fn write_archive<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
+        // For v3+, we should create HET/BET tables instead of/in addition to hash/block
+        let use_het_bet = self.version as u16 >= 2;
+
+        if use_het_bet {
+            // TODO: Implement HET/BET table creation
+            log::warn!(
+                "HET/BET table creation not yet implemented, falling back to classic tables"
+            );
+        }
+
         let hash_table_size = self.calculate_hash_table_size();
         let block_table_size = self.pending_files.len() as u32;
 
@@ -265,15 +291,15 @@ impl ArchiveBuilder {
             };
 
             // Write file and get sizes
-            let (compressed_size, flags) = self.write_file(
-                writer,
-                &file_data,
-                &pending_file.archive_name,
-                pending_file.compression,
-                pending_file.encrypt,
+            let params = FileWriteParams {
+                file_data: &file_data,
+                archive_name: &pending_file.archive_name,
+                compression: pending_file.compression,
+                encrypt: pending_file.encrypt,
                 sector_size,
                 file_pos,
-            )?;
+            };
+            let (compressed_size, flags) = self.write_file(writer, &params)?;
 
             // Add to hash table
             self.add_to_hash_table(
@@ -328,29 +354,32 @@ impl ArchiveBuilder {
     fn write_file<W: Write>(
         &self,
         writer: &mut W,
-        file_data: &[u8],
-        archive_name: &str,
-        compression: u8,
-        encrypt: bool,
-        sector_size: usize,
-        file_pos: u32,
+        params: &FileWriteParams<'_>,
     ) -> Result<(usize, u32)> {
+        let FileWriteParams {
+            file_data,
+            archive_name,
+            compression,
+            encrypt,
+            sector_size,
+            file_pos,
+        } = params;
         let mut flags = 0u32;
 
         // For small files or if single unit is requested, write as single unit
-        let is_single_unit = file_data.len() <= sector_size;
+        let is_single_unit = file_data.len() <= *sector_size;
 
         if is_single_unit {
             flags |= BlockEntry::FLAG_SINGLE_UNIT;
 
             // Compress if needed
-            let compressed_data = if compression != 0 && !file_data.is_empty() {
+            let compressed_data = if *compression != 0 && !file_data.is_empty() {
                 log::debug!(
                     "Compressing {} with method 0x{:02X}",
                     archive_name,
                     compression
                 );
-                let compressed = compress(file_data, compression)?;
+                let compressed = compress(file_data, *compression)?;
 
                 // Only use compression if it actually reduces size
                 if compressed.len() < file_data.len() {
@@ -361,9 +390,9 @@ impl ArchiveBuilder {
                     );
                     flags |= BlockEntry::FLAG_COMPRESS;
                     // For non-zlib compression, prepend the compression type byte
-                    if compression != compression_flags::ZLIB {
+                    if *compression != compression_flags::ZLIB {
                         let mut final_data = Vec::with_capacity(1 + compressed.len());
-                        final_data.push(compression);
+                        final_data.push(*compression);
                         final_data.extend_from_slice(&compressed);
                         final_data
                     } else {
@@ -380,10 +409,10 @@ impl ArchiveBuilder {
             };
 
             // Encrypt if needed
-            let final_data = if encrypt {
+            let final_data = if *encrypt {
                 flags |= BlockEntry::FLAG_ENCRYPTED;
                 let key =
-                    self.calculate_file_key(archive_name, file_pos, file_data.len() as u32, flags);
+                    self.calculate_file_key(archive_name, *file_pos, file_data.len() as u32, flags);
                 let mut encrypted = compressed_data;
                 self.encrypt_data(&mut encrypted, key);
                 encrypted
@@ -397,7 +426,7 @@ impl ArchiveBuilder {
             Ok((final_data.len(), flags))
         } else {
             // Multi-sector file
-            let sector_count = file_data.len().div_ceil(sector_size);
+            let sector_count = file_data.len().div_ceil(*sector_size);
 
             // Reserve space for sector offset table
             let offset_table_size = (sector_count + 1) * 4;
@@ -407,17 +436,17 @@ impl ArchiveBuilder {
             let mut sector_data = Vec::new();
 
             // Process each sector
-            for i in 0..sector_count {
-                let sector_start = i * sector_size;
-                let sector_end = ((i + 1) * sector_size).min(file_data.len());
+            for (i, offset) in sector_offsets.iter_mut().enumerate().take(sector_count) {
+                let sector_start = i * *sector_size;
+                let sector_end = ((i + 1) * *sector_size).min(file_data.len());
                 let sector_bytes = &file_data[sector_start..sector_end];
 
-                sector_offsets[i] = (data_start + sector_data.len()) as u32;
+                *offset = (data_start + sector_data.len()) as u32;
 
                 // Compress sector if needed
-                let compressed_sector = if compression != 0 && !sector_bytes.is_empty() {
+                let compressed_sector = if *compression != 0 && !sector_bytes.is_empty() {
                     // Check if compression actually helps
-                    let compressed = compress(sector_bytes, compression)?;
+                    let compressed = compress(sector_bytes, *compression)?;
                     if compressed.len() < sector_bytes.len() {
                         flags |= BlockEntry::FLAG_COMPRESS;
                         compressed
@@ -435,10 +464,10 @@ impl ArchiveBuilder {
             sector_offsets[sector_count] = (data_start + sector_data.len()) as u32;
 
             // Encrypt if needed
-            if encrypt {
+            if *encrypt {
                 flags |= BlockEntry::FLAG_ENCRYPTED;
                 let key =
-                    self.calculate_file_key(archive_name, file_pos, file_data.len() as u32, flags);
+                    self.calculate_file_key(archive_name, *file_pos, file_data.len() as u32, flags);
 
                 // Encrypt sector offset table
                 let offset_key = key.wrapping_sub(1);

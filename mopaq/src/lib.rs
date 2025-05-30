@@ -62,7 +62,7 @@ pub use archive::{Archive, FileEntry, FileInfo, OpenOptions};
 pub use builder::{ArchiveBuilder, ListfileOption};
 pub use error::{Error, Result};
 pub use header::{FormatVersion, MpqHeader};
-pub use tables::{BlockEntry, BlockTable, HashEntry, HashTable};
+pub use tables::{BetFileInfo, BetTable, BlockEntry, BlockTable, HashEntry, HashTable, HetTable};
 
 // Re-export crypto for CLI usage
 pub use crypto::{decrypt_block, decrypt_dword, encrypt_block};

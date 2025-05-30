@@ -5,29 +5,47 @@ use std::io::{Read, Write};
 
 /// Compression method flags
 pub mod flags {
-    pub const HUFFMAN: u8 = 0x01; // Huffman encoding (WAVE files only)
-    pub const ZLIB: u8 = 0x02; // Deflate/zlib compression
-    pub const PKWARE: u8 = 0x08; // PKWare DCL compression
-    pub const BZIP2: u8 = 0x10; // BZip2 compression
-    pub const SPARSE: u8 = 0x20; // Sparse/RLE compression
-    pub const ADPCM_MONO: u8 = 0x40; // IMA ADPCM mono
-    pub const ADPCM_STEREO: u8 = 0x80; // IMA ADPCM stereo
-    pub const LZMA: u8 = 0x12; // LZMA compression (not a flag combination)
+    /// Huffman encoding (WAVE files only)
+    pub const HUFFMAN: u8 = 0x01;
+    /// Deflate/zlib compression
+    pub const ZLIB: u8 = 0x02;
+    /// PKWare DCL compression
+    pub const PKWARE: u8 = 0x08;
+    /// BZip2 compression
+    pub const BZIP2: u8 = 0x10;
+    /// Sparse/RLE compression
+    pub const SPARSE: u8 = 0x20;
+    /// IMA ADPCM mono
+    pub const ADPCM_MONO: u8 = 0x40;
+    /// IMA ADPCM stereo
+    pub const ADPCM_STEREO: u8 = 0x80;
+    /// LZMA compression (not a flag combination)
+    pub const LZMA: u8 = 0x12;
 }
 
 /// Compression methods enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionMethod {
+    /// No compression
     None,
+    /// Huffman encoding (WAVE files only)
     Huffman,
+    /// Deflate/zlib compression
     Zlib,
+    /// PKWare DCL compression
     PKWare,
+    /// BZip2 compression
     BZip2,
+    /// Sparse/RLE compression
     Sparse,
+    /// IMA ADPCM mono
     AdpcmMono,
+    /// IMA ADPCM stereo
     AdpcmStereo,
+    /// LZMA compression
     Lzma,
-    Multiple(u8), // For combined compression
+    /// Multiple compression methods applied in sequence
+    Multiple(u8),
 }
 
 impl CompressionMethod {

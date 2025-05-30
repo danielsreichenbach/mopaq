@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### Core Library (`mopaq`)
+
+- **HET/BET Table Support (v3+)** - Full read support for modern MPQ archives
+  - ✅ Complete HET (Hash Entry Table) implementation
+    - Header parsing with version and data size support
+    - Jenkins hash-based lookups for improved performance
+    - Bit-packed index array parsing
+    - Full compression and encryption support
+  - ✅ Complete BET (Block Entry Table) implementation
+    - Header parsing with dynamic bit widths
+    - Bit-packed field extraction (file position, size, flags, etc.)
+    - Optional name hash array support
+    - Full compression and encryption support
+  - ✅ Automatic fallback to classic hash/block tables
+  - ✅ Transparent integration with existing Archive API
+
 ### 🚧 Work in Progress
 
 #### Core Library (`mopaq`)
@@ -14,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Encryption support in ArchiveBuilder
 - Sector CRC generation for file integrity
 - v4 format header writing with MD5 checksums
-- HET/BET table support (v3+)
+- HET/BET table creation for new archives (v3+)
 
 #### CLI Tool (`storm-cli`)
 
@@ -63,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Hi-block table support for archives > 4GB
   - ✅ Hash table collision resolution with linear probing
   - ✅ Locale and platform support in hash entries
+  - ✅ HET (Hash Entry Table) reading for v3+ archives
+  - ✅ BET (Block Entry Table) reading for v3+ archives
 
 - **File operations**
   - ✅ File lookup by name with hash algorithm
@@ -179,6 +199,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hash table entries
   - Block table entries
   - Entry statistics
+  - HET table information (v3+)
+  - BET table information (v3+)
 
 ### 🔧 FFI Library (`storm-ffi`)
 
@@ -197,6 +219,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ Compression round-trip tests
 - ✅ Archive creation tests
 - ✅ Error handling tests
+- ✅ Jenkins hash tests
 
 #### Integration Tests
 
@@ -205,6 +228,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ✅ CLI command tests
 - ✅ CRC validation tests
 - ✅ Compression tests
+- ✅ HET/BET table tests
 
 #### Benchmarks
 

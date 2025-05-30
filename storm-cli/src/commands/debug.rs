@@ -512,6 +512,71 @@ pub fn tables(archive_path: &str, table_type: Option<&str>, limit: Option<usize>
         }
     }
 
+    // Add HET table display
+    if show_all || table_type == Some("het") {
+        if let Some(het_table) = archive.het_table() {
+            println!();
+            println!("HET Table:");
+            // Copy packed struct fields to avoid alignment issues
+            let version = het_table.header.version;
+            let max_file_count = het_table.header.max_file_count;
+            let hash_entry_size = het_table.header.hash_entry_size;
+            let index_size = het_table.header.index_size;
+            let hash_table_size = het_table.header.hash_table_size;
+
+            println!("  Version: {}", version);
+            println!("  Max file count: {}", max_file_count);
+            println!("  Hash entry size: {} bits", hash_entry_size);
+            println!("  Index size: {} bits", index_size);
+            println!("  Hash table size: {} bytes", hash_table_size);
+        } else {
+            println!("No HET table loaded");
+        }
+    }
+
+    // Add BET table display
+    if show_all || table_type == Some("bet") {
+        if let Some(bet_table) = archive.bet_table() {
+            println!();
+            println!("BET Table:");
+            // Copy packed struct fields to avoid alignment issues
+            let version = bet_table.header.version;
+            let file_count = bet_table.header.file_count;
+            let table_entry_size = bet_table.header.table_entry_size;
+            let flag_count = bet_table.header.flag_count;
+
+            println!("  Version: {}", version);
+            println!("  File count: {}", file_count);
+            println!("  Table entry size: {} bits", table_entry_size);
+            println!("  Flag count: {}", flag_count);
+
+            // Show bit field information
+            println!("  Bit fields:");
+            // Copy packed struct fields to avoid alignment issues
+            let bit_count_file_pos = bet_table.header.bit_count_file_pos;
+            let bit_index_file_pos = bet_table.header.bit_index_file_pos;
+            let bit_count_file_size = bet_table.header.bit_count_file_size;
+            let bit_index_file_size = bet_table.header.bit_index_file_size;
+            let bit_count_cmp_size = bet_table.header.bit_count_cmp_size;
+            let bit_index_cmp_size = bet_table.header.bit_index_cmp_size;
+
+            println!(
+                "    File position: {} bits at offset {}",
+                bit_count_file_pos, bit_index_file_pos
+            );
+            println!(
+                "    File size: {} bits at offset {}",
+                bit_count_file_size, bit_index_file_size
+            );
+            println!(
+                "    Compressed size: {} bits at offset {}",
+                bit_count_cmp_size, bit_index_cmp_size
+            );
+        } else {
+            println!("No BET table loaded");
+        }
+    }
+
     // Show specific entry details if requested
     if let Some(index_str) = table_type {
         if let Ok(index) = index_str.parse::<usize>() {
