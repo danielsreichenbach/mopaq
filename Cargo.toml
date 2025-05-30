@@ -23,50 +23,29 @@ categories = [
 ]
 
 [workspace.dependencies]
+# Common dependencies used by multiple members
+
 # Error handling
 thiserror = "2.0"
 anyhow = "1.0"
 
-# Data structures and utilities
-bytes = "1.8"
-byteorder = "1.5"
-bitflags = "2.6"
+# Logging
+log = "0.4"
+env_logger = "0.11"
 
-# Hashing and cryptography
-sha1 = "0.10"
-sha2 = "0.10"
-md-5 = "0.10"
-num-bigint = "0.4"
-num-traits = "0.2"
-crc32fast = "1.4"
-
-# Compression algorithms
-flate2 = "1.0"
-bzip2 = "0.4"
-lzma-rs = "0.3"
-
-# I/O and performance
-memmap2 = "0.9"
-parking_lot = "0.12"
-
-# Testing and benchmarking
-criterion = { version = "0.5", features = ["html_reports"] }
-proptest = "1.6"
-pretty_assertions = "1.4"
+# Testing
 tempfile = "3.20"
 
-# Serialization (for debug output)
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# CLI dependencies
+# CLI (used by storm-cli)
 clap = { version = "4.5", features = ["derive", "color", "suggestions"] }
 colored = "2.1"
 indicatif = "0.17"
-env_logger = "0.11"
-log = "0.4"
 
-# FFI dependencies
+# FFI (used by storm-ffi)
 libc = "0.2"
 
 [profile.release]

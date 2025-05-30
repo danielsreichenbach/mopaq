@@ -18,26 +18,22 @@ readme = "../README.md"
 thiserror = { workspace = true }
 
 # Data structures and utilities
-bytes = { workspace = true }
-byteorder = { workspace = true }
-bitflags = { workspace = true }
+bytes = "1.8"
+byteorder = "1.5"
 tempfile = { workspace = true }
 
 # Hashing and cryptography
-sha1 = { workspace = true }
-md-5 = { workspace = true }
-num-bigint = { workspace = true }
-num-traits = { workspace = true }
-crc32fast = { workspace = true }
+sha1 = "0.10"
+md-5 = "0.10"
+crc32fast = "1.4"
 
 # Compression algorithms
-flate2 = { workspace = true }
-bzip2 = { workspace = true }
-lzma-rs = { workspace = true }
+flate2 = "1.0"
+bzip2 = "0.4"
+lzma-rs = "0.3"
 
 # I/O and performance
-memmap2 = { workspace = true, optional = true }
-parking_lot = { workspace = true }
+memmap2 = { version = "0.9", optional = true }
 
 # Serialization (for debug features)
 serde = { workspace = true, optional = true }
@@ -49,9 +45,9 @@ tokio = { version = "1.42", features = ["rt", "io-util"], optional = true }
 log = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
-proptest = { workspace = true }
-pretty_assertions = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.6"
+pretty_assertions = "1.4"
 env_logger = { workspace = true }
 
 [[bench]]
