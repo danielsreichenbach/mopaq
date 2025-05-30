@@ -87,6 +87,8 @@
 - [X] `(attributes)` support ✅
   - [X] Attribute parsing ✅
   - [X] Per-file attribute access API ✅
+  - [X] Manual attributes loading via `load_attributes()` ✅
+  - [ ] Automatic attributes loading on archive open
   - [ ] Attribute generation in ArchiveBuilder
   - [ ] CRC32 calculation during file writing
   - [ ] MD5 calculation during file writing
@@ -120,8 +122,12 @@
 ### High Priority
 
 - [X] Implement `create` command ✅
-- [ ] Add progress bars for long operations
+- [X] Add progress bars for long operations ✅
 - [X] Add JSON output mode for scripting ✅
+  - [X] JSON output infrastructure implemented ✅
+  - [X] `list` command supports JSON output ✅
+  - [X] `extract` command supports JSON output ✅
+  - [ ] `create` command JSON output support
 
 ### Medium Priority
 
@@ -144,15 +150,18 @@
 
 ### Core API Functions
 
-- [X] `SFileOpenArchive`
+- [X] `SFileOpenArchive` ✅
 - [ ] `SFileCreateArchive`
-- [X] `SFileCloseArchive`
-- [X] `SFileOpenFileEx`
-- [X] `SFileCloseFile`
-- [X] `SFileReadFile`
-- [X] `SFileGetFileSize`
-- [X] `SFileSetFilePointer`
-- [X] `SFileGetFileInfo`
+- [X] `SFileCloseArchive` ✅
+- [X] `SFileOpenFileEx` ✅
+- [X] `SFileCloseFile` ✅
+- [X] `SFileReadFile` ✅
+- [X] `SFileGetFileSize` ✅
+- [X] `SFileSetFilePointer` ✅
+- [X] `SFileGetFileInfo` ✅
+- [X] `SFileHasFile` ✅
+- [X] `SFileGetArchiveName` ✅
+- [X] `SFileGetFileName` ✅
 
 ### File Operations
 
@@ -167,17 +176,19 @@
 
 - [ ] `SFileVerifyFile`
 - [ ] `SFileVerifyArchive`
-- [X] `SFileEnumFiles`
-- [X] `SFileGetLocale`
-- [X] `SFileSetLocale`
+- [X] `SFileEnumFiles` ✅
+- [X] `SFileGetLocale` ✅
+- [X] `SFileSetLocale` ✅
+- [X] `GetLastError` ✅
+- [X] `SetLastError` ✅
 
 ### Infrastructure
 
 - [ ] C-compatible memory allocation
-- [ ] Handle management system
-- [ ] Error code compatibility
-- [ ] String handling (C strings)
-- [ ] Function declarations in header
+- [X] Handle management system ✅
+- [X] Error code compatibility ✅
+- [X] String handling (C strings) ✅
+- [X] Function declarations in header (StormLib.h exists) ✅
 - [ ] Constants and enums export
 
 ## Project-Level Tasks
