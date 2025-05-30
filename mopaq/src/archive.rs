@@ -18,10 +18,20 @@ use crate::{
     tables::{BetTable, BlockTable, HashTable, HetTable, HiBlockTable},
     Error, Result,
 };
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+/// Helper trait for reading little-endian integers
+trait ReadLittleEndian: Read {
+    fn read_u32_le(&mut self) -> Result<u32> {
+        let mut buf = [0u8; 4];
+        self.read_exact(&mut buf)?;
+        Ok(u32::from_le_bytes(buf))
+    }
+}
+
+impl<R: Read> ReadLittleEndian for R {}
 
 /// Options for opening MPQ archives
 #[derive(Debug, Clone)]
@@ -627,7 +637,7 @@ impl Archive {
         let mut sector_offsets = Vec::with_capacity(sector_count + 1);
         let mut cursor = std::io::Cursor::new(&offset_data);
         for _ in 0..=sector_count {
-            sector_offsets.push(cursor.read_u32::<LittleEndian>()?);
+            sector_offsets.push(cursor.read_u32_le()?);
         }
 
         log::debug!(
@@ -654,7 +664,7 @@ impl Archive {
                 let mut crcs = Vec::with_capacity(sector_count);
                 let mut cursor = std::io::Cursor::new(&crc_data);
                 for _ in 0..sector_count {
-                    crcs.push(cursor.read_u32::<LittleEndian>()?);
+                    crcs.push(cursor.read_u32_le()?);
                 }
 
                 // Log before moving

@@ -19,7 +19,6 @@ thiserror = { workspace = true }
 
 # Data structures and utilities
 bytes = "1.8"
-byteorder = "1.5"
 tempfile = { workspace = true }
 
 # Hashing and cryptography

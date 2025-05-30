@@ -806,7 +806,6 @@ dependencies = [
 name = "mopaq"
 version = "0.1.0"
 dependencies = [
- "byteorder",
  "bytes",
  "bzip2",
  "crc32fast",

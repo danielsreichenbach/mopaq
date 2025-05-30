@@ -8,11 +8,30 @@ use crate::{
     tables::{BlockEntry, BlockTable, HashEntry, HashTable},
     Error, Result,
 };
-use byteorder::{LittleEndian, WriteBytesExt};
 use std::fs::{self};
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
+
+/// Helper trait for writing little-endian integers
+trait WriteLittleEndian: Write {
+    fn write_u16_le(&mut self, value: u16) -> Result<()> {
+        self.write_all(&value.to_le_bytes())?;
+        Ok(())
+    }
+    
+    fn write_u32_le(&mut self, value: u32) -> Result<()> {
+        self.write_all(&value.to_le_bytes())?;
+        Ok(())
+    }
+    
+    fn write_u64_le(&mut self, value: u64) -> Result<()> {
+        self.write_all(&value.to_le_bytes())?;
+        Ok(())
+    }
+}
+
+impl<W: Write> WriteLittleEndian for W {}
 
 /// File to be added to the archive
 #[derive(Debug)]
@@ -490,7 +509,7 @@ impl ArchiveBuilder {
 
             // Write sector offset table
             for offset in &sector_offsets {
-                writer.write_u32::<LittleEndian>(*offset)?;
+                writer.write_u32_le(*offset)?;
             }
 
             // Write sector data
@@ -554,11 +573,11 @@ impl ArchiveBuilder {
         // Convert to bytes for encryption
         let mut table_data = Vec::new();
         for entry in hash_table.entries() {
-            table_data.write_u32::<LittleEndian>(entry.name_1)?;
-            table_data.write_u32::<LittleEndian>(entry.name_2)?;
-            table_data.write_u16::<LittleEndian>(entry.locale)?;
-            table_data.write_u16::<LittleEndian>(entry.platform)?;
-            table_data.write_u32::<LittleEndian>(entry.block_index)?;
+            table_data.write_u32_le(entry.name_1)?;
+            table_data.write_u32_le(entry.name_2)?;
+            table_data.write_u16_le(entry.locale)?;
+            table_data.write_u16_le(entry.platform)?;
+            table_data.write_u32_le(entry.block_index)?;
         }
 
         // Encrypt the table
@@ -576,10 +595,10 @@ impl ArchiveBuilder {
         // Convert to bytes for encryption
         let mut table_data = Vec::new();
         for entry in block_table.entries() {
-            table_data.write_u32::<LittleEndian>(entry.file_pos)?;
-            table_data.write_u32::<LittleEndian>(entry.compressed_size)?;
-            table_data.write_u32::<LittleEndian>(entry.file_size)?;
-            table_data.write_u32::<LittleEndian>(entry.flags)?;
+            table_data.write_u32_le(entry.file_pos)?;
+            table_data.write_u32_le(entry.compressed_size)?;
+            table_data.write_u32_le(entry.file_size)?;
+            table_data.write_u32_le(entry.flags)?;
         }
 
         // Encrypt the table
@@ -603,25 +622,25 @@ impl ArchiveBuilder {
         block_table_size: u32,
     ) -> Result<()> {
         // Write signature
-        writer.write_u32::<LittleEndian>(crate::signatures::MPQ_ARCHIVE)?;
+        writer.write_u32_le(crate::signatures::MPQ_ARCHIVE)?;
 
         // Write header size
-        writer.write_u32::<LittleEndian>(self.version.header_size())?;
+        writer.write_u32_le(self.version.header_size())?;
 
         // Write archive size
-        writer.write_u32::<LittleEndian>(archive_size)?;
+        writer.write_u32_le(archive_size)?;
 
         // Write format version
-        writer.write_u16::<LittleEndian>(self.version as u16)?;
+        writer.write_u16_le(self.version as u16)?;
 
         // Write block size
-        writer.write_u16::<LittleEndian>(self.block_size)?;
+        writer.write_u16_le(self.block_size)?;
 
         // Write table positions and sizes
-        writer.write_u32::<LittleEndian>(hash_table_pos)?;
-        writer.write_u32::<LittleEndian>(block_table_pos)?;
-        writer.write_u32::<LittleEndian>(hash_table_size)?;
-        writer.write_u32::<LittleEndian>(block_table_size)?;
+        writer.write_u32_le(hash_table_pos)?;
+        writer.write_u32_le(block_table_pos)?;
+        writer.write_u32_le(hash_table_size)?;
+        writer.write_u32_le(block_table_size)?;
 
         // Write version-specific fields
         match self.version {
@@ -630,22 +649,22 @@ impl ArchiveBuilder {
             }
             FormatVersion::V2 => {
                 // Hi-block table position (not used in new archives)
-                writer.write_u64::<LittleEndian>(0)?;
+                writer.write_u64_le(0)?;
 
                 // High 16 bits of positions (not needed for new archives)
-                writer.write_u16::<LittleEndian>(0)?; // hash_table_pos_hi
-                writer.write_u16::<LittleEndian>(0)?; // block_table_pos_hi
+                writer.write_u16_le(0)?; // hash_table_pos_hi
+                writer.write_u16_le(0)?; // block_table_pos_hi
             }
             FormatVersion::V3 => {
                 // V2 fields
-                writer.write_u64::<LittleEndian>(0)?; // hi_block_table_pos
-                writer.write_u16::<LittleEndian>(0)?; // hash_table_pos_hi
-                writer.write_u16::<LittleEndian>(0)?; // block_table_pos_hi
+                writer.write_u64_le(0)?; // hi_block_table_pos
+                writer.write_u16_le(0)?; // hash_table_pos_hi
+                writer.write_u16_le(0)?; // block_table_pos_hi
 
                 // V3 fields
-                writer.write_u64::<LittleEndian>(archive_size as u64)?; // archive_size_64
-                writer.write_u64::<LittleEndian>(0)?; // bet_table_pos
-                writer.write_u64::<LittleEndian>(0)?; // het_table_pos
+                writer.write_u64_le(archive_size as u64)?; // archive_size_64
+                writer.write_u64_le(0)?; // bet_table_pos
+                writer.write_u64_le(0)?; // het_table_pos
             }
             FormatVersion::V4 => {
                 // TODO: Implement V4 header with MD5 checksums
