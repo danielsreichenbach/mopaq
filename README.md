@@ -163,6 +163,7 @@ storm-cli debug hash-compare "file1.txt" "file2.txt"
   - ✅ All MPQ versions (v1-v4) header parsing
   - ✅ Hash table and block table reading
   - ✅ Hi-block table support for large archives
+  - ✅ HET/BET table reading (v3+)
   - ✅ File extraction with all supported compression methods
   - ✅ Encryption/decryption with key calculation
   - ✅ Sector-based file reading
@@ -200,11 +201,11 @@ storm-cli debug hash-compare "file1.txt" "file2.txt"
 - 🚧 Encryption support in ArchiveBuilder
 - 🚧 Sector CRC generation for new files
 - 🚧 v4 format creation with MD5 checksums
+- 🚧 HET/BET table creation for new archives (v3+)
 - 🚧 StormLib FFI compatibility layer
 
 ### Planned 📋
 
-- 📋 HET/BET table support (v3+)
 - 📋 Digital signature support
 - 📋 In-place archive modification
 - 📋 PKWare DCL compression

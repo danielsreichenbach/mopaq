@@ -62,6 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No system dependencies required
   - Supports both raw LZMA and XZ formats
   - Better cross-platform compatibility
+- Refactored `special_files.rs` into a module structure
+  - Split into `listfile.rs` for parsing functionality
+  - Separated `info.rs` for special file metadata
+  - Improved code organization and maintainability
 
 ## [0.1.0] - 2025-06-XX (Upcoming)
 
