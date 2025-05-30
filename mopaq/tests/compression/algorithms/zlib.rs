@@ -4,7 +4,7 @@ use mopaq::compression::{compress, decompress, flags};
 
 #[test]
 fn test_zlib_compression() {
-    let test_data = include_bytes!("../../README.md");
+    let test_data = include_bytes!("../../../../README.md");
 
     // Compress
     let compressed = compress(test_data, flags::ZLIB).expect("Compression failed");
