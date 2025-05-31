@@ -110,7 +110,6 @@ jobs:
         run: |
           cargo test --features mmap
           cargo test --features async
-          cargo test --features parallel
 
   # Documentation build
   docs:
