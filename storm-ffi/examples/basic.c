@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
     }
     else
     {
-        printf("Failed to open archive: %s (error: %u)\n", argv[1], GetLastError());
+        printf("Failed to open archive: %s (error: %u)\n", argv[1], SFileGetLastError());
         return 1;
     }
 

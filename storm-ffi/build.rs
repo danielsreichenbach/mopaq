@@ -62,8 +62,8 @@ extern "C" {
                 "SFileEnumFiles".to_string(),
                 "SFileSetLocale".to_string(),
                 "SFileGetLocale".to_string(),
-                "GetLastError".to_string(),
-                "SetLastError".to_string(),
+                "SFileGetLastError".to_string(),
+                "SFileSetLastError".to_string(),
             ],
             ..Default::default()
         },

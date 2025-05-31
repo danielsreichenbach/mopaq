@@ -17,7 +17,7 @@
 // Helper function to print error messages
 void PrintError(const char *operation)
 {
-    uint32_t error = GetLastError();
+    uint32_t error = SFileGetLastError();
     printf("Failed to %s (error: %u)\n", operation, error);
 }
 
@@ -301,14 +301,14 @@ int main(int argc, char *argv[])
 
     // Test error handling
     printf("\n--- Error Handling Test ---\n");
-    SetLastError(12345);
-    printf("Set error to: %u\n", GetLastError());
+    SFileSetLastError(12345);
+    printf("Set error to: %u\n", SFileGetLastError());
 
     // Try to open non-existent file
     HANDLE hBadFile = NULL;
     if (!SFileOpenFileEx(hMpq, "this_file_does_not_exist.txt", 0, &hBadFile))
     {
-        printf("Expected error for non-existent file: %u\n", GetLastError());
+        printf("Expected error for non-existent file: %u\n", SFileGetLastError());
     }
 
     // Cleanup

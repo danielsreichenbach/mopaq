@@ -760,13 +760,13 @@ pub extern "C" fn SFileGetLocale() -> u32 {
 
 /// Get last error
 #[no_mangle]
-pub extern "C" fn GetLastError() -> u32 {
+pub extern "C" fn SFileGetLastError() -> u32 {
     LAST_ERROR.with(|e| *e.borrow())
 }
 
 /// Set last error
 #[no_mangle]
-pub extern "C" fn SetLastError(error: u32) {
+pub extern "C" fn SFileSetLastError(error: u32) {
     set_last_error(error);
 }
 
@@ -824,10 +824,10 @@ mod tests {
     #[test]
     fn test_error_handling() {
         set_last_error(ERROR_FILE_NOT_FOUND);
-        assert_eq!(GetLastError(), ERROR_FILE_NOT_FOUND);
+        assert_eq!(SFileGetLastError(), ERROR_FILE_NOT_FOUND);
 
-        SetLastError(ERROR_SUCCESS);
-        assert_eq!(GetLastError(), ERROR_SUCCESS);
+        SFileSetLastError(ERROR_SUCCESS);
+        assert_eq!(SFileGetLastError(), ERROR_SUCCESS);
     }
 
     #[test]

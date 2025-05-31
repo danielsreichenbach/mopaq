@@ -139,10 +139,10 @@ uint32_t SFileSetLocale(uint32_t locale);
 uint32_t SFileGetLocale(void);
 
 // Get last error
-uint32_t GetLastError(void);
+uint32_t SFileGetLastError(void);
 
 // Set last error
-void SetLastError(uint32_t error);
+void SFileSetLastError(uint32_t error);
 
 // Get file name from handle
 //
