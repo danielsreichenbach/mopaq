@@ -2,10 +2,16 @@
 
 A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format used by Blizzard Entertainment games.
 
+<div align="center">
+
 [![Crates.io](https://img.shields.io/crates/v/mopaq.svg)](https://crates.io/crates/mopaq)
 [![Documentation](https://docs.rs/mopaq/badge.svg)](https://docs.rs/mopaq)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE-APACHE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 [![CI Status](https://github.com/danielsreichenbach/mopaq/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/mopaq/actions)
+[![codecov](https://img.shields.io/codecov/c/github/danielsreichenbach/mopaq?logo=codecov&style=flat-square&token=BAQ8SOKEST&color=C43AC3)](https://codecov.io/gh/danielsreichenbach/mopaq)
+
+</div>
 
 ## Features
 
