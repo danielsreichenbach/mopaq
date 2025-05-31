@@ -166,19 +166,19 @@ mod tests {
         assert_eq!(pos, 5);
 
         let mut buf = [0u8; 2];
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [5, 6]);
 
         let pos = reader.seek(SeekFrom::Current(-3)).unwrap();
         assert_eq!(pos, 4);
 
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [4, 5]);
 
         let pos = reader.seek(SeekFrom::End(-2)).unwrap();
         assert_eq!(pos, 8);
 
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [8, 9]);
     }
 
@@ -216,12 +216,12 @@ mod tests {
 
         // Read first 2 bytes: position goes from 0 to 2
         let mut buf = [0u8; 2];
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [10, 20]);
 
         // Seek forward 3 bytes: position goes from 2 to 5
         reader.seek(SeekFrom::Current(3)).unwrap();
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [60, 70]);
 
         // read_at doesn't change the current position, but after read_at seeks to offset
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(buf, [20, 30, 40]);
 
         // After read_at, the position is at 4 (1 + 3 bytes read)
-        reader.read(&mut buf).unwrap();
+        reader.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [50, 60, 70]);
     }
 
