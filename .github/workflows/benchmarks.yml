@@ -26,30 +26,7 @@ jobs:
 
       # Run benchmarks
       - name: Run benchmarks
-        run: cargo bench --package mopaq -- --output-format bencher | tee output.txt
-
-      # Store benchmark result
-      - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: Rust Benchmarks
-          tool: 'cargo'
-          output-file-path: output.txt
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
-          # Only push on main branch
-          comment-on-alert: true
-          alert-threshold: '150%'
-          comment-always: true
-          save-data-file: ${{ github.ref == 'refs/heads/main' }}
-          benchmark-data-dir-path: 'benchmarks'
-
-      # Upload benchmark results as artifact
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: output.txt
+        run: cargo bench --package mopaq
 
   criterion-benchmarks:
     name: Criterion Benchmarks
