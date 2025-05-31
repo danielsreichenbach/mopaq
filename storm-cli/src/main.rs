@@ -38,47 +38,6 @@ pub enum OutputFormat {
     name = "storm-cli",
     about = "Command-line tool for working with MPQ archives",
     long_about = None,
-    after_help = "EXAMPLES:
-    # Archive operations
-    storm-cli archive create game.mpq source/ --compression zlib
-    storm-cli archive info game.mpq
-    storm-cli archive verify game.mpq
-
-    # File operations
-    storm-cli file list game.mpq
-    storm-cli file extract game.mpq war3map.j -o extracted/
-    storm-cli file find game.mpq \"*.mdx\"
-
-    # Table operations
-    storm-cli table show game.mpq --table-type hash
-    storm-cli table analyze game.mpq
-
-    # Hash utilities
-    storm-cli hash generate \"war3map.j\" --all
-    storm-cli hash compare file1.txt file2.txt
-
-    # Generate shell completions
-    storm-cli completion bash > ~/.bash_completion.d/storm-cli.bash
-    storm-cli completion zsh > ~/.zsh/completions/_storm-cli
-    storm-cli completion fish > ~/.config/fish/completions/storm-cli.fish
-    storm-cli completion powershell > $PROFILE\\storm-cli.ps1
-
-SHELL COMPLETION:
-    To enable tab completion, run:
-
-    Bash:
-        storm-cli completion bash > ~/.bash_completion.d/storm-cli.bash
-        source ~/.bash_completion.d/storm-cli.bash
-
-    Zsh:
-        storm-cli completion zsh > ~/.zsh/completions/_storm-cli
-        # Add to ~/.zshrc: fpath=(~/.zsh/completions $fpath)
-
-    Fish:
-        storm-cli completion fish > ~/.config/fish/completions/storm-cli.fish
-
-    PowerShell:
-        storm-cli completion powershell >> $PROFILE"
 )]
 #[command(version)]
 struct Cli {
@@ -198,6 +157,24 @@ enum ArchiveCommands {
         /// Check file contents
         #[arg(long)]
         check_contents: bool,
+    },
+
+    /// List files in an archive (alias for 'file list')
+    List {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Show all entries even without filenames
+        #[arg(short, long)]
+        all: bool,
+
+        /// Filter by pattern (glob or regex)
+        #[arg(short = 'p', long)]
+        pattern: Option<String>,
+
+        /// Use regex instead of glob pattern
+        #[arg(short = 'r', long)]
+        regex: bool,
     },
 }
 
@@ -501,6 +478,15 @@ fn main() -> Result<()> {
                 check_contents,
             } => {
                 commands::archive::verify(&archive, check_crc, check_contents)?;
+            }
+            ArchiveCommands::List {
+                archive,
+                all,
+                pattern,
+                regex,
+            } => {
+                // Delegate to the file list command
+                commands::file::list(&archive, all, pattern.as_deref(), regex)?;
             }
         },
 

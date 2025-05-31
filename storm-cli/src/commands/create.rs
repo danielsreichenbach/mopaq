@@ -272,7 +272,7 @@ fn format_size(size: u64) -> String {
 /// Get human-readable format version name
 fn format_version_name(version: FormatVersion) -> &'static str {
     match version {
-        FormatVersion::V1 => "Original/Classic",
+        FormatVersion::V1 => "Original/Vanilla",
         FormatVersion::V2 => "Burning Crusade",
         FormatVersion::V3 => "Cataclysm Beta",
         FormatVersion::V4 => "Cataclysm+",

@@ -222,7 +222,7 @@
 - [ ] StormLib comparison tool
 - [ ] Archive analysis scripts
 - [ ] Performance comparison scripts
-- [ ] Test data generator (full archives with all features)
+- [X] Test data generator for storm-cli testing ✅
 
 ## Deferred Design Decisions
 

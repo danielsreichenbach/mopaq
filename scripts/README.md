@@ -29,3 +29,24 @@ having to resort to trickery such as Git-LFS, or worse things such as making you
 (or me) redownload a few GB of archives in every test run.
 
 To spare us the PITA, we will just generate them.
+
+## `generate_test_data.py`
+
+To verify archive creation, raw files would help. We create a random set of
+these using this script.
+
+```shell
+python3 scripts/generate_test_data.py all
+```
+
+Supported modes are:
+
+- `simple`
+- `game_assets`
+- `nested`
+- `mixed_sizes`
+- `special_names`
+- `all`
+
+A target directory can be specified using `--output-dir path/to/save/stuff`.
+The script will default to using `--output-dir test-data/raw-data`.

@@ -45,7 +45,7 @@ MPQ (Mo'PaQ, short for Mike O'Brien Pack) is an archiving file format developed 
 
 | Version | First Appearance | Header Size | Notable Games |
 |---------|-----------------|------------|---------------|
-| 1       | Original/Classic | 32 bytes (0x20) | Diablo, Starcraft, Warcraft II, Diablo II, Warcraft III |
+| 1       | Original/Vanilla | 32 bytes (0x20) | Diablo, Starcraft, Warcraft II, Diablo II, Warcraft III |
 | 2       | The Burning Crusade | 44 bytes (0x2C) | World of Warcraft: The Burning Crusade |
 | 3       | Cataclysm Beta | 68 bytes (0x44) | World of Warcraft: Cataclysm |
 | 4       | Cataclysm+ | 208 bytes (0xD0) | Later World of Warcraft, Starcraft II |

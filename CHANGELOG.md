@@ -48,6 +48,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### CLI Tool (`storm-cli`)
 
 - Progress bars for long operations
+- **Archive list alias** - Added `archive list` as an alias for `file list` command
+  - ✅ Provides more intuitive command structure
+  - ✅ Both `storm-cli archive list` and `storm-cli file list` work identically
+  - ✅ All options and filters are supported in both commands
+
+### Scripts
+
+- **Test Data Generator** (`scripts/generate_test_data.py`)
+  - ✅ Generate raw test data for storm-cli archive creation testing
+  - ✅ Multiple test configurations (simple, game assets, nested, mixed sizes, special names)
+  - ✅ Support for text, binary, and empty files
+  - ✅ Configurable file sizes and directory structures
 
 #### FFI Library (`storm-ffi`)
 
