@@ -42,6 +42,9 @@ pub(crate) fn decompress(data: &[u8], expected_size: usize) -> Result<Vec<u8>> {
                 "First 16 bytes of data: {:02X?}",
                 &data[..16.min(data.len())]
             );
+            if data.len() <= 64 {
+                log::debug!("Full data ({} bytes): {:02X?}", data.len(), data);
+            }
             Err(Error::compression(format!(
                 "Zlib decompression failed: {}",
                 e

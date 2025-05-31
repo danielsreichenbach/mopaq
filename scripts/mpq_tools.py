@@ -174,8 +174,20 @@ class MPQCrypto:
             seed = (dword + seed + (seed << 5) + 3) & 0xFFFFFFFF
 
     def decrypt_block(self, data: bytearray, key: int) -> None:
-        """Decrypt data in-place (same as encrypt for this algorithm)."""
-        self.encrypt_block(data, key)
+        """Decrypt data in-place."""
+        if key == 0 or len(data) == 0:
+            return
+
+        seed = 0xEEEEEEEE
+
+        # Process as 32-bit integers
+        for i in range(0, len(data) - 3, 4):
+            seed = (seed + self.encryption_table[0x400 + (key & 0xFF)]) & 0xFFFFFFFF
+            encrypted = struct.unpack_from('<I', data, i)[0]
+            decrypted = encrypted ^ ((key + seed) & 0xFFFFFFFF)
+            struct.pack_into('<I', data, i, decrypted)
+            key = (((~key << 0x15) + 0x11111111) | (key >> 0x0B)) & 0xFFFFFFFF
+            seed = (decrypted + seed + (seed << 5) + 3) & 0xFFFFFFFF
 
     def test_encryption(self):
         """Test encryption/decryption with known vectors."""
@@ -324,8 +336,13 @@ class MPQBuilder:
             flags |= MPQFlags.ENCRYPTED
         if mpq_file.fix_key:
             flags |= MPQFlags.FIX_KEY
-        if mpq_file.single_unit:
+
+        # Determine if file should be single unit
+        sector_size = 512 << self.config.block_size
+        is_single_unit = mpq_file.single_unit or len(mpq_file.data) <= sector_size
+        if is_single_unit:
             flags |= MPQFlags.SINGLE_UNIT
+
         if mpq_file.sector_crc:
             flags |= MPQFlags.SECTOR_CRC
 
@@ -333,7 +350,11 @@ class MPQBuilder:
 
     def _prepare_file_data(self, mpq_file: MPQFile, file_offset: int) -> Tuple[bytes, int]:
         """Prepare file data with compression/encryption/sectors."""
-        if mpq_file.single_unit:
+        # Determine if file should be single unit
+        sector_size = 512 << self.config.block_size
+        is_single_unit = mpq_file.single_unit or len(mpq_file.data) <= sector_size
+
+        if is_single_unit:
             return self._prepare_single_unit_file(mpq_file, file_offset)
         else:
             return self._prepare_sectored_file(mpq_file, file_offset)
@@ -346,6 +367,7 @@ class MPQBuilder:
         if mpq_file.compress:
             data = self._compress_data(data, mpq_file.compression_type)
 
+        # Store compressed size before adding CRC
         compressed_size = len(data)
         data = bytearray(data)
 
@@ -353,6 +375,7 @@ class MPQBuilder:
         if mpq_file.sector_crc:
             crc = zlib.crc32(mpq_file.data) & 0xFFFFFFFF
             data.extend(struct.pack('<I', crc))
+            # Note: compressed_size does NOT include the CRC
 
         # Encrypt if needed
         if mpq_file.encrypt:
@@ -413,6 +436,9 @@ class MPQBuilder:
             for crc in sector_crcs:
                 result.extend(struct.pack('<I', crc))
 
+        # Track the start of actual sector data for compressed size calculation
+        data_start = len(result)
+
         # Add sectors
         for i, sector in enumerate(sectors):
             sector_data = bytearray(sector)
@@ -424,7 +450,11 @@ class MPQBuilder:
                 self.crypto.encrypt_block(sector_data, sector_key)
             result.extend(sector_data)
 
-        return bytes(result), len(result)
+        # Compressed size is the total size of the data in the archive
+        # For multi-sector files, this includes sector offset table and CRC table
+        compressed_size = len(result)
+
+        return bytes(result), compressed_size
 
     def _compress_data(self, data: bytes, method: CompressionType) -> bytes:
         """Compress data using specified method."""
@@ -523,8 +553,8 @@ class MPQBuilder:
                 hash_data.extend(struct.pack('<HH', entry.locale, entry.platform))
                 hash_data.extend(struct.pack('<I', entry.block_index))
             else:
-                # Empty entry
-                hash_data.extend(struct.pack('<IIHHI', 0, 0, 0, 0, 0xFFFFFFFF))
+                # Empty entry - both name hashes should be 0xFFFFFFFF
+                hash_data.extend(struct.pack('<IIHHI', 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFF, 0, 0xFFFFFFFF))
 
         # Encrypt hash table
         key = self.crypto.hash_string("(hash table)", HashType.FILE_KEY)
@@ -704,14 +734,23 @@ class MPQReader:
 
         for i in range(header['hash_table_size']):
             offset = i * 16
+            # Check both name hashes - if both are 0xFFFFFFFF, it's truly empty
+            name1 = struct.unpack_from('<I', hash_data, offset)[0]
+            name2 = struct.unpack_from('<I', hash_data, offset + 4)[0]
             block_index = struct.unpack_from('<I', hash_data, offset + 12)[0]
 
-            if block_index == 0xFFFFFFFF:
+            if self.config.debug if hasattr(self, 'config') else False:
+                print(f"  Entry {i}: name1=0x{name1:08X}, name2=0x{name2:08X}, block_index=0x{block_index:08X}")
+
+            if name1 == 0xFFFFFFFF and name2 == 0xFFFFFFFF and block_index == 0xFFFFFFFF:
                 empty_count += 1
             elif block_index == 0xFFFFFFFE:
                 deleted_count += 1
-            else:
+            elif block_index < header['block_table_size']:
                 valid_count += 1
+            else:
+                # Invalid entry
+                empty_count += 1
 
         print(f"\nHash Table Analysis:")
         print(f"  Valid entries: {valid_count}")

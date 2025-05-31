@@ -803,7 +803,18 @@ impl Archive {
 
             // Decrypt if needed
             if file_info.is_encrypted() {
+                log::debug!(
+                    "Decrypting file data: key=0x{:08X}, size={}",
+                    key,
+                    data.len()
+                );
+                if data.len() <= 64 {
+                    log::debug!("Before decrypt: {:02X?}", &data);
+                }
                 decrypt_file_data(&mut data, key);
+                if data.len() <= 64 {
+                    log::debug!("After decrypt: {:02X?}", &data);
+                }
             }
 
             // Validate CRC if present for single unit files
@@ -841,30 +852,53 @@ impl Archive {
 
             // Decompress if needed
             if file_info.is_compressed() {
-                // For WoW MPQ files, try direct zlib first
-                match compression::decompress(
-                    &data,
-                    compression::flags::ZLIB,
-                    actual_file_size as usize,
-                ) {
-                    Ok(decompressed) => Ok(decompressed),
-                    Err(e) => {
-                        // If direct zlib fails, try with compression type byte
+                // Encrypted files always have compression type byte
+                // For unencrypted WoW MPQ files, try direct zlib first
+                if file_info.is_encrypted() {
+                    // Encrypted files always have compression type byte
+                    if !data.is_empty() {
+                        let compression_type = data[0];
+                        let compressed_data = &data[1..];
                         log::debug!(
-                            "Direct zlib decompression failed: {}, trying with type byte",
-                            e
+                            "Decompressing encrypted file: type=0x{:02X}, compressed_size={}, expected_size={}",
+                            compression_type,
+                            compressed_data.len(),
+                            actual_file_size
                         );
+                        compression::decompress(
+                            compressed_data,
+                            compression_type,
+                            actual_file_size as usize,
+                        )
+                    } else {
+                        Err(Error::compression("Empty compressed data"))
+                    }
+                } else {
+                    // For unencrypted files, try direct zlib first (common in WoW MPQs)
+                    match compression::decompress(
+                        &data,
+                        compression::flags::ZLIB,
+                        actual_file_size as usize,
+                    ) {
+                        Ok(decompressed) => Ok(decompressed),
+                        Err(e) => {
+                            // If direct zlib fails, try with compression type byte
+                            log::debug!(
+                                "Direct zlib decompression failed: {}, trying with type byte",
+                                e
+                            );
 
-                        if !data.is_empty() {
-                            let compression_type = data[0];
-                            let compressed_data = &data[1..];
-                            compression::decompress(
-                                compressed_data,
-                                compression_type,
-                                actual_file_size as usize,
-                            )
-                        } else {
-                            Err(Error::compression("Empty compressed data"))
+                            if !data.is_empty() {
+                                let compression_type = data[0];
+                                let compressed_data = &data[1..];
+                                compression::decompress(
+                                    compressed_data,
+                                    compression_type,
+                                    actual_file_size as usize,
+                                )
+                            } else {
+                                Err(Error::compression("Empty compressed data"))
+                            }
                         }
                     }
                 }
@@ -999,13 +1033,32 @@ impl Archive {
             let decompressed_sector = if file_info.is_compressed()
                 && sector_size_compressed < expected_size
             {
-                // Check for compression type byte
-                if !sector_data.is_empty() && sector_data[0] == compression::flags::ZLIB {
-                    let compressed = &sector_data[1..];
-                    compression::decompress(compressed, compression::flags::ZLIB, expected_size)?
+                // Encrypted sectors always have compression type byte
+                if file_info.is_encrypted() {
+                    if !sector_data.is_empty() {
+                        let compression_type = sector_data[0];
+                        let compressed_data = &sector_data[1..];
+                        compression::decompress(compressed_data, compression_type, expected_size)?
+                    } else {
+                        return Err(Error::compression("Empty compressed sector data"));
+                    }
                 } else {
-                    // Try raw zlib
-                    compression::decompress(&sector_data, compression::flags::ZLIB, expected_size)?
+                    // For unencrypted sectors, check for compression type byte
+                    if !sector_data.is_empty() && sector_data[0] == compression::flags::ZLIB {
+                        let compressed = &sector_data[1..];
+                        compression::decompress(
+                            compressed,
+                            compression::flags::ZLIB,
+                            expected_size,
+                        )?
+                    } else {
+                        // Try raw zlib
+                        compression::decompress(
+                            &sector_data,
+                            compression::flags::ZLIB,
+                            expected_size,
+                        )?
+                    }
                 }
             } else {
                 // Sector is not compressed
