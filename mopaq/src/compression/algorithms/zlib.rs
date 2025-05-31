@@ -8,22 +8,27 @@ use std::io::{Read, Write};
 
 /// Decompress using zlib/deflate
 pub(crate) fn decompress(data: &[u8], expected_size: usize) -> Result<Vec<u8>> {
-    // Validate zlib header (should start with 0x78)
-    if !data.is_empty() && data[0] != 0x78 {
-        log::warn!(
-            "Data doesn't start with zlib header (got 0x{:02X}), attempting decompression anyway",
+    // Some MPQ implementations use raw deflate without zlib headers
+    // Standard zlib header starts with 0x78 (deflate with 32K window)
+    let has_zlib_header = !data.is_empty() && data[0] == 0x78;
+
+    if !data.is_empty() && !has_zlib_header {
+        // Only log at trace level since this is common in some MPQ files
+        log::trace!(
+            "Data lacks standard zlib header (starts with 0x{:02X}), attempting raw deflate",
             data[0]
         );
     }
 
+    // ZlibDecoder can handle both zlib-wrapped and raw deflate data
     let mut decoder = ZlibDecoder::new(data);
     let mut decompressed = Vec::with_capacity(expected_size);
 
     match decoder.read_to_end(&mut decompressed) {
         Ok(_) => {
             if decompressed.len() != expected_size {
-                log::warn!(
-                    "Decompressed size mismatch: expected {}, got {}",
+                log::debug!(
+                    "Decompressed size mismatch: expected {}, got {} (this is common in some MPQ files)",
                     expected_size,
                     decompressed.len()
                 );

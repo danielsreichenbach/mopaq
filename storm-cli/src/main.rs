@@ -6,9 +6,11 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
 use std::io;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 mod commands;
+mod config;
 mod output;
 
 use mopaq::{FormatVersion, ListfileOption};
@@ -37,23 +39,23 @@ pub enum OutputFormat {
     about = "Command-line tool for working with MPQ archives",
     long_about = None,
     after_help = "EXAMPLES:
-    # List files in an archive
-    storm-cli list game.mpq
+    # Archive operations
+    storm-cli archive create game.mpq source/ --compression zlib
+    storm-cli archive info game.mpq
+    storm-cli archive verify game.mpq
 
-    # Extract all files
-    storm-cli extract game.mpq -t extracted/
+    # File operations
+    storm-cli file list game.mpq
+    storm-cli file extract game.mpq war3map.j -o extracted/
+    storm-cli file find game.mpq \"*.mdx\"
 
-    # Extract specific file
-    storm-cli extract game.mpq -f war3map.j
+    # Table operations
+    storm-cli table show game.mpq --table-type hash
+    storm-cli table analyze game.mpq
 
-    # Create new archive
-    storm-cli create new.mpq source_folder/
-
-    # Find a file
-    storm-cli find game.mpq \"*.mdx\"
-
-    # Verify archive integrity
-    storm-cli verify game.mpq
+    # Hash utilities
+    storm-cli hash generate \"war3map.j\" --all
+    storm-cli hash compare file1.txt file2.txt
 
     # Generate shell completions
     storm-cli completion bash > ~/.bash_completion.d/storm-cli.bash
@@ -96,38 +98,47 @@ struct Cli {
     #[arg(global = true, long)]
     no_color: bool,
 
+    /// Path to config file
+    #[arg(global = true, short = 'C', long)]
+    config: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// List files in an archive
-    List {
-        /// Path to the MPQ archive
-        archive: String,
-        /// Show all entries even without filenames
-        #[arg(short, long)]
-        all: bool,
+    /// Archive operations
+    #[command(subcommand)]
+    Archive(ArchiveCommands),
+
+    /// File operations
+    #[command(subcommand)]
+    File(FileCommands),
+
+    /// Table operations
+    #[command(subcommand)]
+    Table(TableCommands),
+
+    /// Hash utilities
+    #[command(subcommand)]
+    Hash(HashCommands),
+
+    /// Cryptography utilities
+    #[command(subcommand)]
+    Crypto(CryptoCommands),
+
+    /// Generate shell completion scripts
+    #[command(about = "Generate completion scripts for your shell")]
+    Completion {
+        /// The shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
     },
-    /// Find a specific file in an archive
-    Find {
-        /// Path to the MPQ archive
-        archive: String,
-        /// Filename to search for
-        filename: String,
-    },
-    /// Extract files from an archive
-    Extract {
-        /// Path to the MPQ archive
-        archive: String,
-        /// Target directory
-        #[arg(short, long, default_value = ".")]
-        target: String,
-        /// Specific file to extract (if not specified, extracts all)
-        #[arg(short, long)]
-        file: Option<String>,
-    },
+}
+
+#[derive(Subcommand)]
+enum ArchiveCommands {
     /// Create a new MPQ archive
     Create {
         /// Path to the new MPQ archive
@@ -168,63 +179,190 @@ enum Commands {
         #[arg(short = 'i', long = "ignore")]
         ignore_patterns: Vec<String>,
     },
-    /// Verify archive integrity
-    Verify {
-        /// Path to the MPQ archive
-        archive: String,
-    },
-    /// Generate shell completion scripts
-    #[command(about = "Generate completion scripts for your shell")]
-    Completion {
-        /// The shell to generate completions for
-        #[arg(value_enum)]
-        shell: Shell,
-    },
-    /// Debug commands
-    #[command(subcommand)]
-    Debug(DebugCommands),
-}
 
-#[derive(Subcommand)]
-enum DebugCommands {
     /// Show detailed archive information
     Info {
         /// Path to the MPQ archive
         archive: String,
     },
-    /// Test crypto functions
-    Crypto,
-    /// Generate hash values for a filename
-    Hash {
-        /// Filename to hash
-        filename: String,
-        /// Hash type (table-offset, name-a, name-b, file-key, key2-mix, or 0-4)
-        #[arg(short = 't', long)]
-        hash_type: Option<String>,
-        /// Generate all hash types
-        #[arg(short, long)]
-        all: bool,
-        /// Generate Jenkins hash (for HET tables)
-        #[arg(short, long)]
-        jenkins: bool,
-    },
-    /// Compare hash values for two filenames
-    HashCompare {
-        /// First filename
-        filename1: String,
-        /// Second filename
-        filename2: String,
-    },
-    /// Display table contents
-    Tables {
+
+    /// Verify archive integrity
+    Verify {
         /// Path to the MPQ archive
         archive: String,
-        /// Table type (hash, block, het, bet) or index number
+
+        /// Check CRC values
+        #[arg(long)]
+        check_crc: bool,
+
+        /// Check file contents
+        #[arg(long)]
+        check_contents: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum FileCommands {
+    /// List files in an archive
+    List {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Show all entries even without filenames
+        #[arg(short, long)]
+        all: bool,
+
+        /// Filter by pattern (glob or regex)
+        #[arg(short = 'p', long)]
+        pattern: Option<String>,
+
+        /// Use regex instead of glob pattern
+        #[arg(short = 'r', long)]
+        regex: bool,
+    },
+
+    /// Extract files from an archive
+    Extract {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// File to extract (if not specified, extracts all)
+        file: Option<String>,
+
+        /// Output directory or file
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Preserve directory structure
+        #[arg(short = 'p', long)]
+        preserve_path: bool,
+    },
+
+    /// Add files to an existing archive
+    Add {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Files to add
+        #[arg(required = true)]
+        files: Vec<String>,
+
+        /// Compression method
+        #[arg(short = 'c', long, value_enum)]
+        compression: Option<CompressionMethod>,
+
+        /// Archive path for the file
+        #[arg(short = 'p', long)]
+        path: Option<String>,
+    },
+
+    /// Remove files from an archive
+    Remove {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Files to remove
+        #[arg(required = true)]
+        files: Vec<String>,
+    },
+
+    /// Find files in an archive
+    Find {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Pattern to search for (glob or regex)
+        pattern: String,
+
+        /// Use regex instead of glob pattern
+        #[arg(short = 'r', long)]
+        regex: bool,
+
+        /// Case insensitive search
+        #[arg(short = 'i', long)]
+        ignore_case: bool,
+    },
+
+    /// Show detailed file information
+    Info {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// File to inspect
+        file: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum TableCommands {
+    /// Display table contents
+    Show {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Table type (hash, block, het, bet)
         #[arg(short = 't', long)]
-        table_type: Option<String>,
+        table_type: Option<TableType>,
+
         /// Limit number of entries shown
         #[arg(short, long, default_value = "20")]
         limit: Option<usize>,
+
+        /// Show only occupied entries
+        #[arg(long)]
+        occupied_only: bool,
+    },
+
+    /// Analyze table structure and efficiency
+    Analyze {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Include detailed statistics
+        #[arg(short = 'd', long)]
+        detailed: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum HashCommands {
+    /// Generate hash values for a filename
+    Generate {
+        /// Filename to hash
+        filename: String,
+
+        /// Hash type (table-offset, name-a, name-b, file-key, key2-mix)
+        #[arg(short = 't', long)]
+        hash_type: Option<HashType>,
+
+        /// Generate all hash types
+        #[arg(short, long)]
+        all: bool,
+    },
+
+    /// Compare hash values for two filenames
+    Compare {
+        /// First filename
+        filename1: String,
+
+        /// Second filename
+        filename2: String,
+    },
+
+    /// Generate Jenkins hash (for HET tables)
+    Jenkins {
+        /// Filename to hash
+        filename: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum CryptoCommands {
+    /// Test cryptographic functions
+    Test {
+        /// Run specific test
+        #[arg(short = 't', long)]
+        test: Option<String>,
     },
 }
 
@@ -236,8 +374,32 @@ enum CompressionMethod {
     Lzma,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+enum TableType {
+    Hash,
+    Block,
+    Het,
+    Bet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
+enum HashType {
+    TableOffset,
+    NameA,
+    NameB,
+    FileKey,
+    Key2Mix,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Load config if specified
+    let _config = if let Some(config_path) = &cli.config {
+        config::load_config(Some(config_path))?
+    } else {
+        config::load_config(None)?
+    };
 
     // Set up colored output based on flags
     if cli.no_color || cli.output != OutputFormat::Text {
@@ -271,119 +433,174 @@ fn main() -> Result<()> {
 
     // Execute command
     match cli.command {
-        Commands::List { archive, all } => {
-            // Pass the global verbose value instead
-            let verbose = cli.verbose > 0;
-            commands::list::list(&archive, verbose, all)?;
-        }
-        Commands::Find { archive, filename } => {
-            let verbose = cli.verbose > 0;
-            commands::find::find(&archive, &filename, verbose)?;
-        }
-        Commands::Extract {
-            archive,
-            target,
-            file,
-        } => {
-            commands::extract::extract(&archive, &target, file.as_deref())?;
-        }
-        Commands::Create {
-            archive,
-            source,
-            version,
-            compression,
-            block_size,
-            no_listfile,
-            listfile,
-            no_recursive,
-            follow_symlinks,
-            ignore_patterns,
-        } => {
-            let mut options = commands::create::CreateOptions::default();
+        Commands::Archive(cmd) => match cmd {
+            ArchiveCommands::Create {
+                archive,
+                source,
+                version,
+                compression,
+                block_size,
+                no_listfile,
+                listfile,
+                no_recursive,
+                follow_symlinks,
+                ignore_patterns,
+            } => {
+                let mut options = commands::archive::CreateOptions::default();
 
-            // Set version
-            if let Some(v) = version {
-                options.version = match v {
-                    1 => FormatVersion::V1,
-                    2 => FormatVersion::V2,
-                    3 => FormatVersion::V3,
-                    4 => FormatVersion::V4,
-                    _ => unreachable!(),
+                // Set version
+                if let Some(v) = version {
+                    options.version = match v {
+                        1 => FormatVersion::V1,
+                        2 => FormatVersion::V2,
+                        3 => FormatVersion::V3,
+                        4 => FormatVersion::V4,
+                        _ => unreachable!(),
+                    };
+                }
+
+                // Set compression
+                if let Some(comp) = compression {
+                    options.compression = match comp {
+                        CompressionMethod::None => 0,
+                        CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
+                        CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
+                        CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
+                    };
+                }
+
+                // Set block size
+                if let Some(bs) = block_size {
+                    options.block_size = bs;
+                }
+
+                // Set listfile option
+                options.listfile = if no_listfile {
+                    ListfileOption::None
+                } else if let Some(lf) = listfile {
+                    ListfileOption::External(lf.into())
+                } else {
+                    ListfileOption::Generate
                 };
+
+                // Set other options
+                options.recursive = !no_recursive;
+                options.follow_symlinks = follow_symlinks;
+                if !ignore_patterns.is_empty() {
+                    options.ignore_patterns.extend(ignore_patterns);
+                }
+
+                commands::archive::create(&archive, &source, options)?;
             }
-
-            // Set compression
-            if let Some(comp) = compression {
-                options.compression = match comp {
-                    CompressionMethod::None => 0,
-                    CompressionMethod::Zlib => mopaq::compression::flags::ZLIB,
-                    CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2,
-                    CompressionMethod::Lzma => mopaq::compression::flags::LZMA,
-                };
+            ArchiveCommands::Info { archive } => {
+                commands::archive::info(&archive)?;
             }
-
-            // Set block size
-            if let Some(bs) = block_size {
-                options.block_size = bs;
+            ArchiveCommands::Verify {
+                archive,
+                check_crc,
+                check_contents,
+            } => {
+                commands::archive::verify(&archive, check_crc, check_contents)?;
             }
+        },
 
-            // Set listfile option
-            options.listfile = if no_listfile {
-                ListfileOption::None
-            } else if let Some(lf) = listfile {
-                ListfileOption::External(lf.into())
-            } else {
-                ListfileOption::Generate
-            };
-
-            // Set other options
-            options.recursive = !no_recursive;
-            options.follow_symlinks = follow_symlinks;
-            if !ignore_patterns.is_empty() {
-                options.ignore_patterns.extend(ignore_patterns);
+        Commands::File(cmd) => match cmd {
+            FileCommands::List {
+                archive,
+                all,
+                pattern,
+                regex,
+            } => {
+                commands::file::list(&archive, all, pattern.as_deref(), regex)?;
             }
+            FileCommands::Extract {
+                archive,
+                file,
+                output,
+                preserve_path,
+            } => {
+                commands::file::extract(
+                    &archive,
+                    file.as_deref(),
+                    output.as_deref(),
+                    preserve_path,
+                )?;
+            }
+            FileCommands::Add {
+                archive,
+                files,
+                compression,
+                path,
+            } => {
+                let comp = compression.map(|c| match c {
+                    CompressionMethod::None => 0u16,
+                    CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
+                    CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
+                    CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
+                });
+                commands::file::add(&archive, &files, comp, path.as_deref())?;
+            }
+            FileCommands::Remove { archive, files } => {
+                commands::file::remove(&archive, &files)?;
+            }
+            FileCommands::Find {
+                archive,
+                pattern,
+                regex,
+                ignore_case,
+            } => {
+                commands::file::find(&archive, &pattern, regex, ignore_case)?;
+            }
+            FileCommands::Info { archive, file } => {
+                commands::file::info(&archive, &file)?;
+            }
+        },
 
-            commands::create::create(&archive, &source, options)?;
-        }
-        Commands::Verify { archive } => {
-            let verbose = cli.verbose > 0;
-            commands::verify::verify(&archive, verbose)?;
-        }
+        Commands::Table(cmd) => match cmd {
+            TableCommands::Show {
+                archive,
+                table_type,
+                limit,
+                occupied_only,
+            } => {
+                commands::table::show(&archive, table_type, limit, occupied_only)?;
+            }
+            TableCommands::Analyze { archive, detailed } => {
+                commands::table::analyze(&archive, detailed)?;
+            }
+        },
+
+        Commands::Hash(cmd) => match cmd {
+            HashCommands::Generate {
+                filename,
+                hash_type,
+                all,
+            } => {
+                commands::hash::generate(&filename, hash_type, all)?;
+            }
+            HashCommands::Compare {
+                filename1,
+                filename2,
+            } => {
+                commands::hash::compare(&filename1, &filename2)?;
+            }
+            HashCommands::Jenkins { filename } => {
+                commands::hash::jenkins(&filename)?;
+            }
+        },
+
+        Commands::Crypto(cmd) => match cmd {
+            CryptoCommands::Test { test } => {
+                commands::crypto::test(test.as_deref())?;
+            }
+        },
+
         Commands::Completion { shell } => {
             // Generate completion script for the specified shell
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut io::stdout());
         }
-        Commands::Debug(debug_cmd) => match debug_cmd {
-            DebugCommands::Info { archive } => {
-                commands::debug::info(&archive)?;
-            }
-            DebugCommands::Crypto => {
-                commands::debug::crypto()?;
-            }
-            DebugCommands::Hash {
-                filename,
-                hash_type,
-                all,
-                jenkins,
-            } => {
-                commands::debug::hash(&filename, hash_type.as_deref(), all, jenkins)?;
-            }
-            DebugCommands::HashCompare {
-                filename1,
-                filename2,
-            } => {
-                commands::debug::hash_compare(&filename1, &filename2)?;
-            }
-            DebugCommands::Tables {
-                archive,
-                table_type,
-                limit,
-            } => {
-                commands::debug::tables(&archive, table_type.as_deref(), limit)?;
-            }
-        },
     }
 
     Ok(())

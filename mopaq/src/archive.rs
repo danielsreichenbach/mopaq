@@ -32,6 +32,105 @@ trait ReadLittleEndian: Read {
 
 impl<R: Read> ReadLittleEndian for R {}
 
+/// Detailed information about an MPQ archive
+#[derive(Debug, Clone)]
+pub struct ArchiveInfo {
+    /// Path to the archive file
+    pub path: PathBuf,
+    /// Total file size in bytes
+    pub file_size: u64,
+    /// Archive offset (if MPQ data starts after user data)
+    pub archive_offset: u64,
+    /// MPQ format version
+    pub format_version: header::FormatVersion,
+    /// Number of files in the archive
+    pub file_count: usize,
+    /// Maximum file capacity (hash table size)
+    pub max_file_count: u32,
+    /// Sector size in bytes
+    pub sector_size: usize,
+    /// Archive is encrypted
+    pub is_encrypted: bool,
+    /// Archive has digital signature
+    pub has_signature: bool,
+    /// Signature status (if applicable)
+    pub signature_status: SignatureStatus,
+    /// Hash table information
+    pub hash_table_info: TableInfo,
+    /// Block table information
+    pub block_table_info: TableInfo,
+    /// HET table information (v3+)
+    pub het_table_info: Option<TableInfo>,
+    /// BET table information (v3+)
+    pub bet_table_info: Option<TableInfo>,
+    /// Hi-block table information (v2+)
+    pub hi_block_table_info: Option<TableInfo>,
+    /// Has (attributes) file
+    pub has_attributes: bool,
+    /// Has (listfile) file
+    pub has_listfile: bool,
+    /// User data information
+    pub user_data_info: Option<UserDataInfo>,
+    /// MD5 checksums status (v4)
+    pub md5_status: Option<Md5Status>,
+}
+
+/// Information about a table in the archive
+#[derive(Debug, Clone)]
+pub struct TableInfo {
+    /// Table size in entries (None if table failed to load)
+    pub size: Option<u32>,
+    /// Table offset in archive
+    pub offset: u64,
+    /// Compressed size (if applicable)
+    pub compressed_size: Option<u64>,
+    /// Whether the table failed to load
+    pub failed_to_load: bool,
+}
+
+/// User data information
+#[derive(Debug, Clone)]
+pub struct UserDataInfo {
+    /// User data header size
+    pub header_size: u32,
+    /// User data size
+    pub data_size: u32,
+}
+
+/// Digital signature status
+#[derive(Debug, Clone, PartialEq)]
+pub enum SignatureStatus {
+    /// No signature present
+    None,
+    /// Weak signature present and valid
+    WeakValid,
+    /// Weak signature present but invalid
+    WeakInvalid,
+    /// Strong signature present and valid
+    StrongValid,
+    /// Strong signature present but invalid
+    StrongInvalid,
+    /// Strong signature present but no public key available
+    StrongNoKey,
+}
+
+/// MD5 checksum verification status for v4 archives
+#[derive(Debug, Clone)]
+pub struct Md5Status {
+    /// Hash table MD5 valid
+    pub hash_table_valid: bool,
+    /// Block table MD5 valid
+    pub block_table_valid: bool,
+    /// Hi-block table MD5 valid
+    pub hi_block_table_valid: bool,
+    /// HET table MD5 valid
+    pub het_table_valid: bool,
+    /// BET table MD5 valid
+    pub bet_table_valid: bool,
+    /// MPQ header MD5 valid
+    pub header_valid: bool,
+}
+
 /// Options for opening MPQ archives
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
@@ -296,6 +395,172 @@ impl Archive {
     /// Get the path to the archive
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Get detailed information about the archive
+    pub fn get_info(&mut self) -> Result<ArchiveInfo> {
+        // Ensure tables are loaded
+        if self.hash_table.is_none() && self.het_table.is_none() {
+            self.load_tables()?;
+        }
+
+        // Get file size
+        let file_size = self.reader.get_ref().metadata()?.len();
+
+        // Count files
+        let file_count = if let Some(bet) = &self.bet_table {
+            bet.header.file_count as usize
+        } else if let Some(block_table) = &self.block_table {
+            // Count non-empty entries in block table
+            block_table
+                .entries()
+                .iter()
+                .filter(|entry| entry.file_size != 0)
+                .count()
+        } else {
+            0
+        };
+
+        // Get max file count
+        let max_file_count = if let Some(het) = &self.het_table {
+            het.header.max_file_count
+        } else {
+            self.header.hash_table_size
+        };
+
+        // Check for special files
+        let has_listfile = self.find_file("(listfile)")?.is_some();
+        let has_signature = self.find_file("(signature)")?.is_some();
+        let has_attributes = self.attributes.is_some() || self.find_file("(attributes)")?.is_some();
+
+        // Determine encryption status
+        let is_encrypted = if let Some(block_table) = &self.block_table {
+            use crate::tables::BlockEntry;
+            block_table
+                .entries()
+                .iter()
+                .any(|entry| (entry.flags & BlockEntry::FLAG_ENCRYPTED) != 0)
+        } else {
+            false
+        };
+
+        // TODO: Implement signature verification
+        let signature_status = if has_signature {
+            SignatureStatus::StrongNoKey // Placeholder
+        } else {
+            SignatureStatus::None
+        };
+
+        // Build table info
+        let hash_table_info = TableInfo {
+            size: Some(self.header.hash_table_size),
+            offset: self.header.get_hash_table_pos(),
+            compressed_size: self.header.v4_data.as_ref().map(|v4| v4.hash_table_size_64),
+            failed_to_load: self.hash_table.is_none() && self.header.hash_table_size > 0,
+        };
+
+        let block_table_info = TableInfo {
+            size: Some(self.header.block_table_size),
+            offset: self.header.get_block_table_pos(),
+            compressed_size: self
+                .header
+                .v4_data
+                .as_ref()
+                .map(|v4| v4.block_table_size_64),
+            failed_to_load: self.block_table.is_none() && self.header.block_table_size > 0,
+        };
+
+        let het_table_info = self.header.het_table_pos.and_then(|pos| {
+            if pos == 0 {
+                return None;
+            }
+
+            let compressed_size = self.header.v4_data.as_ref().map(|v4| v4.het_table_size_64);
+
+            Some(TableInfo {
+                size: self.het_table.as_ref().map(|het| het.header.max_file_count),
+                offset: pos,
+                compressed_size,
+                failed_to_load: self.het_table.is_none() && compressed_size.unwrap_or(0) > 0,
+            })
+        });
+
+        let bet_table_info = self.header.bet_table_pos.and_then(|pos| {
+            if pos == 0 {
+                return None;
+            }
+
+            let compressed_size = self.header.v4_data.as_ref().map(|v4| v4.bet_table_size_64);
+
+            Some(TableInfo {
+                size: self.bet_table.as_ref().map(|bet| bet.header.file_count),
+                offset: pos,
+                compressed_size,
+                failed_to_load: self.bet_table.is_none() && compressed_size.unwrap_or(0) > 0,
+            })
+        });
+
+        let hi_block_table_info = self.header.hi_block_table_pos.and_then(|pos| {
+            if pos == 0 {
+                return None;
+            }
+
+            Some(TableInfo {
+                size: if self.hi_block_table.is_some() {
+                    Some(self.header.block_table_size)
+                } else {
+                    None
+                },
+                offset: pos,
+                compressed_size: self
+                    .header
+                    .v4_data
+                    .as_ref()
+                    .map(|v4| v4.hi_block_table_size_64),
+                failed_to_load: self.hi_block_table.is_none(),
+            })
+        });
+
+        let user_data_info = self.user_data.as_ref().map(|ud| UserDataInfo {
+            header_size: ud.user_data_header_size,
+            data_size: ud.user_data_size,
+        });
+
+        // TODO: Implement MD5 verification for v4 archives
+        let md5_status = if self.header.v4_data.is_some() {
+            Some(Md5Status {
+                hash_table_valid: true, // Placeholder
+                block_table_valid: true,
+                hi_block_table_valid: true,
+                het_table_valid: true,
+                bet_table_valid: true,
+                header_valid: true,
+            })
+        } else {
+            None
+        };
+
+        Ok(ArchiveInfo {
+            path: self.path.clone(),
+            file_size,
+            archive_offset: self.archive_offset,
+            format_version: self.header.format_version,
+            file_count,
+            max_file_count,
+            sector_size: self.header.sector_size(),
+            is_encrypted,
+            has_signature,
+            signature_status,
+            hash_table_info,
+            block_table_info,
+            het_table_info,
+            bet_table_info,
+            hi_block_table_info,
+            has_attributes,
+            has_listfile,
+            user_data_info,
+            md5_status,
+        })
     }
 
     /// Get the hash table
@@ -678,7 +943,12 @@ impl Archive {
 
                 sector_crcs = Some(crcs);
             } else {
-                log::warn!("File has SECTOR_CRC flag but no room for CRC table");
+                log::debug!(
+                    "File has SECTOR_CRC flag but insufficient space for CRC table (offset_table_size={}, first_data_offset={}, needed={}). This is common in some MPQ implementations.",
+                    offset_table_size,
+                    first_data_offset,
+                    expected_crc_table_start + expected_crc_table_size
+                );
             }
         }
 

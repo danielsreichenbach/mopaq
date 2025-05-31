@@ -142,9 +142,9 @@ def main():
         else:
             print(f"✗ Rust example failed: {example_result.stderr}")
 
-        # Test 2: Once storm-cli create command is implemented
-        print("\nTest 2: Creating archive using storm-cli (when implemented)...")
-        print("Note: storm-cli create command not yet implemented")
+        # Test 2: Create archive using storm-cli
+        print("\nTest 2: Creating archive using storm-cli...")
+        run_storm_cli(['archive', 'create', 'test-data/v1/storm-cli-test.mpq', 'scripts/'])
         # This would be something like:
         # run_storm_cli(['create', 'test.mpq', temp_dir])
 

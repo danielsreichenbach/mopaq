@@ -1156,9 +1156,9 @@ Examples:
         print("\nTest archives created successfully!")
         print("\nYou can now test with:")
         print("  cargo test")
-        print("  cargo run --bin storm-cli -- list <archive>")
-        print("  cargo run --bin storm-cli -- verify <archive>")
-        print("  cargo run --bin storm-cli -- extract <archive>")
+        print("  cargo run --bin storm-cli -- file list <archive>")
+        print("  cargo run --bin storm-cli -- archive verify <archive>")
+        print("  cargo run --bin storm-cli -- file extract <archive>")
 
     elif args.command == 'verify':
         if args.type == 'encryption-table':

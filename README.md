@@ -167,28 +167,28 @@ storm-cli supports tab completion for bash, zsh, fish, and PowerShell.
 
 ```bash
 # List files in an archive
-storm-cli list StarCraft.mpq
+storm-cli file list StarCraft.mpq
 
 # Extract files
-storm-cli extract StarCraft.mpq --output ./extracted
+storm-cli file extract StarCraft.mpq --output ./extracted
 
 # Create a new archive
-storm-cli create my_mod.mpq ./mod_files
+storm-cli archive create my_mod.mpq ./mod_files
 
 # Verify archive integrity
-storm-cli verify WarCraft3.w3m
+storm-cli archive verify WarCraft3.w3m
 
-# Debug archive structure
-storm-cli debug info Diablo2.mpq
+# Show archive information
+storm-cli archive info Diablo2.mpq
 
 # Display table contents
-storm-cli debug tables Diablo2.mpq
+storm-cli table show Diablo2.mpq --table-type hash
 
 # Generate hash values for debugging
-storm-cli debug hash "(listfile)" --all
+storm-cli hash generate "(listfile)" --all
 
 # Compare hashes to check for collisions
-storm-cli debug hash-compare "file1.txt" "file2.txt"
+storm-cli hash compare "file1.txt" "file2.txt"
 ```
 
 ## Current Status
@@ -303,7 +303,7 @@ cargo bench
 cargo build --all
 
 # Run the CLI tool
-cargo run --bin storm-cli -- list test.mpq
+cargo run --bin storm-cli -- file list test.mpq
 ```
 
 ### Testing

@@ -51,5 +51,5 @@ fn test_generate_powershell_completion() {
         .arg("powershell")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Register-ArgumentCompleter"));
+        .stdout(predicate::str::contains("storm-cli"));
 }

@@ -35,61 +35,72 @@ cargo install storm-cli
 
 ## Usage
 
+Storm-cli uses a grouped command structure for better organization:
+
 ### Basic Commands
 
 ```bash
-# List files in an archive
-storm-cli list game.mpq
+# Archive operations
+storm-cli archive create game.mpq source/ --compression zlib
+storm-cli archive info game.mpq
+storm-cli archive verify game.mpq
 
-# Extract all files
-storm-cli extract game.mpq -t extracted/
+# File operations
+storm-cli file list game.mpq
+storm-cli file extract game.mpq war3map.j -o extracted/
+storm-cli file find game.mpq "*.mdx"
+storm-cli file info game.mpq war3map.j
 
-# Extract specific file
-storm-cli extract game.mpq -f "war3map.j" -t output/
+# Table operations
+storm-cli table show game.mpq --type hash
+storm-cli table analyze game.mpq
 
-# Create new archive
-storm-cli create new.mpq source_folder/
-
-# Find a file
-storm-cli find game.mpq "Units\\Human\\Footman\\Footman.mdx"
-
-# Verify archive integrity
-storm-cli verify game.mpq
+# Hash utilities
+storm-cli hash generate "war3map.j" --all
+storm-cli hash compare file1.txt file2.txt
 ```
+
+For detailed command structure, see [COMMAND_STRUCTURE.md](COMMAND_STRUCTURE.md).
 
 ### Advanced Options
 
 ```bash
-# List with all entries (including unnamed)
-storm-cli list game.mpq --all
+# List with pattern filtering
+storm-cli file list game.mpq --pattern "*.blp" --regex
 
-# Create with specific compression
-storm-cli create archive.mpq files/ --compression zlib
+# Create with specific version and block size
+storm-cli archive create archive.mpq files/ --version 2 --block-size 4
+
+# Extract all files preserving paths
+storm-cli file extract game.mpq --preserve-path
 
 # Output as JSON
-storm-cli list game.mpq -o json
+storm-cli file list game.mpq -o json
 
 # Verbose output
-storm-cli extract game.mpq -vv
+storm-cli file extract game.mpq -vv
 
 # Exclude files when creating
-storm-cli create archive.mpq src/ --ignore "*.tmp" --ignore "*.log"
+storm-cli archive create archive.mpq src/ --ignore "*.tmp" --ignore "*.log"
+
+# Verify with CRC checking
+storm-cli archive verify game.mpq --check-crc --check-contents
 ```
 
-### Debug Commands
+### Advanced Commands
 
 ```bash
-# Show detailed archive information
-storm-cli debug info game.mpq
+# Show specific table contents
+storm-cli table show game.mpq --table-type block --limit 50
 
-# Display hash tables
-storm-cli debug tables game.mpq
+# Analyze table efficiency
+storm-cli table analyze game.mpq --detailed
 
-# Calculate hash for a filename
-storm-cli debug hash "war3map.j"
+# Generate specific hash type
+storm-cli hash generate "war3map.j" --type file-key
 
-# Compare hashes between filenames
-storm-cli debug hash-compare "file1.txt" "file2.txt"
+# Test cryptographic functions
+storm-cli crypto test --test hash
 ```
 
 ## Output Formats
@@ -142,65 +153,45 @@ For installation help:
 - `-q, --quiet` - Suppress non-essential output
 - `-o, --output <format>` - Output format: text, json, csv
 - `--no-color` - Disable colored output
+- `-c, --config <path>` - Path to configuration file
 
-### list
+### Command Groups
 
-List files in an MPQ archive.
+#### archive - Archive-level operations
 
-```bash
-storm-cli list <archive> [options]
-```
+- `create` - Create a new MPQ archive
+- `info` - Show detailed archive information
+- `verify` - Verify archive integrity
 
-Options:
+#### file - File operations within archives
 
-- `--all` - Show all entries including unnamed files
+- `list` - List files in an archive
+- `extract` - Extract files from an archive
+- `find` - Search for files by pattern
+- `info` - Show detailed file information
+- `add` - Add files to existing archive (TODO)
+- `remove` - Remove files from archive (TODO)
 
-### extract
+#### table - Low-level table operations
 
-Extract files from an MPQ archive.
+- `show` - Display table contents
+- `analyze` - Analyze table structure
 
-```bash
-storm-cli extract <archive> [options]
-```
+#### hash - Hash utilities
 
-Options:
+- `generate` - Generate hash values
+- `compare` - Compare hash values
+- `jenkins` - Generate Jenkins hash
 
-- `-f, --file <name>` - Extract specific file
-- `-t, --target <dir>` - Target directory (default: current)
+#### crypto - Cryptography utilities
 
-### create
+- `test` - Test cryptographic functions
 
-Create a new MPQ archive.
-
-```bash
-storm-cli create <archive> <inputs...> [options]
-```
-
-Options:
-
-- `-c, --compression <type>` - Compression: none, zlib, bzip2, lzma
-- `-f, --format <version>` - MPQ format version (1-4)
-- `-i, --ignore <pattern>` - Ignore files matching pattern
-
-### find
-
-Find a specific file in an archive.
+For detailed command documentation, run:
 
 ```bash
-storm-cli find <archive> <filename>
+storm-cli <command-group> --help
 ```
-
-### verify
-
-Verify archive integrity.
-
-```bash
-storm-cli verify <archive> [options]
-```
-
-Options:
-
-- `--verbose` - Show detailed verification information
 
 ## Examples
 
@@ -208,16 +199,19 @@ Options:
 
 ```bash
 # Extract all files from a map
-storm-cli extract mymap.w3x -t mymap_extracted/
+storm-cli file extract mymap.w3x -o mymap_extracted/
 
 # Create a new map archive
-storm-cli create mymap.w3x map_files/ --compression zlib
+storm-cli archive create mymap.w3x map_files/ --compression zlib
 
 # Find the map script
-storm-cli find mymap.w3x "war3map.j"
+storm-cli file find mymap.w3x "war3map.j"
+
+# Get file information
+storm-cli file info mymap.w3x war3map.j
 
 # Verify map integrity
-storm-cli verify mymap.w3x --verbose
+storm-cli archive verify mymap.w3x --check-crc
 ```
 
 ### Batch Processing
@@ -225,14 +219,20 @@ storm-cli verify mymap.w3x --verbose
 ```bash
 # Extract all MPQ files in a directory
 for file in *.mpq; do
-    storm-cli extract "$file" -t "extracted/${file%.mpq}/"
+    storm-cli file extract "$file" -o "extracted/${file%.mpq}/"
 done
 
 # List contents of multiple archives as JSON
 for file in *.mpq; do
     echo "=== $file ==="
-    storm-cli list "$file" -o json
+    storm-cli file list "$file" -o json
 done > all_contents.json
+
+# Find all DDS textures across multiple archives
+for file in *.mpq; do
+    echo "=== $file ==="
+    storm-cli file find "$file" "*.dds"
+done
 ```
 
 ## License

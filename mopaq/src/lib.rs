@@ -57,7 +57,10 @@ pub mod special_files;
 pub mod tables;
 
 // Re-export commonly used types
-pub use archive::{Archive, FileEntry, FileInfo, OpenOptions};
+pub use archive::{
+    Archive, ArchiveInfo, FileEntry, FileInfo, Md5Status, OpenOptions, SignatureStatus, TableInfo,
+    UserDataInfo,
+};
 pub use builder::{ArchiveBuilder, ListfileOption};
 pub use error::{Error, Result};
 pub use header::{FormatVersion, MpqHeader};

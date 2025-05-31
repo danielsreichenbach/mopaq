@@ -1,13 +1,13 @@
-//! Integration tests for hash debug commands
+//! Integration tests for hash commands
 
 use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
-fn test_debug_hash_help() {
+fn test_hash_generate_help() {
     let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
+    cmd.arg("hash")
+        .arg("generate")
         .arg("--help")
         .assert()
         .success()
@@ -15,86 +15,30 @@ fn test_debug_hash_help() {
 }
 
 #[test]
-fn test_debug_hash_all() {
+fn test_hash_generate_all() {
     let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
+    cmd.arg("hash")
+        .arg("generate")
         .arg("test.txt")
         .arg("--all")
         .assert()
         .success()
-        .stdout(predicate::str::contains("TABLE_OFFSET"))
-        .stdout(predicate::str::contains("NAME_A"))
-        .stdout(predicate::str::contains("NAME_B"))
-        .stdout(predicate::str::contains("FILE_KEY"))
-        .stdout(predicate::str::contains("KEY2_MIX"));
+        .stdout(predicate::str::contains("Table offset"))
+        .stdout(predicate::str::contains("Name A"))
+        .stdout(predicate::str::contains("Name B"))
+        .stdout(predicate::str::contains("File key"))
+        .stdout(predicate::str::contains("Key2 mix"));
 }
 
 #[test]
-fn test_debug_hash_specific_type() {
+fn test_hash_generate_specific_type() {
     let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
+    cmd.arg("hash")
+        .arg("generate")
         .arg("test.txt")
         .arg("--hash-type")
         .arg("file-key")
         .assert()
         .success()
-        .stdout(predicate::str::contains("FILE_KEY"));
-}
-
-#[test]
-fn test_debug_hash_jenkins() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
-        .arg("test.txt")
-        .arg("--jenkins")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Jenkins hash"));
-}
-
-#[test]
-fn test_debug_hash_compare() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash-compare")
-        .arg("file1.txt")
-        .arg("file2.txt")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Comparing hash values"))
-        .stdout(predicate::str::contains("MPQ Hash comparison"))
-        .stdout(predicate::str::contains("Jenkins hash comparison"));
-}
-
-#[test]
-fn test_debug_hash_listfile() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
-        .arg("(listfile)")
-        .arg("--all")
-        .assert()
-        .success()
-        // Just check that it outputs hash values, don't check specific values
-        .stdout(predicate::str::contains("TABLE_OFFSET"))
-        .stdout(predicate::str::contains("NAME_A"))
-        .stdout(predicate::str::contains("NAME_B"))
-        .stdout(predicate::str::contains("FILE_KEY"))
-        .stdout(predicate::str::contains("0x")); // Contains hex values
-}
-
-#[test]
-fn test_debug_hash_invalid_type() {
-    let mut cmd = Command::cargo_bin("storm-cli").unwrap();
-    cmd.arg("debug")
-        .arg("hash")
-        .arg("test.txt")
-        .arg("--hash-type")
-        .arg("invalid")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Invalid hash type"));
+        .stdout(predicate::str::contains("0x82c45239"));
 }
