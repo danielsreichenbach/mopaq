@@ -4,10 +4,10 @@
 
 ### High Priority - Archive Writing
 
-- [ ] **Encryption support in ArchiveBuilder**
-  - [ ] Implement file encryption in `write_file` method
-  - [ ] Add FIX_KEY flag support
-  - [ ] Test encrypted file round-trips
+- [X] **Encryption support in ArchiveBuilder** ✅
+  - [X] Implement file encryption in `write_file` method ✅
+  - [X] Add FIX_KEY flag support ✅
+  - [X] Test encrypted file round-trips ✅
 
 - [ ] **Sector CRC support**
   - [ ] Generate CRC table for multi-sector files
@@ -127,7 +127,7 @@
   - [X] JSON output infrastructure implemented ✅
   - [X] `list` command supports JSON output ✅
   - [X] `extract` command supports JSON output ✅
-  - [ ] `create` command JSON output support
+  - [X] `create` command JSON output support
 
 ### Medium Priority
 

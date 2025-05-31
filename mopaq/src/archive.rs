@@ -1215,6 +1215,44 @@ pub struct FileEntry {
     pub flags: u32,
 }
 
+impl FileEntry {
+    /// Check if the file is compressed
+    pub fn is_compressed(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & (BlockEntry::FLAG_IMPLODE | BlockEntry::FLAG_COMPRESS)) != 0
+    }
+
+    /// Check if the file is encrypted
+    pub fn is_encrypted(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_ENCRYPTED) != 0
+    }
+
+    /// Check if the file uses fixed key encryption
+    pub fn has_fix_key(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_FIX_KEY) != 0
+    }
+
+    /// Check if the file is stored as a single unit
+    pub fn is_single_unit(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_SINGLE_UNIT) != 0
+    }
+
+    /// Check if the file has sector CRCs
+    pub fn has_sector_crc(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_SECTOR_CRC) != 0
+    }
+
+    /// Check if the file exists
+    pub fn exists(&self) -> bool {
+        use crate::tables::BlockEntry;
+        (self.flags & BlockEntry::FLAG_EXISTS) != 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

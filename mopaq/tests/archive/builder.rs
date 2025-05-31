@@ -377,3 +377,194 @@ fn test_different_format_versions() {
     assert_eq!(archive.header().format_version, FormatVersion::V3);
     assert_eq!(archive.header().header_size, 68);
 }
+
+#[test]
+fn test_encrypted_file_round_trip() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("encrypted.mpq");
+
+    // Test data
+    let test_data = b"This is secret encrypted data that should be protected!";
+
+    // Build archive with encrypted file
+    ArchiveBuilder::new()
+        .add_file_data_with_options(
+            test_data.to_vec(),
+            "secret.txt",
+            mopaq::compression::flags::ZLIB,
+            true, // Enable encryption
+            0,    // Default locale
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file is encrypted
+    let archive = Archive::open(&archive_path).unwrap();
+    if let Some(file_info) = archive.find_file("secret.txt").unwrap() {
+        assert!(file_info.is_encrypted());
+    } else {
+        panic!("Encrypted file not found");
+    }
+
+    // Verify we can decrypt and read it correctly
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let decrypted_data = archive.read_file("secret.txt").unwrap();
+    assert_eq!(decrypted_data, test_data);
+}
+
+#[test]
+fn test_encrypted_file_with_fix_key() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("fix_key.mpq");
+
+    // Test data
+    let test_data = b"FIX_KEY encrypted data";
+
+    // Build archive with FIX_KEY encrypted file
+    ArchiveBuilder::new()
+        .add_file_data_with_encryption(
+            test_data.to_vec(),
+            "fix_key.dat",
+            0,    // No compression
+            true, // Use FIX_KEY
+            0,    // Default locale
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file has both encrypted and fix_key flags
+    let archive = Archive::open(&archive_path).unwrap();
+    if let Some(file_info) = archive.find_file("fix_key.dat").unwrap() {
+        assert!(file_info.is_encrypted());
+        assert!(file_info.has_fix_key());
+    } else {
+        panic!("FIX_KEY encrypted file not found");
+    }
+
+    // Verify we can decrypt and read it correctly
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let decrypted_data = archive.read_file("fix_key.dat").unwrap();
+    assert_eq!(decrypted_data, test_data);
+}
+
+#[test]
+fn test_encrypted_large_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("encrypted_large.mpq");
+
+    // Create large data that spans multiple sectors
+    let large_data: Vec<u8> = (0..20000).map(|i| (i % 256) as u8).collect();
+
+    // Build archive with encrypted large file
+    ArchiveBuilder::new()
+        .block_size(3) // 4KB sectors
+        .add_file_data_with_options(
+            large_data.clone(),
+            "large_encrypted.bin",
+            mopaq::compression::flags::ZLIB,
+            true, // Enable encryption
+            0,    // Default locale
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file is encrypted and compressed
+    let archive = Archive::open(&archive_path).unwrap();
+    if let Some(file_info) = archive.find_file("large_encrypted.bin").unwrap() {
+        assert!(file_info.is_encrypted());
+        assert!(file_info.is_compressed());
+        assert!(!file_info.is_single_unit()); // Should be multi-sector
+    } else {
+        panic!("Large encrypted file not found");
+    }
+
+    // Verify we can decrypt and read it correctly
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let decrypted_data = archive.read_file("large_encrypted.bin").unwrap();
+    assert_eq!(decrypted_data, large_data);
+}
+
+#[test]
+fn test_mixed_encrypted_and_plain_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("mixed.mpq");
+
+    // Build archive with mix of encrypted and plain files
+    ArchiveBuilder::new()
+        .add_file_data(b"Plain text file".to_vec(), "plain.txt")
+        .add_file_data_with_options(
+            b"Encrypted file".to_vec(),
+            "encrypted.txt",
+            0,
+            true, // Encrypted
+            0,
+        )
+        .add_file_data_with_encryption(
+            b"FIX_KEY encrypted".to_vec(),
+            "fix_key.txt",
+            0,
+            true, // Use FIX_KEY
+            0,
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Open archive and verify all files
+    let mut archive = Archive::open(&archive_path).unwrap();
+
+    // Check plain file
+    let plain_info = archive.find_file("plain.txt").unwrap().unwrap();
+    assert!(!plain_info.is_encrypted());
+    let plain_data = archive.read_file("plain.txt").unwrap();
+    assert_eq!(plain_data, b"Plain text file");
+
+    // Check encrypted file
+    let enc_info = archive.find_file("encrypted.txt").unwrap().unwrap();
+    assert!(enc_info.is_encrypted());
+    assert!(!enc_info.has_fix_key());
+    let enc_data = archive.read_file("encrypted.txt").unwrap();
+    assert_eq!(enc_data, b"Encrypted file");
+
+    // Check FIX_KEY encrypted file
+    let fix_info = archive.find_file("fix_key.txt").unwrap().unwrap();
+    assert!(fix_info.is_encrypted());
+    assert!(fix_info.has_fix_key());
+    let fix_data = archive.read_file("fix_key.txt").unwrap();
+    assert_eq!(fix_data, b"FIX_KEY encrypted");
+}
+
+#[test]
+fn test_encrypted_compressed_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("enc_comp.mpq");
+
+    // Create compressible data
+    let data = "Compressible encrypted data! ".repeat(100);
+
+    // Build archive with encrypted and compressed file
+    ArchiveBuilder::new()
+        .add_file_data_with_options(
+            data.as_bytes().to_vec(),
+            "encrypted_compressed.txt",
+            mopaq::compression::flags::ZLIB,
+            true, // Enable encryption
+            0,    // Default locale
+        )
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify file is both encrypted and compressed
+    let archive = Archive::open(&archive_path).unwrap();
+    if let Some(file_info) = archive.find_file("encrypted_compressed.txt").unwrap() {
+        assert!(file_info.is_encrypted());
+        assert!(file_info.is_compressed());
+        assert!(file_info.compressed_size < file_info.file_size);
+    } else {
+        panic!("Encrypted compressed file not found");
+    }
+
+    // Verify we can decrypt and decompress correctly
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let decrypted_data = archive.read_file("encrypted_compressed.txt").unwrap();
+    assert_eq!(decrypted_data, data.as_bytes());
+}

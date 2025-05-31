@@ -43,6 +43,8 @@ struct PendingFile {
     compression: u8,
     /// Whether to encrypt the file
     encrypt: bool,
+    /// Whether to use FIX_KEY encryption (adjusts key by block position)
+    use_fix_key: bool,
     /// Locale code
     locale: u16,
 }
@@ -63,6 +65,8 @@ struct FileWriteParams<'a> {
     compression: u8,
     /// Whether to encrypt
     encrypt: bool,
+    /// Whether to use FIX_KEY encryption
+    use_fix_key: bool,
     /// Sector size
     sector_size: usize,
     /// File position in archive
@@ -138,6 +142,7 @@ impl ArchiveBuilder {
             archive_name: archive_name.to_string(),
             compression: self.default_compression,
             encrypt: false,
+            use_fix_key: false,
             locale: 0, // Neutral locale
         });
         self
@@ -157,6 +162,7 @@ impl ArchiveBuilder {
             archive_name: archive_name.to_string(),
             compression,
             encrypt,
+            use_fix_key: false,
             locale,
         });
         self
@@ -169,6 +175,7 @@ impl ArchiveBuilder {
             archive_name: archive_name.to_string(),
             compression: self.default_compression,
             encrypt: false,
+            use_fix_key: false,
             locale: 0,
         });
         self
@@ -188,6 +195,47 @@ impl ArchiveBuilder {
             archive_name: archive_name.to_string(),
             compression,
             encrypt,
+            use_fix_key: false,
+            locale,
+        });
+        self
+    }
+
+    /// Add a file with full encryption options including FIX_KEY support
+    pub fn add_file_with_encryption<P: AsRef<Path>>(
+        mut self,
+        path: P,
+        archive_name: &str,
+        compression: u8,
+        use_fix_key: bool,
+        locale: u16,
+    ) -> Self {
+        self.pending_files.push(PendingFile {
+            source: FileSource::Path(path.as_ref().to_path_buf()),
+            archive_name: archive_name.to_string(),
+            compression,
+            encrypt: true,
+            use_fix_key,
+            locale,
+        });
+        self
+    }
+
+    /// Add file data with full encryption options including FIX_KEY support
+    pub fn add_file_data_with_encryption(
+        mut self,
+        data: Vec<u8>,
+        archive_name: &str,
+        compression: u8,
+        use_fix_key: bool,
+        locale: u16,
+    ) -> Self {
+        self.pending_files.push(PendingFile {
+            source: FileSource::Data(data),
+            archive_name: archive_name.to_string(),
+            compression,
+            encrypt: true,
+            use_fix_key,
             locale,
         });
         self
@@ -251,6 +299,7 @@ impl ArchiveBuilder {
                     archive_name: "(listfile)".to_string(),
                     compression: self.default_compression,
                     encrypt: false,
+                    use_fix_key: false,
                     locale: 0,
                 });
             }
@@ -263,6 +312,7 @@ impl ArchiveBuilder {
                     archive_name: "(listfile)".to_string(),
                     compression: self.default_compression,
                     encrypt: false,
+                    use_fix_key: false,
                     locale: 0,
                 });
             }
@@ -314,6 +364,7 @@ impl ArchiveBuilder {
                 archive_name: &pending_file.archive_name,
                 compression: pending_file.compression,
                 encrypt: pending_file.encrypt,
+                use_fix_key: pending_file.use_fix_key,
                 sector_size,
                 file_pos,
             };
@@ -379,6 +430,7 @@ impl ArchiveBuilder {
             archive_name,
             compression,
             encrypt,
+            use_fix_key,
             sector_size,
             file_pos,
         } = params;
@@ -429,6 +481,9 @@ impl ArchiveBuilder {
             // Encrypt if needed
             let final_data = if *encrypt {
                 flags |= BlockEntry::FLAG_ENCRYPTED;
+                if *use_fix_key {
+                    flags |= BlockEntry::FLAG_FIX_KEY;
+                }
                 let key =
                     self.calculate_file_key(archive_name, *file_pos, file_data.len() as u32, flags);
                 let mut encrypted = compressed_data;
@@ -484,16 +539,22 @@ impl ArchiveBuilder {
             // Encrypt if needed
             if *encrypt {
                 flags |= BlockEntry::FLAG_ENCRYPTED;
+                if *use_fix_key {
+                    flags |= BlockEntry::FLAG_FIX_KEY;
+                }
                 let key =
                     self.calculate_file_key(archive_name, *file_pos, file_data.len() as u32, flags);
+
+                // Save original offsets for sector encryption
+                let original_offsets = sector_offsets.clone();
 
                 // Encrypt sector offset table
                 let offset_key = key.wrapping_sub(1);
                 self.encrypt_data_u32(&mut sector_offsets, offset_key);
 
-                // Encrypt each sector
+                // Encrypt each sector using the original (unencrypted) offsets
                 let mut encrypted_sectors = Vec::new();
-                for (i, offset_pair) in sector_offsets.windows(2).enumerate() {
+                for (i, offset_pair) in original_offsets.windows(2).enumerate() {
                     let start = (offset_pair[0] - data_start as u32) as usize;
                     let end = (offset_pair[1] - data_start as u32) as usize;
 
