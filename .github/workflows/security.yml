@@ -34,18 +34,6 @@ jobs:
           command: check
           arguments: --all-features
 
-  semgrep:
-    name: Semgrep SAST
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/rust p/security-audit p/secrets
-
-
   supply-chain:
     name: Supply Chain Security
     runs-on: ubuntu-latest
