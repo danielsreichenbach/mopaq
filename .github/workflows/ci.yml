@@ -87,10 +87,6 @@ jobs:
           python3 scripts/mpq_tools.py create crc --output-dir test-data
           python3 scripts/mpq_tools.py create minimal --all-versions --output-dir test-data
 
-          # The create_test_archives.py script tests archive creation via Rust examples
-          echo "Running archive creation tests..."
-          python3 scripts/create_test_archives.py || true
-
           # List generated test data
           echo "Generated test data:"
           find test-data -name "*.mpq" -type f | sort

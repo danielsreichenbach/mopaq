@@ -359,55 +359,6 @@ fn print_archive_info_csv(info: &ArchiveInfo) -> Result<(), io::Error> {
     Ok(())
 }
 
-/// Print verification results
-pub fn print_verify_result(
-    total: usize,
-    verified: usize,
-    errors: &[(String, String)],
-    format: OutputFormat,
-    quiet: bool,
-) -> Result<(), io::Error> {
-    if quiet {
-        return Ok(());
-    }
-
-    match format {
-        OutputFormat::Text => {
-            println!("\n{}", "Verification Summary".bold());
-            println!("{}", "=".repeat(50));
-            println!("Total files:    {}", total);
-            println!(
-                "Verified:       {} ({}%)",
-                verified,
-                (verified * 100) / total.max(1)
-            );
-            println!("Errors:         {}", errors.len());
-
-            if !errors.is_empty() {
-                println!("\n{}", "Errors:".red());
-                for (file, error) in errors {
-                    println!("  {} - {}", file, error);
-                }
-            }
-        }
-        OutputFormat::Json => {
-            let result = serde_json::json!({
-                "total": total,
-                "verified": verified,
-                "errors": errors.iter().map(|(f, e)| {
-                    serde_json::json!({"file": f, "error": e})
-                }).collect::<Vec<_>>()
-            });
-            print_json(&result)?;
-        }
-        OutputFormat::Csv => {
-            println!("total,verified,errors");
-            println!("{},{},{}", total, verified, errors.len());
-        }
-    }
-    Ok(())
-}
-
 /// Print file list
 pub fn print_file_list(
     files: &[String],

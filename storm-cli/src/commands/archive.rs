@@ -2,12 +2,13 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use mopaq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption, OpenOptions};
+use mopaq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption, OpenOptions, SignatureStatus};
+use serde_json;
 use std::path::Path;
 use walkdir::WalkDir;
 
-use crate::output::{print_archive_info, print_verify_result};
-use crate::GLOBAL_OPTS;
+use crate::output::{print_archive_info, print_json};
+use crate::{OutputFormat, GLOBAL_OPTS};
 
 #[derive(Debug, Clone)]
 pub struct CreateOptions {
@@ -153,72 +154,456 @@ pub fn info(archive_path: &str) -> Result<()> {
 }
 
 /// Verify archive integrity
-pub fn verify(archive_path: &str, _check_crc: bool, check_contents: bool) -> Result<()> {
+pub fn verify(archive_path: &str, check_crc: bool, check_contents: bool) -> Result<()> {
     let global_opts = GLOBAL_OPTS.get().expect("Global options not set");
 
-    if !global_opts.quiet {
+    if !global_opts.quiet && global_opts.output == OutputFormat::Text {
         println!("Verifying archive: {}", archive_path.cyan());
     }
 
     let options = OpenOptions::new();
-    // TODO: Add checksum verification when available
-    // if check_crc {
-    //     options.verify_checksums(true);
-    // }
-
     let mut archive = Archive::open_with_options(archive_path, options)?;
+
+    // Get archive info for detailed verification information
+    let archive_info = archive.get_info()?;
+
+    // Start verification results
+    let mut verification_results = VerificationResults {
+        archive_path: archive_path.to_string(),
+        format_version: archive_info.format_version,
+        total_files: 0,
+        verified_files: 0,
+        errors: Vec::new(),
+        warnings: Vec::new(),
+        header_checks: HeaderChecks::default(),
+        table_checks: TableChecks::default(),
+        file_checks: FileChecks::default(),
+    };
+
+    // Check archive header and tables integrity
+    verification_results.header_checks.signature_valid = true; // MPQ signature already verified during open
+    verification_results.header_checks.version_supported = matches!(
+        archive_info.format_version,
+        FormatVersion::V1 | FormatVersion::V2 | FormatVersion::V3 | FormatVersion::V4
+    );
+
+    // Check table integrity
+    verification_results.table_checks.hash_table_loaded =
+        !archive_info.hash_table_info.failed_to_load;
+    verification_results.table_checks.block_table_loaded =
+        !archive_info.block_table_info.failed_to_load;
+
+    if let Some(het_info) = &archive_info.het_table_info {
+        verification_results.table_checks.het_table_loaded = Some(!het_info.failed_to_load);
+    }
+    if let Some(bet_info) = &archive_info.bet_table_info {
+        verification_results.table_checks.bet_table_loaded = Some(!bet_info.failed_to_load);
+    }
+
+    // Check MD5 checksums if available (v4 archives)
+    if let Some(md5_status) = &archive_info.md5_status {
+        verification_results.table_checks.md5_checksums = Some(Md5Checks {
+            header_valid: md5_status.header_valid,
+            hash_table_valid: md5_status.hash_table_valid,
+            block_table_valid: md5_status.block_table_valid,
+            hi_block_table_valid: md5_status.hi_block_table_valid,
+            het_table_valid: md5_status.het_table_valid,
+            bet_table_valid: md5_status.bet_table_valid,
+        });
+    }
+
+    // Check digital signature
+    verification_results.header_checks.signature_status =
+        Some(archive_info.signature_status.clone());
+
+    // Verify individual files
     let file_entries = archive.list()?;
     let files: Vec<String> = file_entries.into_iter().map(|e| e.name).collect();
-
-    let mut total_files = 0;
-    let mut verified_files = 0;
-    let mut errors = Vec::new();
+    verification_results.total_files = files.len();
 
     for filename in &files {
-        total_files += 1;
+        // First check if file exists in archive
+        if archive.find_file(filename)?.is_some() {
+            verification_results.file_checks.files_found += 1;
 
-        if check_contents {
-            // Try to read the file to verify it can be decompressed
-            match archive.read_file(filename) {
-                Ok(_) => {
-                    verified_files += 1;
-                    if global_opts.verbose > 0 && !global_opts.quiet {
-                        println!("{} {}", "✓".green(), filename);
+            if check_contents {
+                // Try to read the file to verify it can be decompressed
+                match archive.read_file(filename) {
+                    Ok(data) => {
+                        verification_results.verified_files += 1;
+                        verification_results.file_checks.files_readable += 1;
+
+                        // TODO: When CRC checking is implemented, verify sector CRCs here
+                        if check_crc {
+                            // For now, just note that CRC checking was requested but not available
+                            verification_results.warnings.push(format!(
+                                "CRC verification requested but not yet implemented for file: {}",
+                                filename
+                            ));
+                        }
+
+                        if global_opts.verbose > 0
+                            && !global_opts.quiet
+                            && global_opts.output == OutputFormat::Text
+                        {
+                            println!("{} {} ({} bytes)", "✓".green(), filename, data.len());
+                        }
+                    }
+                    Err(e) => {
+                        verification_results
+                            .errors
+                            .push((filename.clone(), e.to_string()));
+                        verification_results.file_checks.files_corrupted += 1;
+                        if global_opts.verbose > 0
+                            && !global_opts.quiet
+                            && global_opts.output == OutputFormat::Text
+                        {
+                            println!("{} {} - {}", "✗".red(), filename, e);
+                        }
                     }
                 }
-                Err(e) => {
-                    errors.push((filename.clone(), e.to_string()));
-                    if global_opts.verbose > 0 && !global_opts.quiet {
-                        println!("{} {} - {}", "✗".red(), filename, e);
-                    }
+            } else {
+                // File found, basic verification passed
+                verification_results.verified_files += 1;
+                if global_opts.verbose > 0
+                    && !global_opts.quiet
+                    && global_opts.output == OutputFormat::Text
+                {
+                    println!("{} {}", "✓".green(), filename);
                 }
             }
         } else {
-            // Just check if file exists in archive by trying to find it
-            if archive.find_file(filename)?.is_some() {
-                verified_files += 1;
-                if global_opts.verbose > 0 && !global_opts.quiet {
-                    println!("{} {}", "✓".green(), filename);
-                }
-            } else {
-                errors.push((filename.clone(), "File not found".to_string()));
-                if global_opts.verbose > 0 && !global_opts.quiet {
-                    println!("{} {} - File not found", "✗".red(), filename);
-                }
+            verification_results
+                .errors
+                .push((filename.clone(), "File not found in tables".to_string()));
+            verification_results.file_checks.files_missing += 1;
+            if global_opts.verbose > 0
+                && !global_opts.quiet
+                && global_opts.output == OutputFormat::Text
+            {
+                println!("{} {} - File not found", "✗".red(), filename);
             }
         }
     }
 
-    print_verify_result(
-        total_files,
-        verified_files,
-        &errors,
-        global_opts.output,
-        global_opts.quiet,
-    )?;
+    // Print detailed verification results
+    print_detailed_verify_result(&verification_results, global_opts.output, global_opts.quiet)?;
 
-    if !errors.is_empty() {
-        anyhow::bail!("Verification failed with {} errors", errors.len());
+    if !verification_results.errors.is_empty() {
+        anyhow::bail!(
+            "Verification failed with {} errors",
+            verification_results.errors.len()
+        );
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+struct VerificationResults {
+    archive_path: String,
+    format_version: FormatVersion,
+    total_files: usize,
+    verified_files: usize,
+    errors: Vec<(String, String)>,
+    warnings: Vec<String>,
+    header_checks: HeaderChecks,
+    table_checks: TableChecks,
+    file_checks: FileChecks,
+}
+
+#[derive(Debug, Default)]
+struct HeaderChecks {
+    signature_valid: bool,
+    version_supported: bool,
+    signature_status: Option<SignatureStatus>,
+}
+
+#[derive(Debug, Default)]
+struct TableChecks {
+    hash_table_loaded: bool,
+    block_table_loaded: bool,
+    het_table_loaded: Option<bool>,
+    bet_table_loaded: Option<bool>,
+    md5_checksums: Option<Md5Checks>,
+}
+
+#[derive(Debug)]
+struct Md5Checks {
+    header_valid: bool,
+    hash_table_valid: bool,
+    block_table_valid: bool,
+    hi_block_table_valid: bool,
+    het_table_valid: bool,
+    bet_table_valid: bool,
+}
+
+#[derive(Debug, Default)]
+struct FileChecks {
+    files_found: usize,     // Files that exist in the archive tables
+    files_readable: usize, // Files that can be successfully read/decompressed (subset of files_found)
+    files_missing: usize,  // Files listed but not found in tables
+    files_corrupted: usize, // Files found but failed to read/decompress (subset of files_found)
+}
+
+fn print_detailed_verify_result(
+    results: &VerificationResults,
+    format: OutputFormat,
+    quiet: bool,
+) -> Result<()> {
+    if quiet {
+        return Ok(());
+    }
+
+    match format {
+        OutputFormat::Text => {
+            println!("\n{}", "Archive Verification Report".bold());
+            println!("{}", "=".repeat(60));
+            println!("Archive: {}", results.archive_path.cyan());
+            println!("Format: MPQ v{}", results.format_version as u16 + 1);
+
+            // Header verification
+            println!("\n{}", "Header Verification".bold());
+            println!("{}", "-".repeat(60));
+            println!(
+                "MPQ Signature:      {}",
+                if results.header_checks.signature_valid {
+                    "Valid".green()
+                } else {
+                    "Invalid".red()
+                }
+            );
+            println!(
+                "Format Version:     {}",
+                if results.header_checks.version_supported {
+                    format!("Supported (v{})", results.format_version as u16 + 1).green()
+                } else {
+                    "Unsupported".red()
+                }
+            );
+
+            if let Some(sig_status) = &results.header_checks.signature_status {
+                println!(
+                    "Digital Signature:  {}",
+                    match sig_status {
+                        SignatureStatus::None => "No signature".dimmed(),
+                        SignatureStatus::WeakValid => "Weak signature (Valid)".green(),
+                        SignatureStatus::WeakInvalid => "Weak signature (Invalid)".red(),
+                        SignatureStatus::StrongValid => "Strong signature (Valid)".green(),
+                        SignatureStatus::StrongInvalid => "Strong signature (Invalid)".red(),
+                        SignatureStatus::StrongNoKey => "Strong signature (No public key)".yellow(),
+                    }
+                );
+            }
+
+            // Table verification
+            println!("\n{}", "Table Verification".bold());
+            println!("{}", "-".repeat(60));
+            println!(
+                "Hash Table:         {}",
+                if results.table_checks.hash_table_loaded {
+                    "Loaded successfully".green()
+                } else {
+                    "Failed to load".red()
+                }
+            );
+            println!(
+                "Block Table:        {}",
+                if results.table_checks.block_table_loaded {
+                    "Loaded successfully".green()
+                } else {
+                    "Failed to load".red()
+                }
+            );
+
+            if let Some(het_loaded) = results.table_checks.het_table_loaded {
+                println!(
+                    "HET Table:          {}",
+                    if het_loaded {
+                        "Loaded successfully".green()
+                    } else {
+                        "Failed to load".red()
+                    }
+                );
+            }
+
+            if let Some(bet_loaded) = results.table_checks.bet_table_loaded {
+                println!(
+                    "BET Table:          {}",
+                    if bet_loaded {
+                        "Loaded successfully".green()
+                    } else {
+                        "Failed to load".red()
+                    }
+                );
+            }
+
+            // MD5 checksums (v4 only)
+            if let Some(md5) = &results.table_checks.md5_checksums {
+                println!("\n{}", "MD5 Checksum Verification (v4)".bold());
+                println!("{}", "-".repeat(60));
+                println!(
+                    "Header MD5:         {}",
+                    if md5.header_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+                println!(
+                    "Hash Table MD5:     {}",
+                    if md5.hash_table_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+                println!(
+                    "Block Table MD5:    {}",
+                    if md5.block_table_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+                println!(
+                    "Hi-Block Table MD5: {}",
+                    if md5.hi_block_table_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+                println!(
+                    "HET Table MD5:      {}",
+                    if md5.het_table_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+                println!(
+                    "BET Table MD5:      {}",
+                    if md5.bet_table_valid {
+                        "Valid".green()
+                    } else {
+                        "Invalid".red()
+                    }
+                );
+            }
+
+            // File verification summary
+            println!("\n{}", "File Verification Summary".bold());
+            println!("{}", "-".repeat(60));
+            println!("Total Files:        {}", results.total_files);
+            println!(
+                "Files Found:        {}",
+                results.file_checks.files_found.to_string().green()
+            );
+            println!(
+                "Files Readable:     {}",
+                results.file_checks.files_readable.to_string().green()
+            );
+            println!(
+                "Files Missing:      {}",
+                if results.file_checks.files_missing > 0 {
+                    results.file_checks.files_missing.to_string().red()
+                } else {
+                    results.file_checks.files_missing.to_string().dimmed()
+                }
+            );
+            println!(
+                "Files Corrupted:    {}",
+                if results.file_checks.files_corrupted > 0 {
+                    results.file_checks.files_corrupted.to_string().red()
+                } else {
+                    results.file_checks.files_corrupted.to_string().dimmed()
+                }
+            );
+
+            println!(
+                "\nVerified:           {} / {} ({}%)",
+                results.verified_files.to_string().green(),
+                results.total_files,
+                (results.verified_files * 100) / results.total_files.max(1)
+            );
+
+            // Warnings
+            if !results.warnings.is_empty() {
+                println!("\n{}", "Warnings:".yellow());
+                for warning in &results.warnings {
+                    println!("  ⚠ {}", warning);
+                }
+            }
+
+            // Errors
+            if !results.errors.is_empty() {
+                println!("\n{}", "Errors:".red());
+                for (file, error) in &results.errors {
+                    println!("  ✗ {} - {}", file, error);
+                }
+            }
+
+            // Overall status
+            println!("\n{}", "Overall Status".bold());
+            println!("{}", "=".repeat(60));
+            if results.errors.is_empty() {
+                println!("{} Archive verification PASSED", "✓".green());
+            } else {
+                println!("{} Archive verification FAILED", "✗".red());
+            }
+        }
+        OutputFormat::Json => {
+            let json_result = serde_json::json!({
+                "archive": results.archive_path,
+                "format_version": results.format_version as u16 + 1,
+                "total_files": results.total_files,
+                "verified_files": results.verified_files,
+                "header_checks": {
+                    "signature_valid": results.header_checks.signature_valid,
+                    "version_supported": results.header_checks.version_supported,
+                    "signature_status": format!("{:?}", results.header_checks.signature_status),
+                },
+                "table_checks": {
+                    "hash_table_loaded": results.table_checks.hash_table_loaded,
+                    "block_table_loaded": results.table_checks.block_table_loaded,
+                    "het_table_loaded": results.table_checks.het_table_loaded,
+                    "bet_table_loaded": results.table_checks.bet_table_loaded,
+                    "md5_checksums": results.table_checks.md5_checksums.as_ref().map(|md5| {
+                        serde_json::json!({
+                            "header_valid": md5.header_valid,
+                            "hash_table_valid": md5.hash_table_valid,
+                            "block_table_valid": md5.block_table_valid,
+                            "hi_block_table_valid": md5.hi_block_table_valid,
+                            "het_table_valid": md5.het_table_valid,
+                            "bet_table_valid": md5.bet_table_valid,
+                        })
+                    }),
+                },
+                "file_checks": {
+                    "files_found": results.file_checks.files_found,
+                    "files_readable": results.file_checks.files_readable,
+                    "files_missing": results.file_checks.files_missing,
+                    "files_corrupted": results.file_checks.files_corrupted,
+                },
+                "warnings": results.warnings,
+                "errors": results.errors.iter().map(|(f, e)| {
+                    serde_json::json!({"file": f, "error": e})
+                }).collect::<Vec<_>>(),
+                "passed": results.errors.is_empty(),
+            });
+            print_json(&json_result)?;
+        }
+        OutputFormat::Csv => {
+            println!("metric,value");
+            println!("archive,{}", results.archive_path);
+            println!("format_version,{}", results.format_version as u16 + 1);
+            println!("total_files,{}", results.total_files);
+            println!("verified_files,{}", results.verified_files);
+            println!("errors,{}", results.errors.len());
+            println!("warnings,{}", results.warnings.len());
+            println!("passed,{}", results.errors.is_empty());
+        }
     }
 
     Ok(())
