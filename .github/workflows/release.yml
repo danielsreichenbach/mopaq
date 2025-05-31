@@ -68,14 +68,8 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             binary: storm-cli.exe
-          - target: aarch64-pc-windows-msvc
-            os: windows-latest
-            binary: storm-cli.exe
 
           # macOS
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            binary: storm-cli
           - target: aarch64-apple-darwin
             os: macos-latest
             binary: storm-cli
