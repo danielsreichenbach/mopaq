@@ -80,8 +80,8 @@ fn main() -> Result<()> {
     let large = archive.read_file("large_encrypted.bin")?;
     println!("large_encrypted.bin: {} bytes", large.len());
 
-    // Clean up
-    std::fs::remove_file("encrypted_example.mpq").ok();
+    // Don't clean up - keep the file for testing
+    println!("\nArchive saved as: encrypted_example.mpq");
 
     Ok(())
 }
