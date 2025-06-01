@@ -459,14 +459,15 @@ impl ArchiveBuilder {
                         compressed.len()
                     );
                     flags |= BlockEntry::FLAG_COMPRESS;
-                    // For non-zlib compression, prepend the compression type byte
-                    if *compression != compression_flags::ZLIB {
+                    // For encrypted files, always prepend compression type byte
+                    // For unencrypted files, zlib can be stored without type byte for compatibility
+                    if *encrypt || *compression != compression_flags::ZLIB {
                         let mut final_data = Vec::with_capacity(1 + compressed.len());
                         final_data.push(*compression);
                         final_data.extend_from_slice(&compressed);
                         final_data
                     } else {
-                        // Zlib can be stored without type byte for compatibility
+                        // Zlib can be stored without type byte for compatibility (unencrypted only)
                         compressed
                     }
                 } else {
@@ -522,7 +523,15 @@ impl ArchiveBuilder {
                     let compressed = compress(sector_bytes, *compression)?;
                     if compressed.len() < sector_bytes.len() {
                         flags |= BlockEntry::FLAG_COMPRESS;
-                        compressed
+                        // For encrypted files, always prepend compression type byte to each sector
+                        if *encrypt {
+                            let mut final_sector = Vec::with_capacity(1 + compressed.len());
+                            final_sector.push(*compression);
+                            final_sector.extend_from_slice(&compressed);
+                            final_sector
+                        } else {
+                            compressed
+                        }
                     } else {
                         sector_bytes.to_vec()
                     }
