@@ -206,9 +206,9 @@ enum FileCommands {
         /// File to extract (if not specified, extracts all)
         file: Option<String>,
 
-        /// Output directory or file
-        #[arg(short, long)]
-        output: Option<String>,
+        /// Target directory or file for extraction
+        #[arg(short = 't', long = "target-directory")]
+        target_directory: Option<String>,
 
         /// Preserve directory structure
         #[arg(short = 'p', long)]
@@ -502,13 +502,13 @@ fn main() -> Result<()> {
             FileCommands::Extract {
                 archive,
                 file,
-                output,
+                target_directory,
                 preserve_path,
             } => {
                 commands::file::extract(
                     &archive,
                     file.as_deref(),
-                    output.as_deref(),
+                    target_directory.as_deref(),
                     preserve_path,
                 )?;
             }
