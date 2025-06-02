@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use mopaq::crypto::{decrypt_block, decrypt_dword, encrypt_block, ENCRYPTION_TABLE};
+use std::hint::black_box;
 
 fn bench_encryption_table_access(c: &mut Criterion) {
     c.bench_function("encryption_table_access", |b| {

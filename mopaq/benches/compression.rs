@@ -1,7 +1,8 @@
 //! Compression benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use mopaq::compression::{compress, decompress, flags};
+use std::hint::black_box;
 
 fn create_test_data(size: usize, pattern: &str) -> Vec<u8> {
     let mut data = Vec::with_capacity(size);
