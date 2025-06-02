@@ -104,7 +104,7 @@ All MPQ archives contain some combination of these elements, depending on versio
 | Strong digital signature | ❌ | ✅ | ✅ | ✅ | Added for WoW and later games |
 | **Language Support** |
 | Multiple language versions | ✅ | ✅ | ✅ | ✅ | Using locale codes |
-| Multiple platform versions | ✅ | ✅ | ✅ | ✅ | Using platform codes |
+| Multiple platform versions | ✅ | ✅ | ✅ | ✅ | Platform codes (vestigial - always 0) |
 | **Special Files** |
 | (listfile) support | ✅ | ✅ | ✅ | ✅ | List of filenames in the archive |
 | (attributes) support | ✅ | ✅ | ✅ | ✅ | File attributes data |
@@ -322,8 +322,11 @@ struct MpqHashEntry {
     /// The language of the file (Windows LANGID)
     locale: u16,  // 0 = default/neutral
 
-    /// The platform the file is used for
-    platform: u16,  // 0 = default platform
+    /// The platform the file is used for (vestigial field)
+    /// NOTE: This field exists in the format but is always 0 in practice.
+    /// Blizzard uses separate archives (e.g., base-Win.MPQ, base-OSX.MPQ)
+    /// instead of platform codes within archives.
+    platform: u16,  // Always 0 in all known archives
 
     /// Block table index or special value:
     /// - 0xFFFFFFFF: Empty entry, has always been empty
@@ -1391,6 +1394,9 @@ The implementation details of the strong signature are not fully documented publ
 4. Format v3 introduced optional HET and BET tables that can replace hash and block tables
 5. Format v4 added MD5 checksums for the tables and header integrity verification
 6. Archives in newer games (since 2014) have been replaced by the CASC format
+7. Platform codes in hash table entries are a vestigial feature - all known MPQ archives use platform=0.
+   Blizzard opted to use separate archives for platform-specific files (e.g., base-Win.MPQ, base-OSX.MPQ)
+   rather than utilizing the platform field
 
 ### Test Vectors for Implementation Verification
 

@@ -15,7 +15,7 @@ pub struct HashEntry {
     pub name_2: u32,
     /// The language of the file (Windows LANGID)
     pub locale: u16,
-    /// The platform the file is used for
+    /// The platform the file is used for (vestigial - always 0 in practice)
     pub platform: u16,
     /// Block table index or special value
     pub block_index: u32,

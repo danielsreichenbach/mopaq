@@ -716,7 +716,7 @@ impl ArchiveBuilder {
                     name_1: name_a,
                     name_2: name_b,
                     locale,
-                    platform: 0,
+                    platform: 0, // Always 0 - platform codes are vestigial
                     block_index,
                 };
                 break;

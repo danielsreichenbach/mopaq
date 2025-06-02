@@ -85,6 +85,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Both `storm-cli archive list` and `storm-cli file list` work identically
   - ✅ All options and filters are supported in both commands
 
+### 📚 Documentation
+
+- **Platform Codes Clarification**
+  - ✅ Documented that platform codes in hash table entries are vestigial
+  - ✅ Analysis revealed all known MPQ archives use platform=0
+  - ✅ Updated documentation to reflect that Blizzard uses separate archives instead
+  - ✅ Added code comments explaining the unused nature of this field
+
 ### 🚧 Work in Progress
 
 #### CLI Tool (`storm-cli`)
