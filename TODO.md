@@ -14,12 +14,19 @@
   - [X] Add `add_file_data_with_options` method ✅
   - [X] Support for both single-unit and multi-sector encrypted files ✅
 
-- [ ] **Sector CRC support**
+- [X] **Sector CRC support** ✅
   - [X] CRC validation in archive reading (multi-sector files) ✅
-  - [X] Generate CRC table for multi-sector files
-  - [X] Add CRC generation to ArchiveBuilder
-  - [X] Add FLAG_SECTOR_CRC support in ArchiveBuilder
-  - [X] Test CRC validation round-trips
+  - [X] Generate CRC table for multi-sector files ✅
+  - [X] Add CRC generation to ArchiveBuilder ✅
+  - [X] Add FLAG_SECTOR_CRC support in ArchiveBuilder ✅
+  - [X] Test CRC validation round-trips ✅
+
+- [X] **Hi-block table writing (v2+)** ✅
+  - [X] Support 64-bit file positions in builder ✅
+  - [X] Create and populate HiBlockTable during archive building ✅
+  - [X] Write Hi-block table after block table ✅
+  - [X] Update header with hi_block_table_pos ✅
+  - [X] Tests for Hi-block table generation ✅
 
 - [ ] **Version 4 format support**
   - [ ] Implement v4 header writing with MD5 checksums

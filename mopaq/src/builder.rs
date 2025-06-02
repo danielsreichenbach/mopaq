@@ -4,7 +4,7 @@ use crate::{
     compression::{compress, flags as compression_flags},
     crypto::{encrypt_block, hash_string, hash_type},
     header::FormatVersion,
-    tables::{BlockEntry, BlockTable, HashEntry, HashTable},
+    tables::{BlockEntry, BlockTable, HashEntry, HashTable, HiBlockTable},
     Error, Result,
 };
 use std::fs::{self};
@@ -69,8 +69,18 @@ struct FileWriteParams<'a> {
     use_fix_key: bool,
     /// Sector size
     sector_size: usize,
-    /// File position in archive
-    file_pos: u32,
+    /// File position in archive (64-bit for large archives)
+    file_pos: u64,
+}
+
+/// Parameters for writing the MPQ header
+struct HeaderWriteParams {
+    archive_size: u64,
+    hash_table_pos: u64,
+    block_table_pos: u64,
+    hash_table_size: u32,
+    block_table_size: u32,
+    hi_block_table_pos: Option<u64>,
 }
 
 /// Options for listfile generation
@@ -356,10 +366,15 @@ impl ArchiveBuilder {
         // Build tables and write files
         let mut hash_table = HashTable::new(hash_table_size as usize)?;
         let mut block_table = BlockTable::new(block_table_size as usize)?;
+        let mut hi_block_table = if self.version >= FormatVersion::V2 {
+            Some(HiBlockTable::new(block_table_size as usize))
+        } else {
+            None
+        };
 
         // Write all files and populate tables
         for (block_index, pending_file) in self.pending_files.iter().enumerate() {
-            let file_pos = writer.stream_position()? as u32;
+            let file_pos = writer.stream_position()?;
 
             // Read file data
             let file_data = match &pending_file.source {
@@ -387,13 +402,19 @@ impl ArchiveBuilder {
                 pending_file.locale,
             )?;
 
-            // Add to block table
+            // Add to block table and hi-block table if needed
             let block_entry = BlockEntry {
-                file_pos,
+                file_pos: file_pos as u32, // Low 32 bits
                 compressed_size: compressed_size as u32,
                 file_size: file_data.len() as u32,
                 flags: flags | BlockEntry::FLAG_EXISTS,
             };
+
+            // Store high 16 bits in hi-block table if needed
+            if let Some(ref mut hi_table) = hi_block_table {
+                let high_bits = (file_pos >> 32) as u16;
+                hi_table.set(block_index, high_bits);
+            }
 
             // Get mutable reference and update
             if let Some(entry) = block_table.get_mut(block_index) {
@@ -404,26 +425,40 @@ impl ArchiveBuilder {
         }
 
         // Write hash table
-        let hash_table_pos = writer.stream_position()? as u32;
+        let hash_table_pos = writer.stream_position()?;
         self.write_hash_table(writer, &hash_table)?;
 
         // Write block table
-        let block_table_pos = writer.stream_position()? as u32;
+        let block_table_pos = writer.stream_position()?;
         self.write_block_table(writer, &block_table)?;
 
+        // Write hi-block table if needed
+        let hi_block_table_pos = if let Some(ref hi_table) = hi_block_table {
+            if hi_table.is_needed() {
+                let pos = writer.stream_position()?;
+                self.write_hi_block_table(writer, hi_table)?;
+                Some(pos)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Calculate archive size
-        let archive_size = writer.stream_position()? as u32;
+        let archive_size = writer.stream_position()?;
 
         // Write header at the beginning
         writer.seek(SeekFrom::Start(0))?;
-        self.write_header(
-            writer,
+        let header_params = HeaderWriteParams {
             archive_size,
             hash_table_pos,
             block_table_pos,
             hash_table_size,
             block_table_size,
-        )?;
+            hi_block_table_pos,
+        };
+        self.write_header(writer, &header_params)?;
 
         Ok(())
     }
@@ -745,24 +780,29 @@ impl ArchiveBuilder {
         Ok(())
     }
 
-    /// Write the MPQ header
-    fn write_header<W: Write>(
+    /// Write the hi-block table
+    fn write_hi_block_table<W: Write>(
         &self,
         writer: &mut W,
-        archive_size: u32,
-        hash_table_pos: u32,
-        block_table_pos: u32,
-        hash_table_size: u32,
-        block_table_size: u32,
+        hi_block_table: &HiBlockTable,
     ) -> Result<()> {
+        // Hi-block table is not encrypted
+        for &entry in hi_block_table.entries() {
+            writer.write_u16_le(entry)?;
+        }
+        Ok(())
+    }
+
+    /// Write the MPQ header
+    fn write_header<W: Write>(&self, writer: &mut W, params: &HeaderWriteParams) -> Result<()> {
         // Write signature
         writer.write_u32_le(crate::signatures::MPQ_ARCHIVE)?;
 
         // Write header size
         writer.write_u32_le(self.version.header_size())?;
 
-        // Write archive size
-        writer.write_u32_le(archive_size)?;
+        // Write archive size (32-bit for v1, deprecated in v2+)
+        writer.write_u32_le(params.archive_size.min(u32::MAX as u64) as u32)?;
 
         // Write format version
         writer.write_u16_le(self.version as u16)?;
@@ -770,11 +810,11 @@ impl ArchiveBuilder {
         // Write block size
         writer.write_u16_le(self.block_size)?;
 
-        // Write table positions and sizes
-        writer.write_u32_le(hash_table_pos)?;
-        writer.write_u32_le(block_table_pos)?;
-        writer.write_u32_le(hash_table_size)?;
-        writer.write_u32_le(block_table_size)?;
+        // Write table positions and sizes (low 32 bits)
+        writer.write_u32_le(params.hash_table_pos as u32)?;
+        writer.write_u32_le(params.block_table_pos as u32)?;
+        writer.write_u32_le(params.hash_table_size)?;
+        writer.write_u32_le(params.block_table_size)?;
 
         // Write version-specific fields
         match self.version {
@@ -782,21 +822,21 @@ impl ArchiveBuilder {
                 // No additional fields
             }
             FormatVersion::V2 => {
-                // Hi-block table position (not used in new archives)
-                writer.write_u64_le(0)?;
+                // Hi-block table position
+                writer.write_u64_le(params.hi_block_table_pos.unwrap_or(0))?;
 
-                // High 16 bits of positions (not needed for new archives)
-                writer.write_u16_le(0)?; // hash_table_pos_hi
-                writer.write_u16_le(0)?; // block_table_pos_hi
+                // High 16 bits of positions
+                writer.write_u16_le((params.hash_table_pos >> 32) as u16)?; // hash_table_pos_hi
+                writer.write_u16_le((params.block_table_pos >> 32) as u16)?; // block_table_pos_hi
             }
             FormatVersion::V3 => {
                 // V2 fields
-                writer.write_u64_le(0)?; // hi_block_table_pos
-                writer.write_u16_le(0)?; // hash_table_pos_hi
-                writer.write_u16_le(0)?; // block_table_pos_hi
+                writer.write_u64_le(params.hi_block_table_pos.unwrap_or(0))?; // hi_block_table_pos
+                writer.write_u16_le((params.hash_table_pos >> 32) as u16)?; // hash_table_pos_hi
+                writer.write_u16_le((params.block_table_pos >> 32) as u16)?; // block_table_pos_hi
 
                 // V3 fields
-                writer.write_u64_le(archive_size as u64)?; // archive_size_64
+                writer.write_u64_le(params.archive_size)?; // archive_size_64
                 writer.write_u64_le(0)?; // bet_table_pos
                 writer.write_u64_le(0)?; // het_table_pos
             }
@@ -810,11 +850,12 @@ impl ArchiveBuilder {
     }
 
     /// Calculate file encryption key
-    fn calculate_file_key(&self, filename: &str, file_pos: u32, file_size: u32, flags: u32) -> u32 {
+    fn calculate_file_key(&self, filename: &str, file_pos: u64, file_size: u32, flags: u32) -> u32 {
         let base_key = hash_string(filename, hash_type::FILE_KEY);
 
         if flags & BlockEntry::FLAG_FIX_KEY != 0 {
-            (base_key.wrapping_add(file_pos)) ^ file_size
+            // For FIX_KEY, use only the low 32 bits of the file position
+            (base_key.wrapping_add(file_pos as u32)) ^ file_size
         } else {
             base_key
         }

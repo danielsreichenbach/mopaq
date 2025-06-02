@@ -224,6 +224,30 @@ impl HiBlockTable {
     pub fn get_file_pos_high(&self, index: usize) -> u64 {
         self.get(index).unwrap_or(0) as u64
     }
+
+    /// Create a new Hi-block table with the given size
+    pub fn new(size: usize) -> Self {
+        Self {
+            entries: vec![0; size],
+        }
+    }
+
+    /// Set a hi-block entry
+    pub fn set(&mut self, index: usize, value: u16) {
+        if let Some(entry) = self.entries.get_mut(index) {
+            *entry = value;
+        }
+    }
+
+    /// Get all entries
+    pub fn entries(&self) -> &[u16] {
+        &self.entries
+    }
+
+    /// Check if any entry has a non-zero value (i.e., if the table is needed)
+    pub fn is_needed(&self) -> bool {
+        self.entries.iter().any(|&v| v != 0)
+    }
 }
 
 #[cfg(test)]

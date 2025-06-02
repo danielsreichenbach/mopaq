@@ -397,6 +397,11 @@ impl Archive {
         &self.path
     }
 
+    /// Get the hi-block table if present (v2+ archives)
+    pub fn hi_block_table(&self) -> Option<&HiBlockTable> {
+        self.hi_block_table.as_ref()
+    }
+
     /// Get detailed information about the archive
     pub fn get_info(&mut self) -> Result<ArchiveInfo> {
         // Ensure tables are loaded

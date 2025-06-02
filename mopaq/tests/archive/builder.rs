@@ -568,3 +568,82 @@ fn test_encrypted_compressed_file() {
     let decrypted_data = archive.read_file("encrypted_compressed.txt").unwrap();
     assert_eq!(decrypted_data, data.as_bytes());
 }
+
+#[test]
+fn test_hi_block_table_creation_v2() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("hi_block_v2.mpq");
+
+    // Create archive with V2 format (supports Hi-block tables)
+    ArchiveBuilder::new()
+        .version(FormatVersion::V2)
+        .add_file_data(b"Test data for V2".to_vec(), "test.txt")
+        .add_file_data(b"Another file".to_vec(), "file2.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify archive can be opened and read
+    let archive = Archive::open(&archive_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V2);
+
+    // Check that hi_block_table_pos is set in header (even if 0)
+    assert!(archive.header().hi_block_table_pos.is_some());
+
+    // Verify files can be read
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let data1 = archive.read_file("test.txt").unwrap();
+    assert_eq!(data1, b"Test data for V2");
+    let data2 = archive.read_file("file2.txt").unwrap();
+    assert_eq!(data2, b"Another file");
+}
+
+#[test]
+fn test_hi_block_table_creation_v3() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("hi_block_v3.mpq");
+
+    // Create archive with V3 format (also supports Hi-block tables)
+    ArchiveBuilder::new()
+        .version(FormatVersion::V3)
+        .add_file_data(b"Test data for V3".to_vec(), "test.txt")
+        .add_file_data(b"V3 supports HET/BET".to_vec(), "advanced.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify archive
+    let archive = Archive::open(&archive_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V3);
+
+    // V3 should have hi_block_table_pos
+    assert!(archive.header().hi_block_table_pos.is_some());
+
+    // V3 should also have 64-bit archive size
+    assert!(archive.header().archive_size_64.is_some());
+
+    // Verify files
+    let mut archive = Archive::open(&archive_path).unwrap();
+    let data1 = archive.read_file("test.txt").unwrap();
+    assert_eq!(data1, b"Test data for V3");
+    let data2 = archive.read_file("advanced.txt").unwrap();
+    assert_eq!(data2, b"V3 supports HET/BET");
+}
+
+#[test]
+fn test_v1_no_hi_block_table() {
+    let temp_dir = TempDir::new().unwrap();
+    let archive_path = temp_dir.path().join("v1_no_hi_block.mpq");
+
+    // V1 format should not have Hi-block table
+    ArchiveBuilder::new()
+        .version(FormatVersion::V1)
+        .add_file_data(b"V1 data".to_vec(), "old.txt")
+        .build(&archive_path)
+        .unwrap();
+
+    // Verify V1 format doesn't have hi-block table fields
+    let archive = Archive::open(&archive_path).unwrap();
+    assert_eq!(archive.header().format_version, FormatVersion::V1);
+    assert!(archive.header().hi_block_table_pos.is_none());
+    assert!(archive.header().hash_table_pos_hi.is_none());
+    assert!(archive.header().block_table_pos_hi.is_none());
+}

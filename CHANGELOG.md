@@ -48,6 +48,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Full test coverage including mixed encrypted/unencrypted archives
 
 - **Sector CRC Generation** - File integrity checksums during archive creation
+  - ✅ CRC32 generation for both single-unit and multi-sector files
+  - ✅ Proper CRC table placement after sector offset table
+  - ✅ FLAG_SECTOR_CRC flag handling
+  - ✅ `generate_crcs()` builder method for enabling CRC generation
+  - ✅ Compatibility with existing CRC validation in archive reading
+  - ✅ Test coverage for CRC round-trip validation
+
+- **Hi-block Table Writing (v2+)** - Support for archives larger than 4GB
+  - ✅ 64-bit file position tracking throughout the builder
+  - ✅ Automatic Hi-block table creation for v2+ archives
+  - ✅ Proper storage of high 16 bits of file positions
+  - ✅ Hi-block table writing after block table
+  - ✅ Header updates with hi_block_table_pos and high position bits
+  - ✅ Backward compatibility - table only written when needed
+  - ✅ Test coverage for v2 and v3 format archives
   - ✅ Automatic CRC calculation for file sectors
   - ✅ CRC table generation for multi-sector files
   - ✅ Single-unit file CRC support
