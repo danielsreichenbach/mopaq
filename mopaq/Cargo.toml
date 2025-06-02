@@ -18,7 +18,7 @@ readme = "../README.md"
 thiserror = { workspace = true }
 
 # Data structures and utilities
-bytes = "1.8"
+bytes = "1.10"
 tempfile = { workspace = true }
 
 # Hashing and cryptography
@@ -27,8 +27,8 @@ md-5 = "0.10"
 crc32fast = "1.4"
 
 # Compression algorithms
-flate2 = "1.0"
-bzip2 = "0.4"
+flate2 = "1.1"
+bzip2 = "0.5"
 lzma-rs = "0.3"
 
 # I/O and performance
@@ -38,13 +38,13 @@ memmap2 = { version = "0.9", optional = true }
 serde = { workspace = true, optional = true }
 
 # Async support (optional)
-tokio = { version = "1.42", features = ["rt", "io-util"], optional = true }
+tokio = { version = "1.45", features = ["rt", "io-util"], optional = true }
 
 # Logging
 log = { workspace = true }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.6", features = ["html_reports"] }
 proptest = "1.6"
 pretty_assertions = "1.4"
 env_logger = { workspace = true }

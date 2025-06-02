@@ -42,7 +42,7 @@ regex = "1.11"
 
 # Configuration
 toml = "0.8"
-dirs = "5.0"
+dirs = "6.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"
