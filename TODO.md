@@ -68,11 +68,13 @@
 
 ### Medium Priority - Digital Signatures
 
-- [ ] **Weak Signature (v1+)**
-  - [ ] RSASSA-PKCS1-v1_5 verification
-  - [ ] MD5 hashing implementation
-  - [ ] 512-bit RSA support
-  - [ ] Signature file handling
+- [X] **Weak Signature (v1+)** ✅
+  - [X] RSASSA-PKCS1-v1_5 verification ✅
+  - [X] MD5 hashing implementation ✅
+  - [X] 512-bit RSA support ✅
+  - [X] Signature file handling ✅
+  - [X] Blizzard public key support ✅
+  - [X] Integration with Archive::get_info() ✅
 
 - [ ] **Strong Signature (v2+)**
   - [ ] Strong signature detection

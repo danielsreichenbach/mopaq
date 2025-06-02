@@ -25,6 +25,9 @@ tempfile = { workspace = true }
 sha1 = "0.10"
 md-5 = "0.10"
 crc32fast = "1.4"
+rsa = "0.9"
+num-bigint = "0.4"
+num-traits = "0.2"
 
 # Compression algorithms
 flate2 = "1.1"

@@ -78,6 +78,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ CRC validation tested with original Blizzard MPQ archives
   - ✅ 100% validation success rate across 2,613 files tested from WoW archives
 
+- **Weak Signature Verification (v1+)** - Digital signature support for archive integrity
+  - ✅ RSASSA-PKCS1-v1_5 verification with 512-bit RSA
+  - ✅ MD5 hashing of archive contents
+  - ✅ Blizzard public key embedded for verification
+  - ✅ Automatic signature detection and validation
+  - ✅ Proper little-endian to big-endian conversion
+  - ✅ PKCS#1 v1.5 padding verification
+  - ✅ Integration with archive info API
+  - ✅ Example program for signature verification
+
 ### Fixed
 
 - **Benchmark compilation failures** - Updated to use `std::hint::black_box`

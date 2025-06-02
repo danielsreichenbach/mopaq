@@ -496,9 +496,15 @@ impl Archive {
             false
         };
 
-        // TODO: Implement signature verification
+        // Verify signature if present
         let signature_status = if has_signature {
-            SignatureStatus::StrongNoKey // Placeholder
+            match self.verify_signature() {
+                Ok(status) => status,
+                Err(e) => {
+                    log::warn!("Failed to verify signature: {}", e);
+                    SignatureStatus::WeakInvalid
+                }
+            }
         } else {
             SignatureStatus::None
         };
@@ -1322,6 +1328,49 @@ impl Archive {
             Ok(table_size as u64)
         } else {
             Err(Error::invalid_format("Failed to read BET table size"))
+        }
+    }
+
+    /// Verify the digital signature of the archive
+    pub fn verify_signature(&mut self) -> Result<SignatureStatus> {
+        // Check if (signature) file exists
+        let signature_info = match self.find_file("(signature)")? {
+            Some(info) => info,
+            None => return Ok(SignatureStatus::None),
+        };
+
+        // Read the signature file
+        let signature_data = self.read_file("(signature)")?;
+
+        // Try to parse as weak signature first
+        match crate::crypto::parse_weak_signature(&signature_data) {
+            Ok(weak_sig) => {
+                // Calculate archive size (up to the signature file)
+                let archive_size = signature_info.file_pos - self.archive_offset;
+
+                // Seek to beginning of archive
+                self.reader.seek(SeekFrom::Start(self.archive_offset))?;
+
+                // Verify the weak signature
+                match crate::crypto::verify_weak_signature(
+                    &mut self.reader,
+                    &weak_sig,
+                    archive_size,
+                ) {
+                    Ok(true) => Ok(SignatureStatus::WeakValid),
+                    Ok(false) => Ok(SignatureStatus::WeakInvalid),
+                    Err(e) => {
+                        log::warn!("Failed to verify weak signature: {}", e);
+                        Ok(SignatureStatus::WeakInvalid)
+                    }
+                }
+            }
+            Err(_) => {
+                // Not a weak signature, might be strong signature
+                // For now, we don't support strong signatures
+                log::debug!("Signature file found but not a weak signature format");
+                Ok(SignatureStatus::StrongNoKey)
+            }
         }
     }
 }
