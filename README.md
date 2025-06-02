@@ -258,6 +258,12 @@ storm-cli hash compare "file1.txt" "file2.txt"
 
 - **CLI Tool**
   - ✅ List, extract, find, verify commands
+  - ✅ Enhanced file listing:
+    - `--all` shows ALL table entries, not just listfile contents
+    - `--show-hashes` displays MPQ name hashes for file mapping
+    - Verbose mode shows sizes, compression ratios, and flags
+    - Very verbose mode includes compression statistics
+  - ✅ Digital signature verification display
   - ✅ Comprehensive debug commands
   - ✅ Hash calculation and comparison
   - ✅ Table inspection
@@ -270,7 +276,9 @@ storm-cli hash compare "file1.txt" "file2.txt"
 
 ### Planned 📋
 
-- 📋 Digital signature support
+- ✅ Digital signature support (weak signature verification complete)
+- 📋 Strong signature (v2+) verification
+- 📋 Digital signature generation
 - 📋 In-place archive modification
 - 📋 PKWare DCL compression
 - 📋 Huffman compression

@@ -8,32 +8,67 @@ use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::output::{print_file_info, print_file_list};
+use crate::output::{
+    print_file_info, print_file_list, print_file_list_verbose, print_file_list_with_hashes,
+};
 use crate::GLOBAL_OPTS;
 
 /// List files in an archive
-pub fn list(archive_path: &str, all: bool, pattern: Option<&str>, regex: bool) -> Result<()> {
+pub fn list(
+    archive_path: &str,
+    all: bool,
+    pattern: Option<&str>,
+    regex: bool,
+    show_hashes: bool,
+) -> Result<()> {
     let global_opts = GLOBAL_OPTS.get().expect("Global options not set");
 
     let mut archive = Archive::open(archive_path)?;
-    let file_entries = archive.list()?;
-    let mut files: Vec<String> = file_entries.into_iter().map(|e| e.name).collect();
+
+    // Use list_all() when --all is specified to enumerate all table entries
+    // Otherwise use list() which prefers the listfile
+    // Use the _with_hashes versions when --show-hashes is specified
+    let file_entries = if all {
+        if show_hashes {
+            archive.list_all_with_hashes()?
+        } else {
+            archive.list_all()?
+        }
+    } else {
+        if show_hashes {
+            archive.list_with_hashes()?
+        } else {
+            archive.list()?
+        }
+    };
+
+    let mut file_entries = file_entries;
 
     // Apply pattern filter if provided
     if let Some(pat) = pattern {
         if regex {
             let re = Regex::new(pat).context("Invalid regex pattern")?;
-            files.retain(|f| re.is_match(f));
+            file_entries.retain(|e| re.is_match(&e.name));
         } else {
             let glob = Pattern::new(pat).context("Invalid glob pattern")?;
-            files.retain(|f| glob.matches(f));
+            file_entries.retain(|e| glob.matches(&e.name));
         }
     }
 
-    // Sort files
-    files.sort();
+    // Sort files by name
+    file_entries.sort_by(|a, b| a.name.cmp(&b.name));
 
-    print_file_list(&files, all, global_opts.output)?;
+    // In verbose mode, show detailed information
+    if global_opts.verbose > 0 && global_opts.output == crate::OutputFormat::Text {
+        print_file_list_verbose(&file_entries)?;
+    } else if show_hashes {
+        // Show hashes in non-verbose mode
+        print_file_list_with_hashes(&file_entries, global_opts.output)?;
+    } else {
+        // Normal mode - just show names
+        let files: Vec<String> = file_entries.into_iter().map(|e| e.name).collect();
+        print_file_list(&files, global_opts.output)?;
+    }
 
     Ok(())
 }

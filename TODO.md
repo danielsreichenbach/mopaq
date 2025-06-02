@@ -149,6 +149,17 @@
   - [X] CSV output for spreadsheet compatibility ✅
   - [X] All commands support structured output ✅
 
+- [X] Enhanced `file list` command ✅
+  - [X] Fixed `--all` parameter to enumerate all table entries ✅
+  - [X] Added `--show-hashes` parameter for MPQ name hash display ✅
+  - [X] Enhanced verbose mode with file details (sizes, ratios, flags) ✅
+  - [X] Very verbose mode with compression statistics ✅
+  - [X] Hash display in all output formats (Text, JSON, CSV) ✅
+
+- [X] Archive info improvements ✅
+  - [X] Digital signature status display in Security Information ✅
+  - [X] Color-coded signature verification results ✅
+
 ### Medium Priority
 
 - [ ] `add` command - Add files to existing archive (Phase 2)

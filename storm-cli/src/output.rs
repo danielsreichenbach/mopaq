@@ -1,6 +1,6 @@
 use crate::{OutputFormat, GLOBAL_OPTS};
 use colored::*;
-use mopaq::{Archive, ArchiveInfo, SignatureStatus};
+use mopaq::{Archive, ArchiveInfo, FileEntry, SignatureStatus};
 use serde::Serialize;
 use std::io;
 
@@ -359,20 +359,70 @@ fn print_archive_info_csv(info: &ArchiveInfo) -> Result<(), io::Error> {
     Ok(())
 }
 
-/// Print file list
-pub fn print_file_list(
-    files: &[String],
-    show_all: bool,
+/// Print file list with hashes
+pub fn print_file_list_with_hashes(
+    files: &[FileEntry],
     format: OutputFormat,
 ) -> Result<(), io::Error> {
+    match format {
+        OutputFormat::Text => {
+            for entry in files {
+                if let Some((hash1, hash2)) = entry.hashes {
+                    println!("{} [{:08X} {:08X}]", entry.name, hash1, hash2);
+                } else {
+                    println!("{}", entry.name);
+                }
+            }
+            println!("\nTotal: {} files", files.len());
+        }
+        OutputFormat::Json => {
+            let json_files: Vec<serde_json::Value> = files
+                .iter()
+                .map(|entry| {
+                    if let Some((hash1, hash2)) = entry.hashes {
+                        serde_json::json!({
+                            "name": entry.name,
+                            "hash1": format!("{:08X}", hash1),
+                            "hash2": format!("{:08X}", hash2),
+                        })
+                    } else {
+                        serde_json::json!({
+                            "name": entry.name,
+                        })
+                    }
+                })
+                .collect();
+            print_json(&json_files)?;
+        }
+        OutputFormat::Csv => {
+            if files.iter().any(|f| f.hashes.is_some()) {
+                println!("filename,hash1,hash2");
+                for entry in files {
+                    if let Some((hash1, hash2)) = entry.hashes {
+                        println!("{},{:08X},{:08X}", entry.name, hash1, hash2);
+                    } else {
+                        println!("{},NA,NA", entry.name);
+                    }
+                }
+            } else {
+                println!("filename");
+                for entry in files {
+                    println!("{}", entry.name);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Print file list
+pub fn print_file_list(files: &[String], format: OutputFormat) -> Result<(), io::Error> {
     match format {
         OutputFormat::Text => {
             for file in files {
                 println!("{}", file);
             }
-            if !show_all {
-                println!("\nTotal: {} files", files.len());
-            }
+            println!("\nTotal: {} files", files.len());
         }
         OutputFormat::Json => {
             print_json(&files)?;
@@ -384,6 +434,181 @@ pub fn print_file_list(
             }
         }
     }
+    Ok(())
+}
+
+/// Print file list with verbose information
+pub fn print_file_list_verbose(files: &[FileEntry]) -> Result<(), io::Error> {
+    use mopaq::BlockEntry;
+
+    // Print header
+    println!("{}", "File Listing (Verbose Mode)".bold());
+    println!("{}", "=".repeat(120));
+
+    // Check if any entry has hashes
+    let show_hashes = files.iter().any(|f| f.hashes.is_some());
+
+    // Table headers
+    if show_hashes {
+        println!(
+            "{:<40} {:>12} {:>12} {:>7} {:>10} {:>10} {}",
+            "Name".bright_cyan(),
+            "Size".bright_cyan(),
+            "Compressed".bright_cyan(),
+            "Ratio".bright_cyan(),
+            "Hash1".bright_cyan(),
+            "Hash2".bright_cyan(),
+            "Flags".bright_cyan()
+        );
+        println!("{}", "-".repeat(120));
+    } else {
+        println!(
+            "{:<40} {:>12} {:>12} {:>7} {}",
+            "Name".bright_cyan(),
+            "Size".bright_cyan(),
+            "Compressed".bright_cyan(),
+            "Ratio".bright_cyan(),
+            "Flags".bright_cyan()
+        );
+        println!("{}", "-".repeat(100));
+    }
+
+    let mut total_size = 0u64;
+    let mut total_compressed = 0u64;
+
+    for entry in files {
+        let compression_ratio = if entry.size > 0 {
+            ((entry.compressed_size as f64 / entry.size as f64) * 100.0) as u32
+        } else {
+            100
+        };
+
+        // Decode flags
+        let mut flags = Vec::new();
+        if entry.flags & BlockEntry::FLAG_COMPRESS != 0 {
+            flags.push("Compressed");
+        }
+        if entry.flags & BlockEntry::FLAG_ENCRYPTED != 0 {
+            flags.push("Encrypted");
+        }
+        if entry.flags & BlockEntry::FLAG_SINGLE_UNIT != 0 {
+            flags.push("Single Unit");
+        }
+        if entry.flags & BlockEntry::FLAG_SECTOR_CRC != 0 {
+            flags.push("Has CRC");
+        }
+        if entry.flags & BlockEntry::FLAG_FIX_KEY != 0 {
+            flags.push("Fix Key");
+        }
+        if entry.flags & BlockEntry::FLAG_PATCH_FILE != 0 {
+            flags.push("Patch");
+        }
+        if entry.flags & BlockEntry::FLAG_DELETE_MARKER != 0 {
+            flags.push("Deleted");
+        }
+
+        let flags_str = if flags.is_empty() {
+            "-".dimmed().to_string()
+        } else {
+            flags.join(", ")
+        };
+
+        // Truncate long filenames
+        let display_name = if entry.name.len() > 39 {
+            format!("{}...", &entry.name[..36])
+        } else {
+            entry.name.clone()
+        };
+
+        if show_hashes {
+            let (hash1, hash2) = entry.hashes.unwrap_or((0, 0));
+            println!(
+                "{:<40} {:>12} {:>12} {:>6}% {:>10X} {:>10X} {}",
+                display_name,
+                format_size(entry.size),
+                format_size(entry.compressed_size),
+                compression_ratio,
+                hash1,
+                hash2,
+                flags_str
+            );
+        } else {
+            println!(
+                "{:<40} {:>12} {:>12} {:>6}% {}",
+                display_name,
+                format_size(entry.size),
+                format_size(entry.compressed_size),
+                compression_ratio,
+                flags_str
+            );
+        }
+
+        total_size += entry.size;
+        total_compressed += entry.compressed_size;
+    }
+
+    // Print summary
+    println!("{}", "-".repeat(if show_hashes { 120 } else { 100 }));
+
+    let total_ratio = if total_size > 0 {
+        ((total_compressed as f64 / total_size as f64) * 100.0) as u32
+    } else {
+        100
+    };
+
+    println!(
+        "{:<40} {:>12} {:>12} {:>6}%",
+        format!("Total: {} files", files.len()).bold(),
+        format_size(total_size).bold(),
+        format_size(total_compressed).bold(),
+        total_ratio.to_string().bold()
+    );
+
+    // If very verbose (-vv), show additional statistics
+    let opts = GLOBAL_OPTS.get().expect("Global options not initialized");
+    if opts.verbose >= 2 {
+        println!("\n{}", "Additional Statistics".bold());
+        println!("{}", "-".repeat(50));
+
+        let compressed_files = files
+            .iter()
+            .filter(|f| f.flags & BlockEntry::FLAG_COMPRESS != 0)
+            .count();
+        let encrypted_files = files
+            .iter()
+            .filter(|f| f.flags & BlockEntry::FLAG_ENCRYPTED != 0)
+            .count();
+        let single_unit_files = files
+            .iter()
+            .filter(|f| f.flags & BlockEntry::FLAG_SINGLE_UNIT != 0)
+            .count();
+
+        println!(
+            "Compressed files:  {} ({:.1}%)",
+            compressed_files,
+            (compressed_files as f64 / files.len() as f64) * 100.0
+        );
+        println!(
+            "Encrypted files:   {} ({:.1}%)",
+            encrypted_files,
+            (encrypted_files as f64 / files.len() as f64) * 100.0
+        );
+        println!(
+            "Single unit files: {} ({:.1}%)",
+            single_unit_files,
+            (single_unit_files as f64 / files.len() as f64) * 100.0
+        );
+
+        if total_size > total_compressed {
+            let saved = total_size - total_compressed;
+            println!(
+                "Space saved:       {} ({:.1}%)",
+                format_size(saved),
+                ((saved as f64 / total_size as f64) * 100.0)
+            );
+        }
+    }
+
     Ok(())
 }
 

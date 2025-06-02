@@ -737,6 +737,7 @@ impl Archive {
                         size: file_info.file_size,
                         compressed_size: file_info.compressed_size,
                         flags: file_info.flags,
+                        hashes: None,
                     });
                 } else {
                     // File is in listfile but not found in archive
@@ -769,6 +770,7 @@ impl Archive {
                                     size: bet_info.file_size,
                                     compressed_size: bet_info.compressed_size,
                                     flags: bet_info.flags,
+                                    hashes: None,
                                 });
                             }
                         }
@@ -803,6 +805,7 @@ impl Archive {
                                 size: block_entry.file_size as u64,
                                 compressed_size: block_entry.compressed_size as u64,
                                 flags: block_entry.flags,
+                                hashes: None,
                             });
                         }
                     }
@@ -811,6 +814,170 @@ impl Archive {
 
             Ok(entries)
         }
+    }
+
+    /// List all files in the archive by enumerating tables
+    /// This shows all entries, using generic names for files not in listfile
+    pub fn list_all(&mut self) -> Result<Vec<FileEntry>> {
+        let mut entries = Vec::new();
+
+        // For v3+ archives, prioritize HET/BET tables if they exist and are valid
+        if let (Some(het), Some(bet)) = (&self.het_table, &self.bet_table) {
+            if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+                log::info!("Enumerating all files using HET/BET tables");
+
+                // Enumerate using BET table
+                for i in 0..bet.header.file_count {
+                    if let Some(bet_info) = bet.get_file_info(i) {
+                        // Only include files that actually exist
+                        if bet_info.flags & crate::tables::BlockEntry::FLAG_EXISTS != 0 {
+                            entries.push(FileEntry {
+                                name: format!("file_{:08}.dat", i), // Unknown name with file index
+                                size: bet_info.file_size,
+                                compressed_size: bet_info.compressed_size,
+                                flags: bet_info.flags,
+                                hashes: None,
+                            });
+                        }
+                    }
+                }
+
+                // If we enumerated from HET/BET successfully, return early
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
+        // Fall back to classic hash/block tables
+        let hash_table = self
+            .hash_table
+            .as_ref()
+            .ok_or_else(|| Error::invalid_format("No tables loaded for enumeration"))?;
+        let block_table = self
+            .block_table
+            .as_ref()
+            .ok_or_else(|| Error::invalid_format("No block table loaded"))?;
+
+        log::info!("Enumerating all files using hash/block tables");
+
+        // Enumerate all hash table entries
+        let mut block_indices_seen = std::collections::HashSet::new();
+
+        for (_i, hash_entry) in hash_table.entries().iter().enumerate() {
+            if hash_entry.is_valid() {
+                let block_index = hash_entry.block_index as usize;
+
+                // Skip if we've already seen this block index (collision chain)
+                if !block_indices_seen.insert(block_index) {
+                    continue;
+                }
+
+                if let Some(block_entry) = block_table.get(block_index) {
+                    if block_entry.exists() {
+                        entries.push(FileEntry {
+                            name: format!("file_{:08}.dat", block_index),
+                            size: block_entry.file_size as u64,
+                            compressed_size: block_entry.compressed_size as u64,
+                            flags: block_entry.flags,
+                            hashes: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort by block index (which is embedded in the generated names)
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(entries)
+    }
+
+    /// List files in the archive with hash information
+    pub fn list_with_hashes(&mut self) -> Result<Vec<FileEntry>> {
+        let mut entries = self.list()?;
+
+        // Calculate hashes for each entry
+        for entry in &mut entries {
+            let hash1 = crate::crypto::hash_string(&entry.name, crate::crypto::hash_type::NAME_A);
+            let hash2 = crate::crypto::hash_string(&entry.name, crate::crypto::hash_type::NAME_B);
+            entry.hashes = Some((hash1, hash2));
+        }
+
+        Ok(entries)
+    }
+
+    /// List all files in the archive by enumerating tables with hash information
+    pub fn list_all_with_hashes(&mut self) -> Result<Vec<FileEntry>> {
+        let mut entries = Vec::new();
+
+        // For v3+ archives, use HET/BET tables
+        if let (Some(het), Some(bet)) = (&self.het_table, &self.bet_table) {
+            if het.header.max_file_count > 0 && bet.header.file_count > 0 {
+                log::info!("Enumerating all files using HET/BET tables with hashes");
+
+                // Enumerate using BET table
+                for i in 0..bet.header.file_count {
+                    if let Some(bet_info) = bet.get_file_info(i) {
+                        if bet_info.flags & crate::tables::BlockEntry::FLAG_EXISTS != 0 {
+                            entries.push(FileEntry {
+                                name: format!("file_{:08}.dat", i),
+                                size: bet_info.file_size,
+                                compressed_size: bet_info.compressed_size,
+                                flags: bet_info.flags,
+                                hashes: None, // HET/BET doesn't expose name hashes directly
+                            });
+                        }
+                    }
+                }
+
+                if !entries.is_empty() {
+                    return Ok(entries);
+                }
+            }
+        }
+
+        // Fall back to classic hash/block tables
+        let hash_table = self
+            .hash_table
+            .as_ref()
+            .ok_or_else(|| Error::invalid_format("No tables loaded for enumeration"))?;
+        let block_table = self
+            .block_table
+            .as_ref()
+            .ok_or_else(|| Error::invalid_format("No block table loaded"))?;
+
+        log::info!("Enumerating all files using hash/block tables with hashes");
+
+        // Enumerate all hash table entries - here we can get the actual hashes!
+        let mut block_indices_seen = std::collections::HashSet::new();
+
+        for (_i, hash_entry) in hash_table.entries().iter().enumerate() {
+            if hash_entry.is_valid() {
+                let block_index = hash_entry.block_index as usize;
+
+                if !block_indices_seen.insert(block_index) {
+                    continue;
+                }
+
+                if let Some(block_entry) = block_table.get(block_index) {
+                    if block_entry.exists() {
+                        entries.push(FileEntry {
+                            name: format!("file_{:08}.dat", block_index),
+                            size: block_entry.file_size as u64,
+                            compressed_size: block_entry.compressed_size as u64,
+                            flags: block_entry.flags,
+                            hashes: Some((hash_entry.name_1, hash_entry.name_2)),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Sort by block index
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(entries)
     }
 
     /// Read a file from the archive
@@ -1496,6 +1663,8 @@ pub struct FileEntry {
     pub compressed_size: u64,
     /// File flags
     pub flags: u32,
+    /// Hash values (name_1, name_2) - only populated when requested
+    pub hashes: Option<(u32, u32)>,
 }
 
 impl FileEntry {

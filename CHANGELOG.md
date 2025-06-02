@@ -88,6 +88,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Integration with archive info API
   - ✅ Example program for signature verification
 
+- **Enhanced File Enumeration** - Improved file listing capabilities
+  - ✅ New `list_all()` method that enumerates all entries from hash/block or HET/BET tables
+  - ✅ New `list_with_hashes()` method that includes MPQ name hashes for each file
+  - ✅ New `list_all_with_hashes()` method combining table enumeration with hash information
+  - ✅ Extended `FileEntry` struct with optional hash values (name_1, name_2)
+  - ✅ Proper enumeration of files not present in the listfile
+
+#### CLI Tool (`storm-cli`)
+
+- **Enhanced File List Command** - Improved file listing with new options
+  - ✅ Fixed `--all` parameter to enumerate from tables instead of just showing listfile contents
+  - ✅ Added `--show-hashes` parameter to display MPQ name hashes (name_1, name_2)
+  - ✅ Hash display in all output formats (Text, JSON, CSV)
+  - ✅ Verbose mode (-v) now shows detailed file information:
+    - File sizes (uncompressed and compressed)
+    - Compression ratio
+    - Decoded file flags (Compressed, Encrypted, Single Unit, etc.)
+    - Hash values when --show-hashes is used
+  - ✅ Very verbose mode (-vv) shows additional statistics:
+    - Count and percentage of compressed/encrypted files
+    - Total space saved by compression
+  - ✅ Fixed file count display when using --all parameter
+
+- **Digital Signature Display** - Archive info command improvements
+  - ✅ Displays digital signature status in Security Information section
+  - ✅ Shows appropriate status for all signature types:
+    - No signature
+    - Weak signature (Valid/Invalid)
+    - Strong signature (Valid/Invalid/No Key)
+  - ✅ Color-coded output for easy identification
+
 ### Fixed
 
 - **Benchmark compilation failures** - Updated to use `std::hint::black_box`

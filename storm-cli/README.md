@@ -47,6 +47,9 @@ storm-cli archive verify game.mpq
 
 # File operations
 storm-cli file list game.mpq
+storm-cli file list game.mpq --all              # Show ALL entries from tables
+storm-cli file list game.mpq --show-hashes      # Display MPQ name hashes
+storm-cli file list game.mpq -v                 # Verbose with sizes and flags
 storm-cli file extract game.mpq war3map.j -o extracted/
 storm-cli file find game.mpq "*.mdx"
 storm-cli file info game.mpq war3map.j
@@ -191,6 +194,60 @@ For detailed command documentation, run:
 
 ```bash
 storm-cli <command-group> --help
+```
+
+## Enhanced File Listing
+
+The `file list` command now provides powerful options for exploring MPQ archives:
+
+### Show All Files (--all)
+
+```bash
+# List ALL entries from the hash/block tables, not just those in (listfile)
+storm-cli file list archive.mpq --all
+
+# This shows files as file_XXXXXXXX.dat when names are unknown
+```
+
+### Show File Hashes (--show-hashes)
+
+```bash
+# Display MPQ name hashes for each file
+storm-cli file list archive.mpq --show-hashes
+# Output: filename.txt [HASH1 HASH2]
+
+# Combine with --all to map unknown files by comparing hashes
+storm-cli file list archive.mpq --all --show-hashes
+```
+
+### Verbose Mode (-v, -vv)
+
+```bash
+# Show detailed file information
+storm-cli file list archive.mpq -v
+# Displays: Name, Size, Compressed Size, Ratio, Flags
+
+# Very verbose mode shows additional statistics
+storm-cli file list archive.mpq -vv
+# Also shows: compression statistics, file type counts
+
+# Combine with --show-hashes for complete information
+storm-cli file list archive.mpq -v --show-hashes
+```
+
+### Mapping Unknown Files
+
+When you encounter unknown files with `--all`, you can map them using hashes:
+
+```bash
+# First, get hashes of known files
+storm-cli file list archive.mpq --show-hashes > known_files.txt
+
+# Then get all files with hashes
+storm-cli file list archive.mpq --all --show-hashes > all_files.txt
+
+# Files with matching hashes are the same file
+# file_00000001.dat [395B7DE8 04CF5C07] = data.txt [395B7DE8 04CF5C07]
 ```
 
 ## Examples

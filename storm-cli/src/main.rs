@@ -175,6 +175,10 @@ enum ArchiveCommands {
         /// Use regex instead of glob pattern
         #[arg(short = 'r', long)]
         regex: bool,
+
+        /// Show file name hashes
+        #[arg(long)]
+        show_hashes: bool,
     },
 }
 
@@ -196,6 +200,10 @@ enum FileCommands {
         /// Use regex instead of glob pattern
         #[arg(short = 'r', long)]
         regex: bool,
+
+        /// Show file name hashes
+        #[arg(long)]
+        show_hashes: bool,
     },
 
     /// Extract files from an archive
@@ -484,9 +492,10 @@ fn main() -> Result<()> {
                 all,
                 pattern,
                 regex,
+                show_hashes,
             } => {
                 // Delegate to the file list command
-                commands::file::list(&archive, all, pattern.as_deref(), regex)?;
+                commands::file::list(&archive, all, pattern.as_deref(), regex, show_hashes)?;
             }
         },
 
@@ -496,8 +505,9 @@ fn main() -> Result<()> {
                 all,
                 pattern,
                 regex,
+                show_hashes,
             } => {
-                commands::file::list(&archive, all, pattern.as_deref(), regex)?;
+                commands::file::list(&archive, all, pattern.as_deref(), regex, show_hashes)?;
             }
             FileCommands::Extract {
                 archive,
