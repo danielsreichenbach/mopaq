@@ -2,9 +2,9 @@
 
 use crate::{
     compression::{compress, flags as compression_flags},
-    crypto::{encrypt_block, hash_string, hash_type},
+    crypto::{encrypt_block, hash_string, hash_type, jenkins_hash},
     header::FormatVersion,
-    tables::{BlockEntry, BlockTable, HashEntry, HashTable, HiBlockTable},
+    tables::{BetHeader, BlockEntry, BlockTable, HashEntry, HashTable, HetHeader, HiBlockTable},
     Error, Result,
 };
 use std::fs::{self};
@@ -81,6 +81,10 @@ struct HeaderWriteParams {
     hash_table_size: u32,
     block_table_size: u32,
     hi_block_table_pos: Option<u64>,
+    het_table_pos: Option<u64>,
+    bet_table_pos: Option<u64>,
+    _het_table_size: Option<u64>,
+    _bet_table_size: Option<u64>,
 }
 
 /// Options for listfile generation
@@ -347,10 +351,7 @@ impl ArchiveBuilder {
         let use_het_bet = self.version >= FormatVersion::V3;
 
         if use_het_bet {
-            // TODO: Implement HET/BET table creation
-            log::warn!(
-                "HET/BET table creation not yet implemented, falling back to classic tables"
-            );
+            return self.write_archive_with_het_bet(writer);
         }
 
         let hash_table_size = self.calculate_hash_table_size();
@@ -457,6 +458,138 @@ impl ArchiveBuilder {
             hash_table_size,
             block_table_size,
             hi_block_table_pos,
+            het_table_pos: None,
+            bet_table_pos: None,
+            _het_table_size: None,
+            _bet_table_size: None,
+        };
+        self.write_header(writer, &header_params)?;
+
+        Ok(())
+    }
+
+    /// Write archive with HET/BET tables (v3+)
+    fn write_archive_with_het_bet<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
+        let block_table_size = self.pending_files.len() as u32;
+
+        // Calculate sector size
+        let sector_size = crate::calculate_sector_size(self.block_size);
+
+        // Reserve space for header (we'll write it at the end)
+        let header_size = self.version.header_size();
+        writer.seek(SeekFrom::Start(header_size as u64))?;
+
+        // We'll still need block table data for file information
+        let mut block_table = BlockTable::new(block_table_size as usize)?;
+        let mut hi_block_table = Some(HiBlockTable::new(block_table_size as usize));
+
+        // Write all files and populate block table
+        for (block_index, pending_file) in self.pending_files.iter().enumerate() {
+            let file_pos = writer.stream_position()?;
+
+            // Read file data
+            let file_data = match &pending_file.source {
+                FileSource::Path(path) => fs::read(path)?,
+                FileSource::Data(data) => data.clone(),
+            };
+
+            // Write file and get sizes
+            let params = FileWriteParams {
+                file_data: &file_data,
+                archive_name: &pending_file.archive_name,
+                compression: pending_file.compression,
+                encrypt: pending_file.encrypt,
+                use_fix_key: pending_file.use_fix_key,
+                sector_size,
+                file_pos,
+            };
+            let (compressed_size, flags) = self.write_file(writer, &params)?;
+
+            // Add to block table
+            let block_entry = BlockEntry {
+                file_pos: file_pos as u32, // Low 32 bits
+                compressed_size: compressed_size as u32,
+                file_size: file_data.len() as u32,
+                flags: flags | BlockEntry::FLAG_EXISTS,
+            };
+
+            // Store high 16 bits in hi-block table
+            if let Some(ref mut hi_table) = hi_block_table {
+                let high_bits = (file_pos >> 32) as u16;
+                hi_table.set(block_index, high_bits);
+            }
+
+            // Update block table entry
+            if let Some(entry) = block_table.get_mut(block_index) {
+                *entry = block_entry;
+            } else {
+                return Err(Error::invalid_format("Block index out of bounds"));
+            }
+        }
+
+        // Create HET table
+        let het_table_pos = writer.stream_position()?;
+        let (het_data, _het_header) = self.create_het_table()?;
+        let het_table_size = het_data.len() as u64;
+        self.write_het_table(writer, &het_data, true)?;
+
+        // Create BET table
+        let bet_table_pos = writer.stream_position()?;
+        let (bet_data, _bet_header) = self.create_bet_table(&block_table)?;
+        let bet_table_size = bet_data.len() as u64;
+        self.write_bet_table(writer, &bet_data, true)?;
+
+        // For compatibility, also write classic tables
+        let hash_table_size = self.calculate_hash_table_size();
+        let mut hash_table = HashTable::new(hash_table_size as usize)?;
+
+        // Populate hash table
+        for (block_index, pending_file) in self.pending_files.iter().enumerate() {
+            self.add_to_hash_table(
+                &mut hash_table,
+                &pending_file.archive_name,
+                block_index as u32,
+                pending_file.locale,
+            )?;
+        }
+
+        // Write hash table
+        let hash_table_pos = writer.stream_position()?;
+        self.write_hash_table(writer, &hash_table)?;
+
+        // Write block table
+        let block_table_pos = writer.stream_position()?;
+        self.write_block_table(writer, &block_table)?;
+
+        // Write hi-block table if needed
+        let hi_block_table_pos = if let Some(ref hi_table) = hi_block_table {
+            if hi_table.is_needed() {
+                let pos = writer.stream_position()?;
+                self.write_hi_block_table(writer, hi_table)?;
+                Some(pos)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // Calculate archive size
+        let archive_size = writer.stream_position()?;
+
+        // Write header at the beginning
+        writer.seek(SeekFrom::Start(0))?;
+        let header_params = HeaderWriteParams {
+            archive_size,
+            hash_table_pos,
+            block_table_pos,
+            hash_table_size,
+            block_table_size: self.pending_files.len() as u32,
+            hi_block_table_pos,
+            het_table_pos: Some(het_table_pos),
+            bet_table_pos: Some(bet_table_pos),
+            _het_table_size: Some(het_table_size),
+            _bet_table_size: Some(bet_table_size),
         };
         self.write_header(writer, &header_params)?;
 
@@ -837,8 +970,8 @@ impl ArchiveBuilder {
 
                 // V3 fields
                 writer.write_u64_le(params.archive_size)?; // archive_size_64
-                writer.write_u64_le(0)?; // bet_table_pos
-                writer.write_u64_le(0)?; // het_table_pos
+                writer.write_u64_le(params.bet_table_pos.unwrap_or(0))?; // bet_table_pos
+                writer.write_u64_le(params.het_table_pos.unwrap_or(0))?; // het_table_pos
             }
             FormatVersion::V4 => {
                 // TODO: Implement V4 header with MD5 checksums
@@ -902,6 +1035,388 @@ impl ArchiveBuilder {
     /// Encrypt u32 data in place
     fn encrypt_data_u32(&self, data: &mut [u32], key: u32) {
         encrypt_block(data, key);
+    }
+
+    /// Create HET table data
+    fn create_het_table(&self) -> Result<(Vec<u8>, HetHeader)> {
+        // Calculate required sizes
+        let max_file_count = self.pending_files.len() as u32;
+        let hash_table_entries = (max_file_count * 2).next_power_of_two();
+
+        log::debug!(
+            "Creating HET table: {} files, {} hash entries",
+            max_file_count,
+            hash_table_entries
+        );
+
+        // Calculate bit sizes
+        let hash_entry_size = Self::calculate_bits_needed(hash_table_entries as u64);
+        let index_size = Self::calculate_bits_needed(max_file_count as u64);
+
+        log::debug!(
+            "HET bit sizes: hash_entry_size={}, index_size={}",
+            hash_entry_size,
+            index_size
+        );
+
+        // Calculate table sizes
+        // The hash_table_size in the header seems to be calculated differently
+        // Based on the reading code: hash_table_entries = hash_table_size * 8 / hash_entry_size
+        // So: hash_table_size = hash_table_entries * hash_entry_size / 8
+        let hash_table_size = (hash_table_entries * hash_entry_size).div_ceil(8);
+
+        // But the actual data needs more space for hash + index
+        let total_entry_bits = hash_entry_size + index_size;
+        let actual_hash_table_size = (hash_table_entries * total_entry_bits).div_ceil(8);
+        let total_index_size = hash_table_entries * index_size;
+        let index_size_extra = 0; // No extra bits for now
+
+        // Create header
+        let header = HetHeader {
+            signature: 0x1A544548, // "HET\x1A"
+            version: 1,
+            data_size: 0,  // Will be calculated later
+            table_size: 0, // Will be calculated later
+            max_file_count,
+            hash_table_size,
+            hash_entry_size,
+            total_index_size,
+            index_size_extra,
+            index_size,
+            block_table_size: 0, // Not used in our implementation
+        };
+
+        // Create hash table and file indices
+        let mut hash_table = vec![0u8; actual_hash_table_size as usize];
+        let file_indices_size = (total_index_size as usize).div_ceil(8); // Round up to bytes
+        let file_indices = vec![0u8; file_indices_size];
+
+        log::debug!(
+            "HET table sizes: hash_table_size={}, actual_hash_table_size={}, file_indices_size={}",
+            hash_table_size,
+            actual_hash_table_size,
+            file_indices_size
+        );
+
+        // Build file hash map to track which hash slots map to which files
+        let mut file_map: Vec<Option<u32>> = vec![None; hash_table_entries as usize];
+
+        // Process each file
+        for (file_index, pending_file) in self.pending_files.iter().enumerate() {
+            let hash = jenkins_hash(&pending_file.archive_name);
+            let hash_mask = (1u64 << hash_entry_size) - 1;
+            let table_index = (hash & (hash_table_entries as u64 - 1)) as usize;
+
+            // Linear probing for collision resolution
+            let mut current_index = table_index;
+            loop {
+                if file_map[current_index].is_none() {
+                    file_map[current_index] = Some(file_index as u32);
+
+                    // Write hash entry (stores hash + file index in upper bits)
+                    let hash_entry = (hash & hash_mask) | ((file_index as u64) << hash_entry_size);
+                    // The actual entry size is hash_entry_size for the hash + index_size for the file index
+                    self.write_bit_entry(
+                        &mut hash_table,
+                        current_index,
+                        hash_entry,
+                        hash_entry_size + index_size,
+                    )?;
+
+                    break;
+                }
+
+                current_index = (current_index + 1) % hash_table_entries as usize;
+                if current_index == table_index {
+                    return Err(Error::invalid_format("HET table full"));
+                }
+            }
+        }
+
+        // Combine all data
+        let header_size = std::mem::size_of::<HetHeader>();
+        let data_size = hash_table_size + file_indices_size as u32;
+        let table_size = header_size as u32 + data_size;
+
+        // Update header with final sizes
+        let mut final_header = header;
+        final_header.data_size = data_size;
+        final_header.table_size = table_size;
+
+        // Serialize header and combine with table data
+        let mut result = Vec::with_capacity(table_size as usize);
+        result.write_u32_le(final_header.signature)?;
+        result.write_u32_le(final_header.version)?;
+        result.write_u32_le(final_header.data_size)?;
+        result.write_u32_le(final_header.table_size)?;
+        result.write_u32_le(final_header.max_file_count)?;
+        result.write_u32_le(final_header.hash_table_size)?;
+        result.write_u32_le(final_header.hash_entry_size)?;
+        result.write_u32_le(final_header.total_index_size)?;
+        result.write_u32_le(final_header.index_size_extra)?;
+        result.write_u32_le(final_header.index_size)?;
+        result.write_u32_le(final_header.block_table_size)?;
+
+        result.extend_from_slice(&hash_table);
+        result.extend_from_slice(&file_indices);
+
+        Ok((result, final_header))
+    }
+
+    /// Write a bit-packed entry to a byte array
+    fn write_bit_entry(
+        &self,
+        data: &mut [u8],
+        index: usize,
+        value: u64,
+        bit_size: u32,
+    ) -> Result<()> {
+        let bit_offset = index * bit_size as usize;
+        let byte_offset = bit_offset / 8;
+        let bit_shift = bit_offset % 8;
+
+        // Calculate how many bytes we actually need
+        let bits_needed = bit_shift + bit_size as usize;
+        let bytes_needed = bits_needed.div_ceil(8);
+
+        if byte_offset + bytes_needed > data.len() {
+            log::error!(
+                "Bit entry out of bounds: index={}, bit_size={}, bit_offset={}, byte_offset={}, bytes_needed={}, data.len()={}", 
+                index, bit_size, bit_offset, byte_offset, bytes_needed, data.len()
+            );
+            return Err(Error::invalid_format("Bit entry out of bounds"));
+        }
+
+        // Read existing bits
+        let mut existing = 0u64;
+        for i in 0..bytes_needed {
+            if byte_offset + i < data.len() {
+                existing |= (data[byte_offset + i] as u64) << (i * 8);
+            }
+        }
+
+        // Clear the bits we're about to write
+        let value_mask = if bit_size >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << bit_size) - 1
+        };
+        let mask = value_mask << bit_shift;
+        existing &= !mask;
+
+        // Write the new value
+        existing |= (value & value_mask) << bit_shift;
+
+        // Write back
+        for i in 0..bytes_needed {
+            if byte_offset + i < data.len() {
+                data[byte_offset + i] = (existing >> (i * 8)) as u8;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Calculate the number of bits needed to represent a value
+    fn calculate_bits_needed(max_value: u64) -> u32 {
+        if max_value == 0 {
+            1
+        } else {
+            (64 - max_value.leading_zeros()).max(1)
+        }
+    }
+
+    /// Write HET table to the archive
+    fn write_het_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<()> {
+        if encrypt {
+            let mut encrypted = data.to_vec();
+            let key = hash_string("(hash table)", hash_type::FILE_KEY);
+            self.encrypt_data(&mut encrypted, key);
+            writer.write_all(&encrypted)?;
+        } else {
+            writer.write_all(data)?;
+        }
+        Ok(())
+    }
+
+    /// Create BET table data
+    fn create_bet_table(&self, block_table: &BlockTable) -> Result<(Vec<u8>, BetHeader)> {
+        let file_count = self.pending_files.len() as u32;
+
+        // Analyze block table to determine optimal bit widths
+        let mut max_file_pos = 0u64;
+        let mut max_file_size = 0u64;
+        let mut max_compressed_size = 0u64;
+        let mut unique_flags = std::collections::HashSet::new();
+
+        for i in 0..file_count as usize {
+            if let Some(entry) = block_table.get(i) {
+                max_file_pos = max_file_pos.max(entry.file_pos as u64);
+                max_file_size = max_file_size.max(entry.file_size as u64);
+                max_compressed_size = max_compressed_size.max(entry.compressed_size as u64);
+                unique_flags.insert(entry.flags);
+            }
+        }
+
+        // Calculate bit counts for each field
+        let bit_count_file_pos = Self::calculate_bits_needed(max_file_pos);
+        let bit_count_file_size = Self::calculate_bits_needed(max_file_size);
+        let bit_count_cmp_size = Self::calculate_bits_needed(max_compressed_size);
+        let bit_count_flag_index = Self::calculate_bits_needed(unique_flags.len() as u64 - 1);
+        let bit_count_unknown = 0; // Not used
+
+        // Calculate bit positions
+        let bit_index_file_pos = 0;
+        let bit_index_file_size = bit_index_file_pos + bit_count_file_pos;
+        let bit_index_cmp_size = bit_index_file_size + bit_count_file_size;
+        let bit_index_flag_index = bit_index_cmp_size + bit_count_cmp_size;
+        let bit_index_unknown = bit_index_flag_index + bit_count_flag_index;
+
+        // Calculate table entry size
+        let table_entry_size = bit_index_unknown + bit_count_unknown;
+
+        // Create flag array
+        let mut flag_array: Vec<u32> = unique_flags.into_iter().collect();
+        flag_array.sort();
+        let flag_count = flag_array.len() as u32;
+
+        // Create flag index map
+        let mut flag_index_map = std::collections::HashMap::new();
+        for (index, &flags) in flag_array.iter().enumerate() {
+            flag_index_map.insert(flags, index as u32);
+        }
+
+        // Calculate table sizes
+        let file_table_bits = file_count * table_entry_size;
+        let file_table_size = file_table_bits.div_ceil(8); // Round up to bytes
+
+        // BET hash information (simplified - we'll use 64-bit hashes)
+        let bet_hash_size = 64;
+        let total_bet_hash_size = file_count * bet_hash_size;
+        let bet_hash_size_extra = 0;
+        let bet_hash_array_size = total_bet_hash_size.div_ceil(8);
+
+        // Create header
+        let header = BetHeader {
+            signature: 0x1A544542, // "BET\x1A"
+            version: 1,
+            data_size: 0,  // Will be calculated later
+            table_size: 0, // Will be calculated later
+            file_count,
+            unknown_08: 0x10,
+            table_entry_size,
+            bit_index_file_pos,
+            bit_index_file_size,
+            bit_index_cmp_size,
+            bit_index_flag_index,
+            bit_index_unknown,
+            bit_count_file_pos,
+            bit_count_file_size,
+            bit_count_cmp_size,
+            bit_count_flag_index,
+            bit_count_unknown,
+            total_bet_hash_size,
+            bet_hash_size_extra,
+            bet_hash_size,
+            bet_hash_array_size,
+            flag_count,
+        };
+
+        // Create file table
+        let mut file_table = vec![0u8; file_table_size as usize];
+
+        // Create BET hashes
+        let mut bet_hashes = Vec::with_capacity(file_count as usize);
+
+        // Fill tables
+        for (i, pending_file) in self.pending_files.iter().enumerate() {
+            if let Some(entry) = block_table.get(i) {
+                // Get flag index
+                let flag_index = flag_index_map.get(&entry.flags).unwrap();
+
+                // Pack entry data
+                let mut entry_bits = 0u64;
+                entry_bits |= (entry.file_pos as u64) << bit_index_file_pos;
+                entry_bits |= (entry.file_size as u64) << bit_index_file_size;
+                entry_bits |= (entry.compressed_size as u64) << bit_index_cmp_size;
+                entry_bits |= (*flag_index as u64) << bit_index_flag_index;
+
+                // Write to file table
+                self.write_bit_entry(&mut file_table, i, entry_bits, table_entry_size)?;
+
+                // Generate BET hash (Jenkins hash of filename)
+                let hash = jenkins_hash(&pending_file.archive_name);
+                bet_hashes.push(hash);
+            }
+        }
+
+        // Calculate final sizes
+        let header_size = std::mem::size_of::<BetHeader>();
+        let flag_array_size = flag_count * 4;
+        let data_size = flag_array_size + file_table_size + bet_hash_array_size;
+        let table_size = header_size as u32 + data_size;
+
+        // Update header with final sizes
+        let mut final_header = header;
+        final_header.data_size = data_size;
+        final_header.table_size = table_size;
+
+        // Serialize everything
+        let mut result = Vec::with_capacity(table_size as usize);
+
+        // Write header
+        result.write_u32_le(final_header.signature)?;
+        result.write_u32_le(final_header.version)?;
+        result.write_u32_le(final_header.data_size)?;
+        result.write_u32_le(final_header.table_size)?;
+        result.write_u32_le(final_header.file_count)?;
+        result.write_u32_le(final_header.unknown_08)?;
+        result.write_u32_le(final_header.table_entry_size)?;
+        result.write_u32_le(final_header.bit_index_file_pos)?;
+        result.write_u32_le(final_header.bit_index_file_size)?;
+        result.write_u32_le(final_header.bit_index_cmp_size)?;
+        result.write_u32_le(final_header.bit_index_flag_index)?;
+        result.write_u32_le(final_header.bit_index_unknown)?;
+        result.write_u32_le(final_header.bit_count_file_pos)?;
+        result.write_u32_le(final_header.bit_count_file_size)?;
+        result.write_u32_le(final_header.bit_count_cmp_size)?;
+        result.write_u32_le(final_header.bit_count_flag_index)?;
+        result.write_u32_le(final_header.bit_count_unknown)?;
+        result.write_u32_le(final_header.total_bet_hash_size)?;
+        result.write_u32_le(final_header.bet_hash_size_extra)?;
+        result.write_u32_le(final_header.bet_hash_size)?;
+        result.write_u32_le(final_header.bet_hash_array_size)?;
+        result.write_u32_le(final_header.flag_count)?;
+
+        // Write flag array
+        for &flags in &flag_array {
+            result.write_u32_le(flags)?;
+        }
+
+        // Write file table
+        result.extend_from_slice(&file_table);
+
+        // Write BET hashes (bit-packed)
+        let mut hash_bytes = vec![0u8; bet_hash_array_size as usize];
+        for (i, &hash) in bet_hashes.iter().enumerate() {
+            self.write_bit_entry(&mut hash_bytes, i, hash, bet_hash_size)?;
+        }
+        result.extend_from_slice(&hash_bytes);
+
+        Ok((result, final_header))
+    }
+
+    /// Write BET table to the archive
+    fn write_bet_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<()> {
+        if encrypt {
+            let mut encrypted = data.to_vec();
+            let key = hash_string("(block table)", hash_type::FILE_KEY);
+            self.encrypt_data(&mut encrypted, key);
+            writer.write_all(&encrypted)?;
+        } else {
+            writer.write_all(data)?;
+        }
+        Ok(())
     }
 }
 

@@ -99,6 +99,30 @@ fn main() -> mopaq::Result<()> {
 }
 ```
 
+### Encrypted Archive Creation
+
+```rust
+use mopaq::{ArchiveBuilder, FormatVersion};
+
+fn main() -> mopaq::Result<()> {
+    // Create an archive with encrypted files and CRC protection
+    ArchiveBuilder::new()
+        .version(FormatVersion::V3)  // V3 includes HET/BET tables
+        .generate_crcs(true)  // Enable sector CRC generation
+        .add_file_with_encryption(
+            "secret.dat",
+            "data/secret.dat",
+            mopaq::compression::flags::ZLIB,
+            true,  // use_fix_key
+            0,     // locale
+        )
+        .add_file("readme.txt", "readme.txt")  // Unencrypted file
+        .build("encrypted.mpq")?;
+
+    Ok(())
+}
+```
+
 ### Crypto Example
 
 ```rust
@@ -214,6 +238,10 @@ storm-cli hash compare "file1.txt" "file2.txt"
   - ✅ Automatic hash table sizing
   - ✅ Listfile generation
   - ✅ Multi-sector file support
+  - ✅ File encryption with FIX_KEY support
+  - ✅ Sector CRC generation
+  - ✅ Hi-block table writing for large archives (v2+)
+  - ✅ HET/BET table creation (v3+)
 
 - **Compression**
   - ✅ Zlib/Deflate
@@ -236,10 +264,8 @@ storm-cli hash compare "file1.txt" "file2.txt"
 
 ### In Progress 🚧
 
-- 🚧 Encryption support in ArchiveBuilder
-- 🚧 Sector CRC generation for new files
 - 🚧 v4 format creation with MD5 checksums
-- 🚧 HET/BET table creation for new archives (v3+)
+- 🚧 HET/BET table compression (tables are currently written uncompressed)
 - 🚧 StormLib FFI compatibility layer
 
 ### Planned 📋

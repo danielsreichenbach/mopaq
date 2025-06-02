@@ -254,20 +254,46 @@ impl Archive {
 
     /// Load hash and block tables
     pub fn load_tables(&mut self) -> Result<()> {
+        log::debug!(
+            "Loading tables for archive version {:?}",
+            self.header.format_version
+        );
+
         // For v3+ archives, check for HET/BET tables first
         if self.header.format_version >= header::FormatVersion::V3 {
             // Try to load HET table
             if let Some(het_pos) = self.header.het_table_pos {
                 if het_pos != 0 {
-                    let het_size = self
+                    let mut het_size = self
                         .header
                         .v4_data
                         .as_ref()
                         .map(|v4| v4.het_table_size_64)
                         .unwrap_or(0);
 
+                    // For V3 without V4 data, we need to determine the size
+                    if het_size == 0 && self.header.format_version == header::FormatVersion::V3 {
+                        log::debug!(
+                            "V3 archive without V4 data, reading HET table size from header"
+                        );
+                        // Try to read the table size from the HET header
+                        match self.read_het_table_size(het_pos) {
+                            Ok(size) => {
+                                log::debug!("Determined HET table size: 0x{:X}", size);
+                                het_size = size;
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to determine HET table size: {}", e);
+                            }
+                        }
+                    }
+
                     if het_size > 0 {
-                        log::debug!("Loading HET table from offset 0x{:X}", het_pos);
+                        log::debug!(
+                            "Loading HET table from offset 0x{:X}, size 0x{:X}",
+                            het_pos,
+                            het_size
+                        );
 
                         // HET table key is based on table name
                         let key = hash_string("(hash table)", hash_type::FILE_KEY);
@@ -294,15 +320,36 @@ impl Archive {
             // Try to load BET table
             if let Some(bet_pos) = self.header.bet_table_pos {
                 if bet_pos != 0 {
-                    let bet_size = self
+                    let mut bet_size = self
                         .header
                         .v4_data
                         .as_ref()
                         .map(|v4| v4.bet_table_size_64)
                         .unwrap_or(0);
 
+                    // For V3 without V4 data, we need to determine the size
+                    if bet_size == 0 && self.header.format_version == header::FormatVersion::V3 {
+                        log::debug!(
+                            "V3 archive without V4 data, reading BET table size from header"
+                        );
+                        // Try to read the table size from the BET header
+                        match self.read_bet_table_size(bet_pos) {
+                            Ok(size) => {
+                                log::debug!("Determined BET table size: 0x{:X}", size);
+                                bet_size = size;
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to determine BET table size: {}", e);
+                            }
+                        }
+                    }
+
                     if bet_size > 0 {
-                        log::debug!("Loading BET table from offset 0x{:X}", bet_pos);
+                        log::debug!(
+                            "Loading BET table from offset 0x{:X}, size 0x{:X}",
+                            bet_pos,
+                            bet_size
+                        );
 
                         // BET table key is based on table name
                         let key = hash_string("(block table)", hash_type::FILE_KEY);
@@ -1147,6 +1194,135 @@ impl Archive {
         Err(Error::invalid_format(
             "In-place file addition not yet implemented. Use ArchiveBuilder to create new archives."
         ))
+    }
+
+    /// Read HET table size from the table header for V3 archives
+    fn read_het_table_size(&mut self, het_pos: u64) -> Result<u64> {
+        let absolute_pos = self.archive_offset + het_pos;
+        self.reader.seek(SeekFrom::Start(absolute_pos))?;
+
+        // Read enough data to get the header (may be encrypted/compressed)
+        // We need at least the header size + potential compression byte
+        let mut buffer = vec![0u8; 128]; // Should be enough for header
+        self.reader.read_exact(&mut buffer)?;
+
+        // Decrypt if needed
+        let key = hash_string("(hash table)", hash_type::FILE_KEY);
+        if key != 0 {
+            // Ensure buffer is aligned to 4 bytes for decryption
+            let aligned_len = (buffer.len() / 4) * 4;
+
+            // Decrypt as u32 array (only the aligned portion)
+            let mut u32_buffer: Vec<u32> = buffer[..aligned_len]
+                .chunks_exact(4)
+                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            decrypt_block(&mut u32_buffer, key);
+
+            // Convert back to bytes
+            let remainder = buffer[aligned_len..].to_vec();
+            buffer.clear();
+            for val in u32_buffer {
+                buffer.extend_from_slice(&val.to_le_bytes());
+            }
+            buffer.extend_from_slice(&remainder);
+        }
+
+        // Check if compressed
+        let header_data = if buffer.len() >= 4 {
+            let signature = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+            log::debug!("HET header signature after decryption: 0x{:08X}", signature);
+
+            if signature == 0x1A544548 {
+                // "HET\x1A"
+                // Not compressed
+                &buffer[..]
+            } else {
+                // The tables we write are not compressed, just encrypted
+                // If we see something else, it's probably still encrypted or corrupted
+                log::warn!(
+                    "Unexpected HET signature: 0x{:08X}, expected 0x1A544548",
+                    signature
+                );
+                return Err(Error::invalid_format("Invalid HET table signature"));
+            }
+        } else {
+            return Err(Error::invalid_format("HET table too small"));
+        };
+
+        // Parse table_size field (at offset 12)
+        if header_data.len() >= 16 {
+            let table_size = u32::from_le_bytes([
+                header_data[12],
+                header_data[13],
+                header_data[14],
+                header_data[15],
+            ]);
+            Ok(table_size as u64)
+        } else {
+            Err(Error::invalid_format("Failed to read HET table size"))
+        }
+    }
+
+    /// Read BET table size from the table header for V3 archives
+    fn read_bet_table_size(&mut self, bet_pos: u64) -> Result<u64> {
+        let absolute_pos = self.archive_offset + bet_pos;
+        self.reader.seek(SeekFrom::Start(absolute_pos))?;
+
+        // Read enough data to get the header
+        let mut buffer = vec![0u8; 128];
+        self.reader.read_exact(&mut buffer)?;
+
+        // Decrypt if needed
+        let key = hash_string("(block table)", hash_type::FILE_KEY);
+        if key != 0 {
+            // Decrypt as u32 array
+            let mut u32_buffer: Vec<u32> = buffer
+                .chunks_exact(4)
+                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect();
+            decrypt_block(&mut u32_buffer, key);
+
+            // Convert back to bytes
+            buffer.clear();
+            for val in u32_buffer {
+                buffer.extend_from_slice(&val.to_le_bytes());
+            }
+        }
+
+        // Check if compressed
+        let header_data = if buffer.len() >= 4 {
+            let signature = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+            log::debug!("BET header signature after decryption: 0x{:08X}", signature);
+
+            if signature == 0x1A544542 {
+                // "BET\x1A"
+                // Not compressed
+                &buffer[..]
+            } else {
+                // The tables we write are not compressed, just encrypted
+                log::warn!(
+                    "Unexpected BET signature: 0x{:08X}, expected 0x1A544542",
+                    signature
+                );
+                return Err(Error::invalid_format("Invalid BET table signature"));
+            }
+        } else {
+            return Err(Error::invalid_format("BET table too small"));
+        };
+
+        // Parse table_size field (at offset 12)
+        if header_data.len() >= 16 {
+            let table_size = u32::from_le_bytes([
+                header_data[12],
+                header_data[13],
+                header_data[14],
+                header_data[15],
+            ]);
+            Ok(table_size as u64)
+        } else {
+            Err(Error::invalid_format("Failed to read BET table size"))
+        }
     }
 }
 

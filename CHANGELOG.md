@@ -11,19 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Core Library (`mopaq`)
 
-- **HET/BET Table Support (v3+)** - Full read support for modern MPQ archives
+- **HET/BET Table Support (v3+)** - Full read and write support for modern MPQ archives
   - ✅ Complete HET (Hash Entry Table) implementation
     - Header parsing with version and data size support
     - Jenkins hash-based lookups for improved performance
     - Bit-packed index array parsing
     - Full compression and encryption support
+    - V3 table size calculation for archives without V4 data
+    - HET table creation in ArchiveBuilder with bit-packing
+    - Automatic Jenkins hash generation for new files
   - ✅ Complete BET (Block Entry Table) implementation
     - Header parsing with dynamic bit widths
     - Bit-packed field extraction (file position, size, flags, etc.)
     - Optional name hash array support
     - Full compression and encryption support
+    - V3 table size calculation for archives without V4 data
+    - BET table creation with optimal bit width calculation
+    - Bit-packed table entry writing with flag arrays
   - ✅ Automatic fallback to classic hash/block tables
   - ✅ Transparent integration with existing Archive API
+  - ✅ V3 archives now create both HET/BET and classic tables for compatibility
 
 - **(attributes) File Support** - Complete implementation for file metadata
   - ✅ Full parsing of (attributes) special file format
@@ -71,12 +78,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ CRC validation tested with original Blizzard MPQ archives
   - ✅ 100% validation success rate across 2,613 files tested from WoW archives
 
+### Fixed
+
+- **Benchmark compilation failures** - Updated to use `std::hint::black_box`
+  - ✅ Replaced deprecated `criterion::black_box` across all benchmarks
+  - ✅ Fixed imports in hash, builder, crypto, and compression benchmarks
+  - ✅ All benchmarks now compile and run correctly with latest criterion
+
 ### 🚧 Work in Progress
 
 #### Core Library (`mopaq`)
 
 - v4 format header writing with MD5 checksums
-- HET/BET table creation for new archives (v3+)
+- HET/BET table compression support (tables are currently written uncompressed)
 
 #### CLI Tool (`storm-cli`)
 

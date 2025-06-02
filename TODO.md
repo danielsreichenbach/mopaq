@@ -41,13 +41,14 @@
   - [X] Add bit-based file index parsing
   - [X] HET table encryption support
   - [X] HET table compression support
+  - [X] V3 HET table size calculation for reading (without V4 data) ✅
 
-- [ ] **HET Table Writing (v3+)**
-  - [ ] Implement HET table creation in ArchiveBuilder
-  - [ ] Add Jenkins hash generation for new files
-  - [ ] Implement bit-packing for file indices
+- [X] **HET Table Writing (v3+)** ✅
+  - [X] Implement HET table creation in ArchiveBuilder ✅
+  - [X] Add Jenkins hash generation for new files ✅
+  - [X] Implement bit-packing for file indices ✅
+  - [X] Add HET table encryption during write ✅
   - [ ] Add HET table compression during write
-  - [ ] Add HET table encryption during write
 
 - [X] **BET Table Reading (v3+)** ✅
   - [X] Complete BET table header parsing
@@ -56,13 +57,14 @@
   - [X] BET hash array parsing
   - [X] BET table encryption support
   - [X] BET table compression support
+  - [X] V3 BET table size calculation for reading (without V4 data) ✅
 
-- [ ] **BET Table Writing (v3+)**
-  - [ ] Implement BET table creation in ArchiveBuilder
-  - [ ] Calculate optimal bit widths for fields
-  - [ ] Implement bit-packing for table entries
+- [X] **BET Table Writing (v3+)** ✅
+  - [X] Implement BET table creation in ArchiveBuilder ✅
+  - [X] Calculate optimal bit widths for fields ✅
+  - [X] Implement bit-packing for table entries ✅
+  - [X] Add BET table encryption during write ✅
   - [ ] Add BET table compression during write
-  - [ ] Add BET table encryption during write
 
 ### Medium Priority - Digital Signatures
 

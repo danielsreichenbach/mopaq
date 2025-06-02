@@ -2,8 +2,9 @@ use mopaq::{Archive, ArchiveBuilder, FormatVersion};
 use tempfile::TempDir;
 
 #[test]
-#[ignore = "HET/BET table creation not yet implemented"]
 fn test_create_v3_archive_with_het_bet() {
+    let _ = env_logger::builder().is_test(true).try_init();
+
     let temp_dir = TempDir::new().unwrap();
     let archive_path = temp_dir.path().join("v3_het_bet.mpq");
 
@@ -19,7 +20,18 @@ fn test_create_v3_archive_with_het_bet() {
     // Open and verify
     let mut archive = Archive::open(&archive_path).expect("Failed to open archive");
 
+    // Ensure tables are loaded
+    archive.load_tables().expect("Failed to load tables");
+
     // Check that HET/BET tables exist
+    log::debug!("Test: Loading tables explicitly");
+
+    println!("Header version: {:?}", archive.header().format_version);
+    println!("HET table pos: {:?}", archive.header().het_table_pos);
+    println!("BET table pos: {:?}", archive.header().bet_table_pos);
+    println!("HET table: {:?}", archive.het_table().is_some());
+    println!("BET table: {:?}", archive.bet_table().is_some());
+
     assert!(archive.het_table().is_some(), "HET table should exist");
     assert!(archive.bet_table().is_some(), "BET table should exist");
 
@@ -35,11 +47,11 @@ fn test_create_v3_archive_with_het_bet() {
 }
 
 #[test]
-fn test_v3_archive_fallback_to_classic_tables() {
+fn test_v3_archive_with_classic_table_compatibility() {
     let temp_dir = TempDir::new().unwrap();
-    let archive_path = temp_dir.path().join("v3_classic.mpq");
+    let archive_path = temp_dir.path().join("v3_compat.mpq");
 
-    // Create v3 archive (currently falls back to classic tables)
+    // Create v3 archive (now creates both HET/BET and classic tables)
     ArchiveBuilder::new()
         .version(FormatVersion::V3)
         .add_file_data(b"Test content 1".to_vec(), "file1.txt")
@@ -50,23 +62,27 @@ fn test_v3_archive_fallback_to_classic_tables() {
     // Open and verify
     let mut archive = Archive::open(&archive_path).expect("Failed to open archive");
 
-    // Currently V3 archives fall back to classic tables
-    assert!(
-        archive.het_table().is_none(),
-        "HET table should not exist yet"
-    );
-    assert!(
-        archive.bet_table().is_none(),
-        "BET table should not exist yet"
-    );
+    // V3 archives now have HET/BET tables
+    assert!(archive.het_table().is_some(), "HET table should exist");
+    assert!(archive.bet_table().is_some(), "BET table should exist");
 
-    // But files should still be accessible through classic tables
+    // Files should be accessible through HET/BET tables
     assert!(archive.find_file("file1.txt").unwrap().is_some());
     assert!(archive.find_file("file2.txt").unwrap().is_some());
 
     // Verify we can read files
     let data = archive.read_file("file1.txt").unwrap();
     assert_eq!(data, b"Test content 1");
+
+    // Also verify classic tables exist for compatibility
+    assert!(
+        archive.hash_table().is_some(),
+        "Hash table should exist for compatibility"
+    );
+    assert!(
+        archive.block_table().is_some(),
+        "Block table should exist for compatibility"
+    );
 }
 
 #[test]
