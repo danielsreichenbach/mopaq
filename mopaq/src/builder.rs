@@ -97,6 +97,8 @@ pub struct ArchiveBuilder {
     listfile_option: ListfileOption,
     /// Default compression method
     default_compression: u8,
+    /// Whether to generate sector CRCs for files
+    generate_crcs: bool,
 }
 
 impl ArchiveBuilder {
@@ -108,6 +110,7 @@ impl ArchiveBuilder {
             pending_files: Vec::new(),
             listfile_option: ListfileOption::Generate,
             default_compression: compression_flags::ZLIB,
+            generate_crcs: false,
         }
     }
 
@@ -132,6 +135,12 @@ impl ArchiveBuilder {
     /// Set the listfile option
     pub fn listfile_option(mut self, option: ListfileOption) -> Self {
         self.listfile_option = option;
+        self
+    }
+
+    /// Enable or disable sector CRC generation
+    pub fn generate_crcs(mut self, generate: bool) -> Self {
+        self.generate_crcs = generate;
         self
     }
 
@@ -442,6 +451,11 @@ impl ArchiveBuilder {
         if is_single_unit {
             flags |= BlockEntry::FLAG_SINGLE_UNIT;
 
+            // Set CRC flag early if enabled (needed for encryption key calculation)
+            if self.generate_crcs {
+                flags |= BlockEntry::FLAG_SECTOR_CRC;
+            }
+
             // Compress if needed
             let compressed_data = if *compression != 0 && !file_data.is_empty() {
                 log::debug!(
@@ -497,17 +511,44 @@ impl ArchiveBuilder {
             // Write the data
             writer.write_all(&final_data)?;
 
+            // Write CRC if enabled
+            if self.generate_crcs {
+                let crc = crc32fast::hash(file_data);
+                writer.write_u32_le(crc)?;
+                log::debug!(
+                    "Generated CRC for single unit file {}: 0x{:08X}",
+                    archive_name,
+                    crc
+                );
+            }
+
+            // Return compressed size (NOT including CRC)
             Ok((final_data.len(), flags))
         } else {
             // Multi-sector file
             let sector_count = file_data.len().div_ceil(*sector_size);
 
-            // Reserve space for sector offset table
+            // Set CRC flag early if enabled (needed for encryption key calculation)
+            if self.generate_crcs {
+                flags |= BlockEntry::FLAG_SECTOR_CRC;
+            }
+
+            // Reserve space for sector offset table and CRC table if enabled
             let offset_table_size = (sector_count + 1) * 4;
-            let data_start = offset_table_size;
+            let crc_table_size = if self.generate_crcs {
+                sector_count * 4
+            } else {
+                0
+            };
+            let data_start = offset_table_size + crc_table_size;
 
             let mut sector_offsets = vec![0u32; sector_count + 1];
             let mut sector_data = Vec::new();
+            let mut sector_crcs = if self.generate_crcs {
+                Vec::with_capacity(sector_count)
+            } else {
+                Vec::new()
+            };
 
             // Process each sector
             for (i, offset) in sector_offsets.iter_mut().enumerate().take(sector_count) {
@@ -516,6 +557,12 @@ impl ArchiveBuilder {
                 let sector_bytes = &file_data[sector_start..sector_end];
 
                 *offset = (data_start + sector_data.len()) as u32;
+
+                // Calculate CRC for uncompressed sector if enabled
+                if self.generate_crcs {
+                    let crc = crc32fast::hash(sector_bytes);
+                    sector_crcs.push(crc);
+                }
 
                 // Compress sector if needed
                 let compressed_sector = if *compression != 0 && !sector_bytes.is_empty() {
@@ -544,6 +591,16 @@ impl ArchiveBuilder {
 
             // Set last offset
             sector_offsets[sector_count] = (data_start + sector_data.len()) as u32;
+
+            // Log CRC generation if enabled
+            if self.generate_crcs {
+                log::debug!(
+                    "Generated {} sector CRCs for file {}, first few: {:?}",
+                    sector_count,
+                    archive_name,
+                    &sector_crcs[..5.min(sector_crcs.len())]
+                );
+            }
 
             // Encrypt if needed
             if *encrypt {
@@ -581,9 +638,17 @@ impl ArchiveBuilder {
                 writer.write_u32_le(*offset)?;
             }
 
+            // Write CRC table if enabled
+            if self.generate_crcs {
+                for crc in &sector_crcs {
+                    writer.write_u32_le(*crc)?;
+                }
+            }
+
             // Write sector data
             writer.write_all(&sector_data)?;
 
+            // Return size NOT including CRC table (offset table + sector data only)
             let total_size = offset_table_size + sector_data.len();
             Ok((total_size, flags))
         }

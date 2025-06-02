@@ -8,11 +8,18 @@
   - [X] Implement file encryption in `write_file` method ✅
   - [X] Add FIX_KEY flag support ✅
   - [X] Test encrypted file round-trips ✅
+  - [X] Add `add_file_with_encryption` method ✅
+  - [X] Add `add_file_data_with_encryption` method ✅
+  - [X] Add `add_file_with_options` method ✅
+  - [X] Add `add_file_data_with_options` method ✅
+  - [X] Support for both single-unit and multi-sector encrypted files ✅
 
 - [ ] **Sector CRC support**
-  - [ ] Generate CRC table for multi-sector files
-  - [ ] Add CRC generation to ArchiveBuilder
-  - [ ] Test CRC validation round-trips
+  - [X] CRC validation in archive reading (multi-sector files) ✅
+  - [X] Generate CRC table for multi-sector files
+  - [X] Add CRC generation to ArchiveBuilder
+  - [X] Add FLAG_SECTOR_CRC support in ArchiveBuilder
+  - [X] Test CRC validation round-trips
 
 - [ ] **Version 4 format support**
   - [ ] Implement v4 header writing with MD5 checksums
@@ -89,7 +96,7 @@
   - [X] Per-file attribute access API ✅
   - [X] Manual attributes loading via `load_attributes()` ✅
   - [X] Automatic attributes loading on archive open ✅
-  - [ ] Attribute generation in ArchiveBuilder
+  - [ ] Automatic attribute generation in ArchiveBuilder
   - [ ] CRC32 calculation during file writing
   - [ ] MD5 calculation during file writing
 - [ ] `(signature)` support (beyond basic parsing)
@@ -123,11 +130,13 @@
 
 - [X] Implement `create` command ✅
 - [X] Add progress bars for long operations ✅
-- [X] Add JSON output mode for scripting ✅
-  - [X] JSON output infrastructure implemented ✅
-  - [X] `list` command supports JSON output ✅
-  - [X] `extract` command supports JSON output ✅
-  - [X] `create` command JSON output support
+- [X] Add multiple output formats (JSON, CSV, Text) ✅
+  - [X] Output format infrastructure implemented ✅
+  - [X] Global `-o`/`--output` flag for all commands ✅
+  - [X] Text format with color support (default) ✅
+  - [X] JSON output for programmatic use ✅
+  - [X] CSV output for spreadsheet compatibility ✅
+  - [X] All commands support structured output ✅
 
 ### Medium Priority
 

@@ -36,22 +36,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Per-file attribute access API
   - ✅ Comprehensive test coverage
 
+- **Encryption Support in ArchiveBuilder** - Full file encryption during archive creation
+  - ✅ Complete encryption implementation for both single-unit and multi-sector files
+  - ✅ Support for FIX_KEY encryption (key adjusted by file position)
+  - ✅ Proper encryption key calculation from filenames
+  - ✅ Encrypted sector offset table handling
+  - ✅ Per-sector encryption with correct key adjustment
+  - ✅ New API methods:
+    - `add_file_with_encryption()` for encrypted files with custom options
+    - `add_file_data_with_encryption()` for encrypted in-memory data
+  - ✅ Full test coverage including mixed encrypted/unencrypted archives
+
+- **Sector CRC Generation** - File integrity checksums during archive creation
+  - ✅ Automatic CRC calculation for file sectors
+  - ✅ CRC table generation for multi-sector files
+  - ✅ Single-unit file CRC support
+  - ✅ New builder method: `generate_crcs(bool)` to enable/disable CRC generation
+  - ✅ FLAG_SECTOR_CRC properly set in block table
+  - ✅ CRC validation tested with original Blizzard MPQ archives
+  - ✅ 100% validation success rate across 2,613 files tested from WoW archives
+
 ### 🚧 Work in Progress
 
 #### Core Library (`mopaq`)
 
-- Encryption support in ArchiveBuilder
-- Sector CRC generation for file integrity
 - v4 format header writing with MD5 checksums
 - HET/BET table creation for new archives (v3+)
 
 #### CLI Tool (`storm-cli`)
 
-- Progress bars for long operations
 - **Archive list alias** - Added `archive list` as an alias for `file list` command
   - ✅ Provides more intuitive command structure
   - ✅ Both `storm-cli archive list` and `storm-cli file list` work identically
   - ✅ All options and filters are supported in both commands
+
+### 🚧 Work in Progress
+
+#### CLI Tool (`storm-cli`)
+
+- Progress bars for long operations
 
 ### Scripts
 
