@@ -120,6 +120,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Strong signature (Valid/Invalid/No Key)
   - ✅ Color-coded output for easy identification
 
+- **Compression Analysis Command** - New archive compression analysis tool
+  - ✅ `analyze` command for detailed compression method analysis
+  - ✅ Multiple analysis modes:
+    - `--detailed` shows compression method for each file
+    - `--by-extension` groups results by file extension
+    - `--unsupported-only` shows only files using unsupported compression
+    - `--show-stats` displays compression ratio statistics
+  - ✅ Support for all output formats (Text, JSON, CSV)
+  - ✅ Real-world archive testing revealed critical compatibility gaps:
+    - **WoW 4.x+ archives contain unsupported compression combinations**
+    - ADPCM + Implode compression (prevents archive opening)
+    - ADPCM + PKWare combinations in HET/BET table metadata
+    - Complex ADPCM combinations (flag 0xC9)
+  - ✅ Analysis of 273 WoW MPQ archives across all expansions
+  - ✅ Statistical breakdown of compression method usage by extension
+
 ### Fixed
 
 - **Benchmark compilation failures** - Updated to use `std::hint::black_box`
@@ -127,18 +143,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Fixed imports in hash, builder, crypto, and compression benchmarks
   - ✅ All benchmarks now compile and run correctly with latest criterion
 
+- **Clippy warnings and code quality** - Recent cleanup and improvements
+  - ✅ Fixed all remaining clippy warnings across the codebase
+  - ✅ Improved code consistency and idiomatic Rust patterns
+  - ✅ Enhanced error handling and documentation
+  - ✅ Refactored functions with too many arguments using structured parameters
+  - ✅ Removed unused functions and improved code organization
+
 ### 🚧 Work in Progress
 
 #### Core Library (`mopaq`)
 
-- v4 format header writing with MD5 checksums
+- **v4 format support** - Complete implementation of MPQ v4 archives
+  - Header writing with MD5 checksums for all tables
+  - Table MD5 calculation and validation
+  - Extended format capabilities
+
+- **Strong signature verification** - Enhanced digital signature support
+  - 2048-bit RSA with SHA-1 hashing implementation
+  - Complete PKCS#1 v1.5 padding verification for strong signatures
+  - Custom Blizzard padding format (0x0B + 0xBB) support
+
+### ❌ Missing Features (Critical for 100% StormLib Compatibility)
+
+#### Core Library (`mopaq`)
+
+- **Archive Modification** - In-place archive operations (0% complete)
+  - ❌ `add_file()` to existing archives (currently only ArchiveBuilder for new archives)
+  - ❌ File removal from archives
+  - ❌ File renaming within archives
+  - ❌ Archive compacting (remove deleted entries)
+
+- **Missing Compression Algorithms** (15% gap - **Critical for WoW 4.x+ compatibility**)
+  - ❌ **PKWare Implode compression** - **CRITICAL: Required for WoW 4.x+ HET/BET table access**
+  - ❌ **PKWare DCL compression** (Data Compression Library)
+  - ❌ **Huffman compression** (used in WAVE files)
+  - ❌ **Multiple compression combinations** (ADPCM + PKWare/Implode, complex flag 0xC9)
+
+- **Advanced Features** (30% gap)
+  - ❌ **Streaming API** for large file operations
+  - ❌ **Progress callbacks** for long operations
+  - ❌ **Memory-mapped file support**
+  - ❌ **Patch archive support** (base/patch chaining)
+  - ❌ **Protected MPQ handling** (copy-protected archives)
+  - ❌ **Signature creation** (weak and strong signature generation)
 
 #### CLI Tool (`storm-cli`)
 
-- **Archive list alias** - Added `archive list` as an alias for `file list` command
-  - ✅ Provides more intuitive command structure
-  - ✅ Both `storm-cli archive list` and `storm-cli file list` work identically
-  - ✅ All options and filters are supported in both commands
+- **Archive Modification Commands** (Phase 2)
+  - ❌ `add` command for adding files to existing archives
+  - ❌ `remove` command for file removal
+  - ❌ `compact` command for archive optimization
 
 ### 📚 Documentation
 
@@ -164,32 +219,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### FFI Library (`storm-ffi`)
 
-- Basic StormLib API implementation
-- C header generation
-- Core API functions
-  - `SFileOpenArchive`
-  - `SFileCloseArchive`
-  - `SFileOpenFileEx`
-  - `SFileCloseFile`
-  - `SFileReadFile`
-  - `SFileGetFileSize`
-  - `SFileSetFilePointer`
-  - `SFileGetFileInfo`
-  - `SFileEnumFiles`
-  - `SFileGetLocale`
-  - `SFileSetLocale`
-- Provide usage examples
+- **StormLib API compatibility** - Comprehensive C API implementation
+  - ✅ Basic structure and handle management
+  - ✅ Core file operations (`SFileOpenArchive`, `SFileCloseArchive`, etc.)
+  - ✅ File enumeration and information retrieval
+  - ✅ Error handling with StormLib-compatible error codes
+  - 🚧 Archive creation and modification functions
+  - 🚧 Advanced file operations and verification
+  - ✅ C header generation with cbindgen
 
 ### Changed
 
-- Replaced `rust-lzma` with `lzma-rs` for pure Rust LZMA support
-  - No system dependencies required
-  - Supports both raw LZMA and XZ formats
-  - Better cross-platform compatibility
-- Refactored `special_files.rs` into a module structure
-  - Split into `listfile.rs` for parsing functionality
-  - Separated `info.rs` for special file metadata
-  - Improved code organization and maintainability
+- **Dependencies and Architecture** - Modernized and improved project structure
+  - ✅ Replaced `rust-lzma` with `lzma-rs` for pure Rust LZMA support
+    - No system dependencies required
+    - Supports both raw LZMA and XZ formats
+    - Better cross-platform compatibility
+  - ✅ Upgraded dependencies to latest versions for security and performance
+  - ✅ Enhanced Cargo.toml configurations across all crates
+
+- **Code Organization** - Improved modularity and maintainability
+  - ✅ Refactored `special_files.rs` into a module structure
+    - Split into `listfile.rs` for parsing functionality
+    - Separated `info.rs` for special file metadata
+    - Added `attributes.rs` for comprehensive attribute handling
+  - ✅ Enhanced error handling with more specific error types
+  - ✅ Improved documentation and inline examples
 
 ## [0.1.0] - 2025-06-XX (Upcoming)
 

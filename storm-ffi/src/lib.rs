@@ -4,10 +4,12 @@ use libc::{c_char, c_void};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
+use std::fs;
+use std::path::Path;
 use std::ptr;
 use std::sync::{LazyLock, Mutex};
 
-use mopaq::Archive;
+use mopaq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption};
 
 /// Archive handle type
 pub type HANDLE = *mut c_void;
@@ -50,7 +52,7 @@ const ERROR_INVALID_HANDLE: u32 = 6;
 const _ERROR_NOT_ENOUGH_MEMORY: u32 = 8;
 const ERROR_INVALID_PARAMETER: u32 = 87;
 const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
-const _ERROR_ALREADY_EXISTS: u32 = 183;
+const ERROR_ALREADY_EXISTS: u32 = 183;
 const ERROR_FILE_CORRUPT: u32 = 1392;
 const ERROR_NOT_SUPPORTED: u32 = 50;
 
@@ -59,6 +61,15 @@ const LOCALE_NEUTRAL: u32 = 0;
 
 // Search scope flags (for SFileOpenFileEx)
 const _SFILE_OPEN_FROM_MPQ: u32 = 0x00000000;
+
+// Verification flags (for SFileVerifyFile and SFileVerifyArchive)
+const SFILE_VERIFY_SECTOR_CRC: u32 = 0x01;
+const SFILE_VERIFY_FILE_CRC: u32 = 0x02;
+const SFILE_VERIFY_FILE_MD5: u32 = 0x04;
+const _SFILE_VERIFY_RAW_MD5: u32 = 0x08;
+const SFILE_VERIFY_SIGNATURE: u32 = 0x10;
+const SFILE_VERIFY_ALL_FILES: u32 = 0x20;
+const SFILE_VERIFY_ALL: u32 = 0xFF;
 
 // Info classes for SFileGetFileInfo
 const SFILE_INFO_ARCHIVE_SIZE: u32 = 1;
@@ -79,6 +90,19 @@ const _MPQ_OPEN_NO_LISTFILE: u32 = 0x0001;
 const _MPQ_OPEN_NO_ATTRIBUTES: u32 = 0x0002;
 const _MPQ_OPEN_FORCE_MPQ_V1: u32 = 0x0004;
 const _MPQ_OPEN_CHECK_SECTOR_CRC: u32 = 0x0008;
+
+// Archive creation flags (for SFileCreateArchive)
+const CREATE_NEW: u32 = 1;
+const CREATE_ALWAYS: u32 = 2;
+const OPEN_EXISTING: u32 = 3;
+const OPEN_ALWAYS: u32 = 4;
+const TRUNCATE_EXISTING: u32 = 5;
+
+// MPQ format version flags
+const MPQ_CREATE_ARCHIVE_V1: u32 = 0x00000000;
+const MPQ_CREATE_ARCHIVE_V2: u32 = 0x01000000;
+const MPQ_CREATE_ARCHIVE_V3: u32 = 0x02000000;
+const MPQ_CREATE_ARCHIVE_V4: u32 = 0x03000000;
 
 // Helper functions
 fn set_last_error(error: u32) {
@@ -153,6 +177,108 @@ pub unsafe extern "C" fn SFileOpenArchive(
                 mopaq::Error::InvalidFormat(_) => ERROR_FILE_CORRUPT,
                 mopaq::Error::Io(_) => ERROR_ACCESS_DENIED,
                 _ => ERROR_FILE_CORRUPT,
+            };
+            set_last_error(error_code);
+            false
+        }
+    }
+}
+
+/// Create a new MPQ archive
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
+/// - `handle` must be a valid pointer to write the output handle
+#[no_mangle]
+pub unsafe extern "C" fn SFileCreateArchive(
+    filename: *const c_char,
+    creation_disposition: u32,
+    hash_table_size: u32,
+    handle: *mut HANDLE,
+) -> bool {
+    // Validate parameters
+    if filename.is_null() || handle.is_null() {
+        set_last_error(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    // Validate hash table size (must be power of 2)
+    if !mopaq::is_power_of_two(hash_table_size) || hash_table_size < 4 {
+        set_last_error(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    // Convert filename from C string
+    let filename_str = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+    };
+
+    // Check if file exists for creation disposition handling
+    let file_exists = Path::new(filename_str).exists();
+    match creation_disposition {
+        CREATE_NEW => {
+            if file_exists {
+                set_last_error(ERROR_ALREADY_EXISTS);
+                return false;
+            }
+        }
+        CREATE_ALWAYS => {
+            // Always create, overwrite if exists
+        }
+        OPEN_EXISTING => {
+            // This should use SFileOpenArchive instead
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+        OPEN_ALWAYS => {
+            if file_exists {
+                // Open existing archive
+                return SFileOpenArchive(filename, 0, 0, handle);
+            }
+            // Create new if doesn't exist
+        }
+        TRUNCATE_EXISTING => {
+            if !file_exists {
+                set_last_error(ERROR_FILE_NOT_FOUND);
+                return false;
+            }
+            // Truncate and recreate
+        }
+        _ => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+    }
+
+    // Determine MPQ format version (default to V2 for compatibility)
+    // TODO: Allow V4 format selection via flags
+    let version = FormatVersion::V2;
+
+    // Create the archive using ArchiveBuilder
+    // Note: hash_table_size is automatically calculated by ArchiveBuilder
+    // based on the number of files added. For now we create a minimal archive.
+    let result = ArchiveBuilder::new()
+        .version(version)
+        .listfile_option(ListfileOption::Generate)
+        .build(filename_str);
+
+    match result {
+        Ok(_) => {
+            // Archive created successfully, now open it for use
+            SFileOpenArchive(filename, 0, 0, handle)
+        }
+        Err(e) => {
+            // Map creation errors to Windows error codes
+            let error_code = match e {
+                mopaq::Error::FileNotFound(_) => ERROR_FILE_NOT_FOUND,
+                mopaq::Error::InvalidFormat(_) => ERROR_INVALID_PARAMETER,
+                mopaq::Error::Io(_) => ERROR_ACCESS_DENIED,
+                _ => ERROR_ACCESS_DENIED,
             };
             set_last_error(error_code);
             false
@@ -809,6 +935,334 @@ pub unsafe extern "C" fn SFileGetFileName(file: HANDLE, buffer: *mut c_char) -> 
     true
 }
 
+/// Extract a file from archive to disk
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
+/// - `local_filename` must be a valid null-terminated C string
+#[no_mangle]
+pub unsafe extern "C" fn SFileExtractFile(
+    archive: HANDLE,
+    filename: *const c_char,
+    local_filename: *const c_char,
+    _search_scope: u32, // Ignored - StormLib legacy parameter
+) -> bool {
+    // Validate parameters
+    if filename.is_null() || local_filename.is_null() {
+        set_last_error(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    let Some(archive_id) = handle_to_id(archive) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // Convert filenames from C strings
+    let source_filename = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+    };
+
+    let dest_filename = match CStr::from_ptr(local_filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+    };
+
+    // Get the archive
+    let mut archives = ARCHIVES.lock().unwrap();
+    let Some(archive_handle) = archives.get_mut(&archive_id) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // Try to read the file from the archive
+    match archive_handle.archive.read_file(source_filename) {
+        Ok(data) => {
+            // Create parent directories if they don't exist
+            let dest_path = Path::new(dest_filename);
+            if let Some(parent) = dest_path.parent() {
+                if let Err(_) = fs::create_dir_all(parent) {
+                    set_last_error(ERROR_ACCESS_DENIED);
+                    return false;
+                }
+            }
+
+            // Write the file data to disk
+            match fs::write(dest_path, data) {
+                Ok(_) => {
+                    set_last_error(ERROR_SUCCESS);
+                    true
+                }
+                Err(_) => {
+                    set_last_error(ERROR_ACCESS_DENIED);
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            // Map mopaq errors to Windows error codes
+            let error_code = match e {
+                mopaq::Error::FileNotFound(_) => ERROR_FILE_NOT_FOUND,
+                mopaq::Error::InvalidFormat(_) => ERROR_FILE_CORRUPT,
+                mopaq::Error::Io(_) => ERROR_ACCESS_DENIED,
+                _ => ERROR_FILE_CORRUPT,
+            };
+            set_last_error(error_code);
+            false
+        }
+    }
+}
+
+/// Verify file integrity
+///
+/// # Safety
+///
+/// - `filename` must be a valid null-terminated C string
+#[no_mangle]
+pub unsafe extern "C" fn SFileVerifyFile(
+    archive: HANDLE,
+    filename: *const c_char,
+    flags: u32,
+) -> bool {
+    // Validate parameters
+    if filename.is_null() {
+        set_last_error(ERROR_INVALID_PARAMETER);
+        return false;
+    }
+
+    let Some(archive_id) = handle_to_id(archive) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // Convert filename from C string
+    let filename_str = match CStr::from_ptr(filename).to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            set_last_error(ERROR_INVALID_PARAMETER);
+            return false;
+        }
+    };
+
+    // Get the archive
+    let mut archives = ARCHIVES.lock().unwrap();
+    let Some(archive_handle) = archives.get_mut(&archive_id) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // Find the file first to get file info
+    let file_info = match archive_handle.archive.find_file(filename_str) {
+        Ok(Some(info)) => info,
+        Ok(None) => {
+            set_last_error(ERROR_FILE_NOT_FOUND);
+            return false;
+        }
+        Err(_) => {
+            set_last_error(ERROR_FILE_CORRUPT);
+            return false;
+        }
+    };
+
+    // If no flags specified, verify everything available
+    let verify_flags = if flags == 0 { SFILE_VERIFY_ALL } else { flags };
+
+    // Verify sector CRC (if requested and available)
+    if (verify_flags & SFILE_VERIFY_SECTOR_CRC) != 0 && file_info.has_sector_crc() {
+        // Reading the file automatically validates sector CRCs
+        match archive_handle.archive.read_file(filename_str) {
+            Ok(_) => {
+                // File read successfully, CRCs validated automatically
+            }
+            Err(mopaq::Error::ChecksumMismatch { .. }) => {
+                set_last_error(ERROR_FILE_CORRUPT);
+                return false;
+            }
+            Err(_) => {
+                set_last_error(ERROR_FILE_CORRUPT);
+                return false;
+            }
+        }
+    }
+
+    // Verify file CRC32 from attributes (if requested and available)
+    if (verify_flags & SFILE_VERIFY_FILE_CRC) != 0 {
+        // Load attributes if not already loaded
+        let _ = archive_handle.archive.load_attributes();
+
+        if let Some(attrs) = archive_handle
+            .archive
+            .get_file_attributes(file_info.block_index)
+        {
+            if let Some(expected_crc) = attrs.crc32 {
+                // Read file data to calculate CRC
+                match archive_handle.archive.read_file(filename_str) {
+                    Ok(data) => {
+                        let actual_crc = crc32fast::hash(&data);
+                        if actual_crc != expected_crc {
+                            set_last_error(ERROR_FILE_CORRUPT);
+                            return false;
+                        }
+                    }
+                    Err(_) => {
+                        set_last_error(ERROR_FILE_CORRUPT);
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    // Verify file MD5 from attributes (if requested and available)
+    if (verify_flags & SFILE_VERIFY_FILE_MD5) != 0 {
+        // Load attributes if not already loaded
+        let _ = archive_handle.archive.load_attributes();
+
+        if let Some(attrs) = archive_handle
+            .archive
+            .get_file_attributes(file_info.block_index)
+        {
+            if let Some(expected_md5) = attrs.md5 {
+                // Read file data to calculate MD5
+                match archive_handle.archive.read_file(filename_str) {
+                    Ok(data) => {
+                        use md5::{Digest, Md5};
+                        let mut hasher = Md5::new();
+                        hasher.update(&data);
+                        let actual_md5: [u8; 16] = hasher.finalize().into();
+                        if actual_md5 != expected_md5 {
+                            set_last_error(ERROR_FILE_CORRUPT);
+                            return false;
+                        }
+                    }
+                    Err(_) => {
+                        set_last_error(ERROR_FILE_CORRUPT);
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    set_last_error(ERROR_SUCCESS);
+    true
+}
+
+/// Verify archive integrity
+#[no_mangle]
+pub extern "C" fn SFileVerifyArchive(archive: HANDLE, flags: u32) -> bool {
+    let Some(archive_id) = handle_to_id(archive) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // Get the archive
+    let mut archives = ARCHIVES.lock().unwrap();
+    let Some(archive_handle) = archives.get_mut(&archive_id) else {
+        set_last_error(ERROR_INVALID_HANDLE);
+        return false;
+    };
+
+    // If no flags specified, verify signature by default
+    let verify_flags = if flags == 0 {
+        SFILE_VERIFY_SIGNATURE
+    } else {
+        flags
+    };
+
+    // Verify digital signature (if requested)
+    if (verify_flags & SFILE_VERIFY_SIGNATURE) != 0 {
+        match archive_handle.archive.verify_signature() {
+            Ok(mopaq::archive::SignatureStatus::WeakValid)
+            | Ok(mopaq::archive::SignatureStatus::StrongValid) => {
+                // Valid signature found
+            }
+            Ok(mopaq::archive::SignatureStatus::None) => {
+                // No signature is acceptable for some archives
+            }
+            Ok(mopaq::archive::SignatureStatus::WeakInvalid)
+            | Ok(mopaq::archive::SignatureStatus::StrongInvalid) => {
+                set_last_error(ERROR_FILE_CORRUPT);
+                return false;
+            }
+            Ok(mopaq::archive::SignatureStatus::StrongNoKey) => {
+                // Strong signature present but no key - treat as warning, continue
+            }
+            Err(_) => {
+                set_last_error(ERROR_FILE_CORRUPT);
+                return false;
+            }
+        }
+    }
+
+    // Verify all files in the archive (if requested)
+    if (verify_flags & SFILE_VERIFY_ALL_FILES) != 0 {
+        // Get list of all files in the archive
+        let file_list = match archive_handle.archive.list() {
+            Ok(list) => list,
+            Err(_) => {
+                // If we can't get the file list, try to enumerate from tables
+                match archive_handle.archive.list_all() {
+                    Ok(list) => list,
+                    Err(_) => {
+                        set_last_error(ERROR_FILE_CORRUPT);
+                        return false;
+                    }
+                }
+            }
+        };
+
+        // Verify each file individually
+        for file_entry in file_list {
+            // Skip special files and directories
+            if file_entry.name.starts_with('(') && file_entry.name.ends_with(')') {
+                continue;
+            }
+            if file_entry.name.ends_with('/') || file_entry.name.ends_with('\\') {
+                continue;
+            }
+
+            // Determine what verification to perform based on file flags
+            let file_verify_flags = if file_entry.has_sector_crc() {
+                SFILE_VERIFY_SECTOR_CRC
+            } else {
+                0
+            };
+
+            // Add CRC/MD5 verification if attributes are available
+            let all_verify_flags =
+                file_verify_flags | SFILE_VERIFY_FILE_CRC | SFILE_VERIFY_FILE_MD5;
+
+            // Use our own SFileVerifyFile function for consistency
+            unsafe {
+                let filename_cstr = match std::ffi::CString::new(file_entry.name.as_str()) {
+                    Ok(s) => s,
+                    Err(_) => continue, // Skip files with invalid names
+                };
+
+                if !SFileVerifyFile(archive, filename_cstr.as_ptr(), all_verify_flags) {
+                    let last_error = SFileGetLastError();
+                    // Only fail on corruption, not missing attributes
+                    if last_error == ERROR_FILE_CORRUPT {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    set_last_error(ERROR_SUCCESS);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -837,5 +1291,112 @@ mod tests {
         assert_eq!(SFileGetLocale(), 0x409);
 
         SFileSetLocale(old); // Restore
+    }
+
+    #[test]
+    fn test_extract_file_invalid_params() {
+        // Test SFileExtractFile with invalid parameters
+        unsafe {
+            // Null filename should fail
+            assert!(!SFileExtractFile(
+                ptr::null_mut(),
+                ptr::null(),
+                b"output.txt\0".as_ptr() as *const c_char,
+                0
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Null local filename should fail
+            assert!(!SFileExtractFile(
+                ptr::null_mut(),
+                b"test.txt\0".as_ptr() as *const c_char,
+                ptr::null(),
+                0
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Invalid handle should fail
+            assert!(!SFileExtractFile(
+                ptr::null_mut(),
+                b"test.txt\0".as_ptr() as *const c_char,
+                b"output.txt\0".as_ptr() as *const c_char,
+                0
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
+        }
+    }
+
+    #[test]
+    fn test_verify_file_invalid_params() {
+        // Test SFileVerifyFile with invalid parameters
+        unsafe {
+            // Null filename should fail
+            assert!(!SFileVerifyFile(
+                ptr::null_mut(),
+                ptr::null(),
+                SFILE_VERIFY_ALL
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Invalid handle should fail
+            assert!(!SFileVerifyFile(
+                ptr::null_mut(),
+                b"test.txt\0".as_ptr() as *const c_char,
+                SFILE_VERIFY_ALL
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
+        }
+    }
+
+    #[test]
+    fn test_verify_archive_invalid_params() {
+        // Test SFileVerifyArchive with invalid parameters
+        // Invalid handle should fail
+        assert!(!SFileVerifyArchive(ptr::null_mut(), SFILE_VERIFY_SIGNATURE));
+        assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
+    }
+
+    #[test]
+    fn test_create_archive_invalid_params() {
+        // Test SFileCreateArchive with invalid parameters
+        unsafe {
+            let mut handle = ptr::null_mut();
+
+            // Null filename should fail
+            assert!(!SFileCreateArchive(
+                ptr::null(),
+                CREATE_ALWAYS,
+                16,
+                &mut handle
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Null handle should fail
+            assert!(!SFileCreateArchive(
+                b"test.mpq\0".as_ptr() as *const c_char,
+                CREATE_ALWAYS,
+                16,
+                ptr::null_mut()
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Invalid hash table size (not power of 2) should fail
+            assert!(!SFileCreateArchive(
+                b"test.mpq\0".as_ptr() as *const c_char,
+                CREATE_ALWAYS,
+                15, // Not a power of 2
+                &mut handle
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+
+            // Hash table size too small should fail
+            assert!(!SFileCreateArchive(
+                b"test.mpq\0".as_ptr() as *const c_char,
+                CREATE_ALWAYS,
+                2, // Less than minimum of 4
+                &mut handle
+            ));
+            assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
+        }
     }
 }

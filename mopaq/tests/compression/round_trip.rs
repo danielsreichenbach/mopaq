@@ -1,6 +1,7 @@
 //! Round-trip compression tests for all algorithms
 
-use mopaq::compression::{compress, decompress, flags};
+use crate::compression::test_helpers::test_round_trip;
+use mopaq::compression::flags;
 
 #[test]
 fn test_zlib_round_trip() {
@@ -12,11 +13,7 @@ fn test_zlib_round_trip() {
     ];
 
     for original in test_cases {
-        let compressed = compress(&original, flags::ZLIB).expect("Compression failed");
-        let decompressed =
-            decompress(&compressed, flags::ZLIB, original.len()).expect("Decompression failed");
-
-        assert_eq!(decompressed, original);
+        test_round_trip(&original, flags::ZLIB).expect("Zlib round trip failed");
     }
 }
 
@@ -29,11 +26,7 @@ fn test_bzip2_round_trip() {
     ];
 
     for original in test_cases {
-        let compressed = compress(&original, flags::BZIP2).expect("Compression failed");
-        let decompressed =
-            decompress(&compressed, flags::BZIP2, original.len()).expect("Decompression failed");
-
-        assert_eq!(decompressed, original);
+        test_round_trip(&original, flags::BZIP2).expect("Bzip2 round trip failed");
     }
 }
 
@@ -47,11 +40,7 @@ fn test_lzma_round_trip() {
     ];
 
     for original in test_cases {
-        let compressed = compress(&original, flags::LZMA).expect("Compression failed");
-        let decompressed =
-            decompress(&compressed, flags::LZMA, original.len()).expect("Decompression failed");
-
-        assert_eq!(decompressed, original);
+        test_round_trip(&original, flags::LZMA).expect("LZMA round trip failed");
     }
 }
 
@@ -65,21 +54,12 @@ fn test_sparse_round_trip() {
     ];
 
     for original in test_cases {
-        let compressed = compress(&original, flags::SPARSE).expect("Compression failed");
-        let decompressed =
-            decompress(&compressed, flags::SPARSE, original.len()).expect("Decompression failed");
-
-        assert_eq!(decompressed, original);
+        test_round_trip(&original, flags::SPARSE).expect("Sparse round trip failed");
     }
 }
 
 #[test]
 fn test_no_compression() {
     let original = b"This is uncompressed data";
-
-    let compressed = compress(original, 0).expect("Compression failed");
-    assert_eq!(compressed, original);
-
-    let decompressed = decompress(&compressed, 0, original.len()).expect("Decompression failed");
-    assert_eq!(decompressed, original);
+    test_round_trip(original, 0).expect("No compression round trip failed");
 }

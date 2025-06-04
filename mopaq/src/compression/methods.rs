@@ -6,6 +6,8 @@ pub mod flags {
     pub const HUFFMAN: u8 = 0x01;
     /// Deflate/zlib compression
     pub const ZLIB: u8 = 0x02;
+    /// PKWare Implode compression (older format, appears in newer MPQ v4 archives)
+    pub const IMPLODE: u8 = 0x04;
     /// PKWare DCL compression
     pub const PKWARE: u8 = 0x08;
     /// BZip2 compression
@@ -29,6 +31,8 @@ pub enum CompressionMethod {
     Huffman,
     /// Deflate/zlib compression
     Zlib,
+    /// PKWare Implode compression
+    Implode,
     /// PKWare DCL compression
     PKWare,
     /// BZip2 compression
@@ -58,6 +62,7 @@ impl CompressionMethod {
             0 => CompressionMethod::None,
             flags::HUFFMAN => CompressionMethod::Huffman,
             flags::ZLIB => CompressionMethod::Zlib,
+            flags::IMPLODE => CompressionMethod::Implode,
             flags::PKWARE => CompressionMethod::PKWare,
             flags::BZIP2 => CompressionMethod::BZip2,
             flags::SPARSE => CompressionMethod::Sparse,

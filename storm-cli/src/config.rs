@@ -69,7 +69,6 @@ pub fn load_config(path: Option<&PathBuf>) -> Result<Config> {
 }
 
 /// Save configuration to file
-#[allow(dead_code)]
 pub fn save_config(config: &Config, path: &Path) -> Result<()> {
     let contents = toml::to_string_pretty(config)?;
 

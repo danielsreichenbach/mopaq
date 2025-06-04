@@ -32,6 +32,12 @@ pub fn decompress(data: &[u8], method: u8, decompressed_size: usize) -> Result<V
         CompressionMethod::BZip2 => algorithms::bzip2::decompress(data, decompressed_size),
         CompressionMethod::Lzma => algorithms::lzma::decompress(data, decompressed_size),
         CompressionMethod::Sparse => algorithms::sparse::decompress(data, decompressed_size),
+        CompressionMethod::Implode => {
+            log::error!("PKWare Implode decompression requested but not implemented");
+            Err(Error::compression(
+                "PKWare Implode decompression not yet implemented (found in newer MPQ v4 archives)",
+            ))
+        }
         CompressionMethod::PKWare => {
             log::error!("PKWare decompression requested but not implemented");
             Err(Error::compression(
@@ -44,11 +50,9 @@ pub fn decompress(data: &[u8], method: u8, decompressed_size: usize) -> Result<V
                 "Huffman decompression not yet implemented",
             ))
         }
-        CompressionMethod::AdpcmMono | CompressionMethod::AdpcmStereo => {
-            log::error!("ADPCM decompression requested but not implemented");
-            Err(Error::compression(
-                "ADPCM decompression not yet implemented",
-            ))
+        CompressionMethod::AdpcmMono => algorithms::adpcm::decompress_mono(data, decompressed_size),
+        CompressionMethod::AdpcmStereo => {
+            algorithms::adpcm::decompress_stereo(data, decompressed_size)
         }
         CompressionMethod::Multiple(flags) => {
             log::debug!("Multiple compression with flags 0x{:02X}", flags);
@@ -87,6 +91,8 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
         flags::HUFFMAN
     } else if flags & flags::ZLIB != 0 {
         flags::ZLIB
+    } else if flags & flags::IMPLODE != 0 {
+        flags::IMPLODE
     } else if flags & flags::BZIP2 != 0 {
         flags::BZIP2
     } else if flags & flags::SPARSE != 0 {
@@ -111,19 +117,74 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
         // 0x48: Mono ADPCM + PKWare (Implode)
         // 0x81: Stereo ADPCM + Huffman
         // 0x88: Stereo ADPCM + PKWare (Implode)
-        log::warn!(
-            "ADPCM + {} compression (flags: 0x{:02X}) not yet implemented",
-            match final_compression {
-                flags::HUFFMAN => "Huffman",
-                flags::PKWARE => "PKWare",
-                _ => "other",
-            },
-            flags
-        );
-        return Err(Error::compression(format!(
-            "ADPCM compression combinations (0x{:02X}) not yet implemented",
-            flags
-        )));
+
+        // ADPCM is always applied first during compression, so we decompress it last
+        // First, we need to decompress with the other method(s)
+        let intermediate_data = data.to_vec();
+        // For intermediate size, we need a large enough buffer
+        // ADPCM achieves ~2:1, but we need to be conservative
+        let intermediate_size = expected_size * 4; // Conservative estimate
+
+        // Apply other decompression(s) first
+        if has_pkware && final_compression != flags::PKWARE {
+            // PKWare + another compression
+            log::warn!("ADPCM + PKWare + other compression not yet fully implemented");
+            return Err(Error::compression(format!(
+                "Complex ADPCM compression combinations (0x{:02X}) not yet implemented",
+                flags
+            )));
+        }
+
+        // Apply the non-ADPCM decompression
+        // For zlib, we can decompress without knowing the exact size
+        let decompressed_intermediate = match final_compression {
+            flags::HUFFMAN => {
+                return Err(Error::compression(
+                    "ADPCM + Huffman decompression not yet implemented",
+                ));
+            }
+            flags::ZLIB => {
+                // Zlib can decompress without knowing the exact output size
+                algorithms::zlib::decompress(&intermediate_data, intermediate_size)?
+            }
+            flags::BZIP2 => {
+                // For multi-compression, we don't know the exact intermediate size
+                // So we decompress without size validation
+                use bzip2::read::BzDecoder;
+                use std::io::Read;
+
+                let mut decoder = BzDecoder::new(&intermediate_data[..]);
+                let mut decompressed = Vec::new();
+                decoder.read_to_end(&mut decompressed).map_err(|e| {
+                    Error::compression(format!("BZip2 decompression failed: {}", e))
+                })?;
+                decompressed
+            }
+            flags::SPARSE => algorithms::sparse::decompress(&intermediate_data, intermediate_size)?,
+            flags::IMPLODE => {
+                return Err(Error::compression(
+                    "ADPCM + Implode decompression not yet implemented",
+                ));
+            }
+            flags::PKWARE => {
+                return Err(Error::compression(
+                    "ADPCM + PKWare decompression not yet implemented",
+                ));
+            }
+            _ => {
+                return Err(Error::compression(format!(
+                    "Unknown compression combination with ADPCM: 0x{:02X}",
+                    flags
+                )));
+            }
+        };
+
+        // Now apply ADPCM decompression
+        if has_adpcm_mono {
+            return algorithms::adpcm::decompress_mono(&decompressed_intermediate, expected_size);
+        } else {
+            return algorithms::adpcm::decompress_stereo(&decompressed_intermediate, expected_size);
+        }
     }
 
     // If we have PKWare, the first byte tells us the actual compression used
@@ -168,6 +229,12 @@ fn decompress_multiple(data: &[u8], flags: u8, expected_size: usize) -> Result<V
         flags::ZLIB => algorithms::zlib::decompress(compressed_data, expected_size),
         flags::BZIP2 => algorithms::bzip2::decompress(compressed_data, expected_size),
         flags::SPARSE => algorithms::sparse::decompress(compressed_data, expected_size),
+        flags::IMPLODE => {
+            log::error!("PKWare Implode decompression requested but not implemented");
+            Err(Error::compression(
+                "PKWare Implode decompression not yet implemented (found in newer MPQ v4 archives)",
+            ))
+        }
         _ => {
             // Try each method if we're not sure
             log::warn!(

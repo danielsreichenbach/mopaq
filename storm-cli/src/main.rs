@@ -94,6 +94,34 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+
+    /// Configuration management
+    #[command(about = "Manage storm-cli configuration")]
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommands {
+    /// Show current configuration
+    Show,
+
+    /// Set a configuration value
+    Set {
+        /// Configuration key (e.g., default_compression, default_version)
+        key: String,
+
+        /// Value to set
+        value: String,
+    },
+
+    /// Reset configuration to defaults
+    Reset,
+
+    /// Show configuration file path
+    Path,
 }
 
 #[derive(Subcommand)]
@@ -179,6 +207,28 @@ enum ArchiveCommands {
         /// Show file name hashes
         #[arg(long)]
         show_hashes: bool,
+    },
+
+    /// Analyze compression methods used in an archive
+    Analyze {
+        /// Path to the MPQ archive
+        archive: String,
+
+        /// Show compression method for each file
+        #[arg(short, long)]
+        detailed: bool,
+
+        /// Group results by file extension
+        #[arg(short = 'e', long)]
+        by_extension: bool,
+
+        /// Show only files using unsupported compression methods
+        #[arg(short = 'u', long)]
+        unsupported_only: bool,
+
+        /// Show compression ratio statistics
+        #[arg(short = 's', long)]
+        show_stats: bool,
     },
 }
 
@@ -357,6 +407,9 @@ enum CompressionMethod {
     Zlib,
     Bzip2,
     Lzma,
+    Sparse,
+    AdpcmMono,
+    AdpcmStereo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, ValueEnum)]
@@ -380,7 +433,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Load config if specified
-    let _config = if let Some(config_path) = &cli.config {
+    let config = if let Some(config_path) = &cli.config {
         config::load_config(Some(config_path))?
     } else {
         config::load_config(None)?
@@ -433,31 +486,59 @@ fn main() -> Result<()> {
             } => {
                 let mut options = commands::archive::CreateOptions::default();
 
-                // Set version
-                if let Some(v) = version {
-                    options.version = match v {
+                // Set version - use config default if not specified
+                options.version = if let Some(v) = version {
+                    match v {
                         1 => FormatVersion::V1,
                         2 => FormatVersion::V2,
                         3 => FormatVersion::V3,
                         4 => FormatVersion::V4,
                         _ => unreachable!(),
-                    };
-                }
+                    }
+                } else if let Some(v) = config.default_version {
+                    match v {
+                        1 => FormatVersion::V1,
+                        2 => FormatVersion::V2,
+                        3 => FormatVersion::V3,
+                        4 => FormatVersion::V4,
+                        _ => FormatVersion::V1, // fallback to V1 for invalid values
+                    }
+                } else {
+                    FormatVersion::V1
+                };
 
-                // Set compression
-                if let Some(comp) = compression {
-                    options.compression = match comp {
+                // Set compression - use config default if not specified
+                options.compression = if let Some(comp) = compression {
+                    match comp {
                         CompressionMethod::None => 0,
                         CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
                         CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
                         CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
-                    };
-                }
+                        CompressionMethod::Sparse => mopaq::compression::flags::SPARSE as u16,
+                        CompressionMethod::AdpcmMono => {
+                            mopaq::compression::flags::ADPCM_MONO as u16
+                        }
+                        CompressionMethod::AdpcmStereo => {
+                            mopaq::compression::flags::ADPCM_STEREO as u16
+                        }
+                    }
+                } else if let Some(comp_str) = &config.default_compression {
+                    match comp_str.as_str() {
+                        "none" => 0,
+                        "zlib" => mopaq::compression::flags::ZLIB as u16,
+                        "bzip2" => mopaq::compression::flags::BZIP2 as u16,
+                        "lzma" => mopaq::compression::flags::LZMA as u16,
+                        "sparse" => mopaq::compression::flags::SPARSE as u16,
+                        "adpcm-mono" => mopaq::compression::flags::ADPCM_MONO as u16,
+                        "adpcm-stereo" => mopaq::compression::flags::ADPCM_STEREO as u16,
+                        _ => mopaq::compression::flags::ZLIB as u16, // fallback to zlib
+                    }
+                } else {
+                    mopaq::compression::flags::ZLIB as u16
+                };
 
-                // Set block size
-                if let Some(bs) = block_size {
-                    options.block_size = bs;
-                }
+                // Set block size - use config default if not specified
+                options.block_size = block_size.or(config.default_block_size).unwrap_or(3);
 
                 // Set listfile option
                 options.listfile = if no_listfile {
@@ -497,6 +578,22 @@ fn main() -> Result<()> {
                 // Delegate to the file list command
                 commands::file::list(&archive, all, pattern.as_deref(), regex, show_hashes)?;
             }
+
+            ArchiveCommands::Analyze {
+                archive,
+                detailed,
+                by_extension,
+                unsupported_only,
+                show_stats,
+            } => {
+                commands::archive::analyze(
+                    &archive,
+                    detailed,
+                    by_extension,
+                    unsupported_only,
+                    show_stats,
+                )?;
+            }
         },
 
         Commands::File(cmd) => match cmd {
@@ -533,6 +630,11 @@ fn main() -> Result<()> {
                     CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
                     CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
                     CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
+                    CompressionMethod::Sparse => mopaq::compression::flags::SPARSE as u16,
+                    CompressionMethod::AdpcmMono => mopaq::compression::flags::ADPCM_MONO as u16,
+                    CompressionMethod::AdpcmStereo => {
+                        mopaq::compression::flags::ADPCM_STEREO as u16
+                    }
                 });
                 commands::file::add(&archive, &files, comp, path.as_deref())?;
             }
@@ -596,6 +698,155 @@ fn main() -> Result<()> {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
             generate(shell, &mut cmd, name, &mut io::stdout());
+        }
+
+        Commands::Config { command } => {
+            handle_config_command(command, &cli.config)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle config commands
+fn handle_config_command(
+    command: ConfigCommands,
+    config_path_override: &Option<PathBuf>,
+) -> Result<()> {
+    use colored::Colorize;
+
+    // Determine config path
+    let config_path = if let Some(path) = config_path_override {
+        path.clone()
+    } else {
+        // Use default config location
+        if let Some(home) = dirs::home_dir() {
+            let storm_config = home.join(".storm-cli").join("config.toml");
+            let xdg_config = home.join(".config").join("storm-cli").join("config.toml");
+
+            // Prefer XDG location for new configs
+            if storm_config.exists() {
+                storm_config
+            } else {
+                xdg_config
+            }
+        } else {
+            anyhow::bail!("Could not determine home directory");
+        }
+    };
+
+    match command {
+        ConfigCommands::Show => {
+            let config = config::load_config(config_path_override.as_ref())?;
+            println!("{}", "Current Configuration:".green().bold());
+            println!(
+                "  Default compression: {}",
+                config
+                    .default_compression
+                    .as_deref()
+                    .unwrap_or("zlib")
+                    .cyan()
+            );
+            println!(
+                "  Default version: {}",
+                config.default_version.unwrap_or(1).to_string().cyan()
+            );
+            println!(
+                "  Default block size: {}",
+                config.default_block_size.unwrap_or(3).to_string().cyan()
+            );
+            println!(
+                "  Default output: {}",
+                config.default_output.as_deref().unwrap_or("text").cyan()
+            );
+
+            if let Some(aliases) = &config.aliases {
+                if !aliases.is_empty() {
+                    println!("\n{}:", "Aliases".green().bold());
+                    for (alias, command) in aliases {
+                        println!("  {} = {}", alias.yellow(), command);
+                    }
+                }
+            }
+        }
+
+        ConfigCommands::Set { key, value } => {
+            let mut config = config::load_config(config_path_override.as_ref())?;
+
+            match key.as_str() {
+                "default_compression" => {
+                    // Validate compression method
+                    match value.as_str() {
+                        "none" | "zlib" | "bzip2" | "lzma" | "sparse" | "adpcm-mono" | "adpcm-stereo" => {
+                            config.default_compression = Some(value.clone());
+                        }
+                        _ => anyhow::bail!(
+                            "Invalid compression method. Valid values: none, zlib, bzip2, lzma, sparse, adpcm-mono, adpcm-stereo"
+                        ),
+                    }
+                }
+                "default_version" => {
+                    // Validate version
+                    match value.parse::<u16>() {
+                        Ok(v) if (1..=4).contains(&v) => {
+                            config.default_version = Some(v);
+                        }
+                        _ => anyhow::bail!("Invalid version. Valid values: 1, 2, 3, 4"),
+                    }
+                }
+                "default_block_size" => {
+                    // Validate block size
+                    match value.parse::<u16>() {
+                        Ok(bs) if bs <= 23 => {
+                            config.default_block_size = Some(bs);
+                        }
+                        _ => anyhow::bail!("Invalid block size. Valid range: 0-23"),
+                    }
+                }
+                "default_output" => {
+                    // Validate output format
+                    match value.as_str() {
+                        "text" | "json" | "csv" => {
+                            config.default_output = Some(value.clone());
+                        }
+                        _ => anyhow::bail!("Invalid output format. Valid values: text, json, csv"),
+                    }
+                }
+                _ => anyhow::bail!("Unknown configuration key: {}", key),
+            }
+
+            // Save the updated config
+            config::save_config(&config, &config_path)?;
+            println!(
+                "{} {} = {}",
+                "Set".green().bold(),
+                key.cyan(),
+                value.yellow()
+            );
+            println!("Configuration saved to: {}", config_path.display());
+        }
+
+        ConfigCommands::Reset => {
+            let default_config = config::Config::default();
+            config::save_config(&default_config, &config_path)?;
+            println!("{}", "Configuration reset to defaults".green().bold());
+            println!("Configuration saved to: {}", config_path.display());
+        }
+
+        ConfigCommands::Path => {
+            println!(
+                "{} {}",
+                "Configuration file path:".green().bold(),
+                config_path.display()
+            );
+            if config_path.exists() {
+                println!("Status: {}", "exists".green());
+            } else {
+                println!(
+                    "Status: {} (will be created when you set a value)",
+                    "does not exist".yellow()
+                );
+            }
         }
     }
 

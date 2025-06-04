@@ -19,6 +19,9 @@ crate-type = ["cdylib", "staticlib"]
 mopaq = { path = "../mopaq", version = "0.1.0" }
 libc = { workspace = true }
 log = { workspace = true }
+# For file verification
+md-5 = "0.10"
+crc32fast = "1.4"
 
 [build-dependencies]
 cbindgen = "0.29"

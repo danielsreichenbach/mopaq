@@ -1455,8 +1455,10 @@ name = "storm-ffi"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "crc32fast",
  "libc",
  "log",
+ "md-5",
  "mopaq",
  "tempfile",
 ]

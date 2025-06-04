@@ -2,8 +2,10 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use mopaq::compression::CompressionMethod;
 use mopaq::{Archive, ArchiveBuilder, FormatVersion, ListfileOption, OpenOptions, SignatureStatus};
 use serde_json;
+use std::collections::HashMap;
 use std::path::Path;
 use walkdir::WalkDir;
 
@@ -606,5 +608,380 @@ fn print_detailed_verify_result(
         }
     }
 
+    Ok(())
+}
+
+/// Analyze compression methods used in an archive
+pub fn analyze(
+    archive_path: &str,
+    detailed: bool,
+    by_extension: bool,
+    unsupported_only: bool,
+    show_stats: bool,
+) -> Result<()> {
+    let global_opts = GLOBAL_OPTS.get().expect("Global options not set");
+
+    if !global_opts.quiet && global_opts.output == OutputFormat::Text {
+        println!("Analyzing compression methods: {}", archive_path.cyan());
+    }
+
+    let mut archive = Archive::open(archive_path)?;
+
+    // Get file entries with detailed info
+    let file_entries = archive.list_with_hashes()?;
+
+    if file_entries.is_empty() {
+        if global_opts.output == OutputFormat::Text {
+            println!("No files found in archive");
+        }
+        return Ok(());
+    }
+
+    // Statistics tracking
+    let mut compression_stats: HashMap<String, usize> = HashMap::new();
+    let mut extension_stats: HashMap<String, HashMap<String, usize>> = HashMap::new();
+    let mut unsupported_files = Vec::new();
+    let mut total_compressed_size = 0u64;
+    let mut total_uncompressed_size = 0u64;
+
+    // Analyze each file
+    for entry in &file_entries {
+        if let Some(file_info) = archive.find_file(&entry.name)? {
+            let compression_method = CompressionMethod::from_flags(file_info.flags as u8);
+            let method_name = format_compression_method(&compression_method);
+            let is_supported = is_compression_supported(&compression_method);
+
+            // Update compression method statistics
+            *compression_stats.entry(method_name.clone()).or_insert(0) += 1;
+
+            // Track file extension statistics if requested
+            if by_extension {
+                let extension = get_file_extension(&entry.name);
+                let ext_entry = extension_stats.entry(extension).or_default();
+                *ext_entry.entry(method_name.clone()).or_insert(0) += 1;
+            }
+
+            // Track unsupported files
+            if !is_supported {
+                unsupported_files.push((entry.name.clone(), method_name.clone()));
+            }
+
+            // Update size statistics
+            total_compressed_size += file_info.compressed_size;
+            total_uncompressed_size += file_info.file_size;
+
+            // Print detailed info if requested
+            if detailed && (!unsupported_only || !is_supported) {
+                let support_status = if is_supported {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                };
+
+                if global_opts.output == OutputFormat::Text {
+                    if show_stats {
+                        let ratio = if file_info.file_size > 0 {
+                            (file_info.compressed_size as f64 / file_info.file_size as f64 * 100.0)
+                                as u32
+                        } else {
+                            100
+                        };
+                        println!(
+                            "{} {} {} ({} -> {} bytes, {}%)",
+                            support_status,
+                            entry.name,
+                            method_name.cyan(),
+                            file_info.file_size,
+                            file_info.compressed_size,
+                            ratio
+                        );
+                    } else {
+                        println!("{} {} {}", support_status, entry.name, method_name.cyan());
+                    }
+                }
+            }
+        }
+    }
+
+    // Output results based on format
+    match global_opts.output {
+        OutputFormat::Text => {
+            let results = AnalysisResults {
+                compression_stats: &compression_stats,
+                extension_stats: &extension_stats,
+                unsupported_files: &unsupported_files,
+                by_extension,
+                unsupported_only,
+                show_stats,
+                total_compressed_size,
+                total_uncompressed_size,
+                total_files: file_entries.len(),
+            };
+            print_text_analysis_results(&results);
+        }
+        OutputFormat::Json => {
+            print_json_analysis_results(
+                &compression_stats,
+                &extension_stats,
+                &unsupported_files,
+                total_compressed_size,
+                total_uncompressed_size,
+                file_entries.len(),
+            )?;
+        }
+        OutputFormat::Csv => {
+            print_csv_analysis_results(&compression_stats)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn is_compression_supported(method: &CompressionMethod) -> bool {
+    match method {
+        CompressionMethod::None => true,
+        CompressionMethod::Zlib => true,
+        CompressionMethod::BZip2 => true,
+        CompressionMethod::Lzma => true,
+        CompressionMethod::Sparse => true,
+        CompressionMethod::AdpcmMono => true,
+        CompressionMethod::AdpcmStereo => true,
+        CompressionMethod::Huffman => false, // Not implemented
+        CompressionMethod::Implode => false, // Not implemented
+        CompressionMethod::PKWare => false,  // Not implemented
+        CompressionMethod::Multiple(_) => false, // May contain unsupported methods
+    }
+}
+
+fn format_compression_method(method: &CompressionMethod) -> String {
+    match method {
+        CompressionMethod::None => "None".to_string(),
+        CompressionMethod::Huffman => "Huffman".to_string(),
+        CompressionMethod::Zlib => "Zlib".to_string(),
+        CompressionMethod::Implode => "PKWare Implode".to_string(),
+        CompressionMethod::PKWare => "PKWare DCL".to_string(),
+        CompressionMethod::BZip2 => "BZip2".to_string(),
+        CompressionMethod::Sparse => "Sparse".to_string(),
+        CompressionMethod::AdpcmMono => "ADPCM Mono".to_string(),
+        CompressionMethod::AdpcmStereo => "ADPCM Stereo".to_string(),
+        CompressionMethod::Lzma => "LZMA".to_string(),
+        CompressionMethod::Multiple(flags) => format!("Multiple (0x{:02X})", flags),
+    }
+}
+
+fn is_compression_method_supported(method_name: &str) -> bool {
+    match method_name {
+        "None" => true,
+        "Zlib" => true,
+        "BZip2" => true,
+        "LZMA" => true,
+        "Sparse" => true,
+        "ADPCM Mono" => true,
+        "ADPCM Stereo" => true,
+        "Huffman" => false,        // Not implemented
+        "PKWare Implode" => false, // Not implemented
+        "PKWare DCL" => false,     // Not implemented
+        _ => false,                // Multiple or unknown
+    }
+}
+
+fn get_file_extension(filename: &str) -> String {
+    std::path::Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+        .unwrap_or_else(|| "(no extension)".to_string())
+}
+
+struct AnalysisResults<'a> {
+    compression_stats: &'a HashMap<String, usize>,
+    extension_stats: &'a HashMap<String, HashMap<String, usize>>,
+    unsupported_files: &'a [(String, String)],
+    by_extension: bool,
+    unsupported_only: bool,
+    show_stats: bool,
+    total_compressed_size: u64,
+    total_uncompressed_size: u64,
+    total_files: usize,
+}
+
+fn print_text_analysis_results(results: &AnalysisResults) {
+    if !results.unsupported_only {
+        println!("\n{}", "Compression Method Summary".bold());
+        println!("{}", "=".repeat(60));
+
+        let mut sorted_methods: Vec<_> = results.compression_stats.iter().collect();
+        sorted_methods.sort_by(|a, b| b.1.cmp(a.1)); // Sort by count descending
+
+        for (method_name, count) in sorted_methods {
+            let supported = is_compression_method_supported(method_name);
+            let support_indicator = if supported {
+                "✓".green()
+            } else {
+                "✗".red()
+            };
+            let percentage = (*count as f64 / results.total_files as f64 * 100.0) as u32;
+            println!(
+                "{} {:20} {:6} files ({:3}%)",
+                support_indicator, method_name, count, percentage
+            );
+        }
+
+        if results.show_stats {
+            println!("\n{}", "Archive Statistics".bold());
+            println!("{}", "-".repeat(60));
+            println!("Total files:           {}", results.total_files);
+            println!(
+                "Total uncompressed:    {} bytes",
+                results.total_uncompressed_size
+            );
+            println!(
+                "Total compressed:      {} bytes",
+                results.total_compressed_size
+            );
+            let overall_ratio = if results.total_uncompressed_size > 0 {
+                (results.total_compressed_size as f64 / results.total_uncompressed_size as f64
+                    * 100.0) as u32
+            } else {
+                100
+            };
+            println!("Overall compression:   {}%", overall_ratio);
+        }
+    }
+
+    if results.by_extension && !results.extension_stats.is_empty() {
+        println!("\n{}", "Compression by File Extension".bold());
+        println!("{}", "=".repeat(60));
+
+        let mut sorted_extensions: Vec<_> = results.extension_stats.iter().collect();
+        sorted_extensions.sort_by(|a, b| {
+            let a_total: usize = a.1.values().sum();
+            let b_total: usize = b.1.values().sum();
+            b_total.cmp(&a_total)
+        });
+
+        for (ext, methods) in sorted_extensions {
+            let total_for_ext: usize = methods.values().sum();
+            println!("\n{} ({} files):", ext.cyan(), total_for_ext);
+
+            let mut sorted_methods: Vec<_> = methods.iter().collect();
+            sorted_methods.sort_by(|a, b| b.1.cmp(a.1));
+
+            for (method_name, count) in sorted_methods {
+                let supported = is_compression_method_supported(method_name);
+                let support_indicator = if supported {
+                    "✓".green()
+                } else {
+                    "✗".red()
+                };
+                let percentage = (*count as f64 / total_for_ext as f64 * 100.0) as u32;
+                println!(
+                    "  {} {:18} {:4} files ({:3}%)",
+                    support_indicator, method_name, count, percentage
+                );
+            }
+        }
+    }
+
+    if !results.unsupported_files.is_empty() {
+        println!("\n{}", "Unsupported Compression Methods".yellow().bold());
+        println!("{}", "=".repeat(60));
+
+        let unsupported_count = results.unsupported_files.len();
+        let unsupported_percentage =
+            (unsupported_count as f64 / results.total_files as f64 * 100.0) as u32;
+
+        println!(
+            "Found {} files ({:3}%) using unsupported compression methods:",
+            unsupported_count, unsupported_percentage
+        );
+
+        if results.unsupported_only {
+            for (filename, method_name) in results.unsupported_files {
+                println!("✗ {} {}", filename, method_name.red());
+            }
+        }
+
+        // Group unsupported methods
+        let mut unsupported_method_counts = HashMap::new();
+        for (_, method_name) in results.unsupported_files {
+            *unsupported_method_counts.entry(method_name).or_insert(0) += 1;
+        }
+
+        println!("\nUnsupported method breakdown:");
+        for (method_name, count) in &unsupported_method_counts {
+            println!("  {} - {} files", method_name.red(), count);
+        }
+    } else if !results.unsupported_only {
+        println!(
+            "\n{} All compression methods in this archive are supported!",
+            "✓".green()
+        );
+    }
+}
+
+fn print_json_analysis_results(
+    compression_stats: &HashMap<String, usize>,
+    extension_stats: &HashMap<String, HashMap<String, usize>>,
+    unsupported_files: &[(String, String)],
+    total_compressed_size: u64,
+    total_uncompressed_size: u64,
+    total_files: usize,
+) -> Result<()> {
+    let compression_methods: HashMap<String, serde_json::Value> = compression_stats
+        .iter()
+        .map(|(method_name, count)| {
+            let supported = is_compression_method_supported(method_name);
+            (
+                method_name.clone(),
+                serde_json::json!({
+                    "count": count,
+                    "percentage": (*count as f64 / total_files as f64 * 100.0),
+                    "supported": supported
+                }),
+            )
+        })
+        .collect();
+
+    let by_extension: HashMap<String, HashMap<String, usize>> = extension_stats
+        .iter()
+        .map(|(ext, methods)| (ext.clone(), methods.clone()))
+        .collect();
+
+    let unsupported: Vec<serde_json::Value> = unsupported_files
+        .iter()
+        .map(|(filename, method_name)| {
+            serde_json::json!({
+                "filename": filename,
+                "compression_method": method_name
+            })
+        })
+        .collect();
+
+    let result = serde_json::json!({
+        "total_files": total_files,
+        "total_compressed_size": total_compressed_size,
+        "total_uncompressed_size": total_uncompressed_size,
+        "overall_compression_ratio": if total_uncompressed_size > 0 {
+            total_compressed_size as f64 / total_uncompressed_size as f64 * 100.0
+        } else {
+            100.0
+        },
+        "compression_methods": compression_methods,
+        "by_extension": by_extension,
+        "unsupported_files": unsupported,
+        "unsupported_count": unsupported_files.len()
+    });
+
+    print_json(&result)?;
+    Ok(())
+}
+
+fn print_csv_analysis_results(compression_stats: &HashMap<String, usize>) -> Result<()> {
+    println!("compression_method,file_count,supported");
+    for (method_name, count) in compression_stats {
+        let supported = is_compression_method_supported(method_name);
+        println!("{},{},{}", method_name, count, supported);
+    }
     Ok(())
 }

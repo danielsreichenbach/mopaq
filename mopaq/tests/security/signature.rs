@@ -78,13 +78,14 @@ fn test_signature_public_key_parsing() {
 fn test_weak_signature_parsing() {
     use mopaq::crypto::parse_weak_signature;
 
-    // Create a mock weak signature (64 bytes)
-    let signature_data = vec![0xAB; 70]; // Extra bytes to test parsing
+    // Create a mock weak signature file (72 bytes total: 8 byte header + 64 byte signature)
+    let signature_data = vec![0xAB; 72]; // 72 bytes total as expected
 
     let parsed = parse_weak_signature(&signature_data).expect("Failed to parse weak signature");
 
     assert_eq!(parsed.len(), 64);
-    assert_eq!(parsed, &signature_data[..64]);
+    // Check that the signature is extracted from offset 8
+    assert_eq!(parsed, &signature_data[8..72]);
 }
 
 #[test]
@@ -103,4 +104,97 @@ fn test_signature_status_enum() {
         // Just ensure they can be created and compared
         assert_eq!(status, status);
     }
+}
+
+#[test]
+fn test_stormlib_compatible_hash_calculation() {
+    use mopaq::crypto::{calculate_mpq_hash_md5, SignatureInfo, DIGEST_UNIT_SIZE};
+    use std::io::Cursor;
+
+    // Test that our hash calculation matches StormLib's approach
+    // Create test data larger than one chunk to test chunk processing
+    let test_data = vec![0x42u8; DIGEST_UNIT_SIZE + 1000]; // 64KB + 1000 bytes
+    let mut cursor = Cursor::new(&test_data);
+
+    // Create signature info with no excluded area (simple case)
+    let sig_info = SignatureInfo::new_weak(
+        0,                      // archive start
+        test_data.len() as u64, // archive size
+        0,                      // signature position (no exclusion)
+        0,                      // signature size (no exclusion)
+        vec![],                 // empty signature
+    );
+
+    // Calculate hash
+    let result = calculate_mpq_hash_md5(&mut cursor, &sig_info);
+    assert!(result.is_ok(), "Hash calculation should succeed");
+
+    let hash = result.unwrap();
+    assert_eq!(hash.len(), 16, "MD5 hash should be 16 bytes");
+
+    // Hash should not be all zeros (would indicate empty data)
+    assert_ne!(hash, [0u8; 16], "Hash should not be all zeros");
+}
+
+#[test]
+fn test_stormlib_signature_exclusion() {
+    use mopaq::crypto::{calculate_mpq_hash_md5, SignatureInfo, DIGEST_UNIT_SIZE};
+    use std::io::Cursor;
+
+    // Test signature area exclusion by zeroing
+    let test_data = vec![0x42u8; DIGEST_UNIT_SIZE]; // Exactly 64KB
+    let mut cursor1 = Cursor::new(&test_data);
+    let mut cursor2 = Cursor::new(&test_data);
+
+    // Calculate hash without exclusion
+    let sig_info_no_exclude = SignatureInfo::new_weak(0, test_data.len() as u64, 0, 0, vec![]);
+    let hash_no_exclude = calculate_mpq_hash_md5(&mut cursor1, &sig_info_no_exclude).unwrap();
+
+    // Calculate hash with middle section excluded (should be zeroed)
+    let exclude_start = 1000;
+    let exclude_size = 72; // Typical weak signature size
+    let sig_info_exclude = SignatureInfo::new_weak(
+        0,
+        test_data.len() as u64,
+        exclude_start,
+        exclude_size,
+        vec![0u8; exclude_size as usize],
+    );
+    let hash_exclude = calculate_mpq_hash_md5(&mut cursor2, &sig_info_exclude).unwrap();
+
+    // Hashes should be different because exclusion zeros out signature area
+    assert_ne!(
+        hash_no_exclude, hash_exclude,
+        "Hashes should differ when signature area is excluded"
+    );
+}
+
+#[test]
+fn test_zero_signature_validation() {
+    use mopaq::crypto::parse_weak_signature;
+
+    // Test that zero signatures are properly rejected
+    let zero_signature_data = vec![0x00u8; 72]; // All zeros including header
+    let result = parse_weak_signature(&zero_signature_data);
+
+    assert!(result.is_err(), "Zero signature should be rejected");
+    assert!(
+        result.unwrap_err().to_string().contains("all zeros"),
+        "Error should mention signature is all zeros"
+    );
+}
+
+#[test]
+fn test_stormlib_digest_unit_size() {
+    use mopaq::crypto::DIGEST_UNIT_SIZE;
+
+    // Verify we use exactly the same chunk size as StormLib
+    assert_eq!(
+        DIGEST_UNIT_SIZE, 0x10000,
+        "Digest unit size should match StormLib (64KB)"
+    );
+    assert_eq!(
+        DIGEST_UNIT_SIZE, 65536,
+        "Digest unit size should be 65536 bytes"
+    );
 }

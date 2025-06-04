@@ -16,6 +16,12 @@ use std::io::Read;
 /// Weak signature size (512-bit RSA)
 pub const WEAK_SIGNATURE_SIZE: usize = 64; // 512 bits / 8
 
+/// Weak signature file size (signature + 8 byte header)
+pub const WEAK_SIGNATURE_FILE_SIZE: usize = WEAK_SIGNATURE_SIZE + 8; // 72 bytes total
+
+/// Hash digest unit size for chunked processing (matches StormLib)
+pub const DIGEST_UNIT_SIZE: usize = 0x10000; // 65536 bytes
+
 /// Strong signature header
 pub const STRONG_SIGNATURE_HEADER: [u8; 4] = *b"NGIS"; // "SIGN" reversed
 
@@ -29,6 +35,50 @@ pub enum SignatureType {
     Weak,
     /// Strong signature (2048-bit RSA with SHA-1)
     Strong,
+}
+
+/// Signature information for hash calculation (matches StormLib's MPQ_SIGNATURE_INFO)
+#[derive(Debug, Clone)]
+pub struct SignatureInfo {
+    /// File offset where the hashing starts (archive beginning)
+    pub begin_mpq_data: u64,
+    /// Begin of the excluded area (signature file position)  
+    pub begin_exclude: u64,
+    /// End of the excluded area (signature file position + size)
+    pub end_exclude: u64,
+    /// File offset where the hashing ends (archive end)
+    pub end_mpq_data: u64,
+    /// Size of the entire file
+    pub end_of_file: u64,
+    /// The signature data
+    pub signature: Vec<u8>,
+    /// Length of the signature
+    pub signature_size: u32,
+    /// Signature types present
+    pub signature_types: u32,
+}
+
+impl SignatureInfo {
+    /// Create a new SignatureInfo for weak signature verification
+    pub fn new_weak(
+        archive_start: u64,
+        archive_size: u64,
+        signature_file_pos: u64,
+        signature_file_size: u64,
+        signature_data: Vec<u8>,
+    ) -> Self {
+        let signature_size = signature_data.len() as u32;
+        Self {
+            begin_mpq_data: archive_start,
+            begin_exclude: signature_file_pos,
+            end_exclude: signature_file_pos + signature_file_size,
+            end_mpq_data: archive_start + archive_size,
+            end_of_file: archive_start + archive_size, // For weak signatures, no data after archive
+            signature: signature_data,
+            signature_size,
+            signature_types: 1, // SIGNATURE_TYPE_WEAK = 1
+        }
+    }
 }
 
 /// Blizzard public keys for signature verification
@@ -73,17 +123,26 @@ pub mod public_keys {
 }
 
 /// Parse weak signature from (signature) file data
+/// StormLib stores the actual signature at offset 8 in the 72-byte file
 pub fn parse_weak_signature(data: &[u8]) -> Result<Vec<u8>> {
-    if data.len() < WEAK_SIGNATURE_SIZE {
+    if data.len() < WEAK_SIGNATURE_FILE_SIZE {
         return Err(Error::invalid_format(format!(
-            "Weak signature too small: {} bytes, expected {}",
+            "Weak signature file too small: {} bytes, expected {}",
             data.len(),
-            WEAK_SIGNATURE_SIZE
+            WEAK_SIGNATURE_FILE_SIZE
         )));
     }
 
-    // Weak signatures are just the raw 512-bit RSA signature
-    Ok(data[..WEAK_SIGNATURE_SIZE].to_vec())
+    // Extract the signature data from offset 8 (skip 8-byte header)
+    // StormLib reads from &pSI->Signature[8] with MPQ_WEAK_SIGNATURE_SIZE bytes
+    let signature = data[8..8 + WEAK_SIGNATURE_SIZE].to_vec();
+
+    // Check for zero signature (like StormLib's IsValidSignature check)
+    if signature.iter().all(|&b| b == 0) {
+        return Err(Error::invalid_format("Signature is all zeros (invalid)"));
+    }
+
+    Ok(signature)
 }
 
 /// Parse strong signature from data after the archive
@@ -106,10 +165,123 @@ pub fn parse_strong_signature(data: &[u8]) -> Result<Vec<u8>> {
     }
 
     // Extract the 256-byte signature data (skip 4-byte header)
-    Ok(data[4..4 + 256].to_vec())
+    let signature = data[4..4 + 256].to_vec();
+
+    // Check for zero signature (like StormLib's IsValidSignature check)
+    if signature.iter().all(|&b| b == 0) {
+        return Err(Error::invalid_format("Signature is all zeros (invalid)"));
+    }
+
+    Ok(signature)
 }
 
-/// Verify a weak signature (512-bit RSA with MD5)
+/// Calculate MD5 hash for weak signature verification (matches StormLib's CalculateMpqHashMd5)
+/// This implementation exactly matches StormLib's chunk-based approach:
+/// - Uses exactly 64KB chunks (DIGEST_UNIT_SIZE = 0x10000)
+/// - Zeros out signature area when it overlaps with current chunk
+/// - Processes chunks with proper overlap detection for signature boundaries
+pub fn calculate_mpq_hash_md5<R: Read + std::io::Seek>(
+    mut reader: R,
+    signature_info: &SignatureInfo,
+) -> Result<[u8; 16]> {
+    let mut hasher = Md5::new();
+    let mut buffer = vec![0u8; DIGEST_UNIT_SIZE]; // Exactly 64KB chunks like StormLib
+    let mut current_pos = signature_info.begin_mpq_data;
+
+    log::debug!(
+        "StormLib-compatible hash calculation: archive range 0x{:X}-0x{:X}, exclude range 0x{:X}-0x{:X}",
+        signature_info.begin_mpq_data,
+        signature_info.end_mpq_data,
+        signature_info.begin_exclude,
+        signature_info.end_exclude
+    );
+
+    // Hash data from BeginMpqData to EndMpqData in 64KB chunks
+    while current_pos < signature_info.end_mpq_data {
+        let remaining = signature_info.end_mpq_data - current_pos;
+        let to_read = (remaining as usize).min(DIGEST_UNIT_SIZE);
+
+        // Seek to current position and read chunk
+        reader.seek(std::io::SeekFrom::Start(current_pos))?;
+        let bytes_read = reader.read(&mut buffer[..to_read])?;
+        if bytes_read == 0 {
+            break; // EOF reached
+        }
+
+        let chunk_end_pos = current_pos + bytes_read as u64;
+
+        // Check if signature area overlaps with this chunk
+        let sig_begin = signature_info.begin_exclude;
+        let sig_end = signature_info.end_exclude;
+
+        if current_pos < sig_end && chunk_end_pos > sig_begin {
+            // Calculate the overlap of signature area within this chunk
+            let chunk_sig_start = if sig_begin > current_pos {
+                (sig_begin - current_pos) as usize
+            } else {
+                0
+            };
+            let chunk_sig_end = if sig_end < chunk_end_pos {
+                (sig_end - current_pos) as usize
+            } else {
+                bytes_read
+            };
+
+            // Zero out the signature area within this chunk (StormLib approach)
+            // This matches StormLib's behavior of zeroing signature bytes rather than skipping them
+            for byte in buffer[chunk_sig_start..chunk_sig_end].iter_mut() {
+                *byte = 0;
+            }
+
+            log::debug!(
+                "Chunk 0x{:X}-0x{:X}: zeroed signature bytes [{}-{}]",
+                current_pos,
+                chunk_end_pos,
+                chunk_sig_start,
+                chunk_sig_end
+            );
+        }
+
+        // Hash the entire chunk (including any zeroed signature area)
+        hasher.update(&buffer[..bytes_read]);
+        current_pos += bytes_read as u64;
+    }
+
+    let hash = hasher.finalize();
+    log::debug!("Final MD5 hash: {:02X?}", hash.as_slice());
+
+    Ok(hash.into())
+}
+
+/// Verify a weak signature (512-bit RSA with MD5) using StormLib-compatible approach
+pub fn verify_weak_signature_stormlib<R: Read + std::io::Seek>(
+    reader: R,
+    signature: &[u8],
+    signature_info: &SignatureInfo,
+) -> Result<bool> {
+    // Get the public key
+    let public_key = public_keys::weak_public_key()?;
+
+    // Calculate MD5 hash using StormLib's approach
+    let hash = calculate_mpq_hash_md5(reader, signature_info)?;
+
+    // Convert signature from little-endian to big-endian (StormLib's memrev operation)
+    let signature_be = reverse_bytes(signature);
+
+    // Decrypt the signature using RSA
+    let signature_int = BigUint::from_bytes_be(&signature_be);
+    let n = BigUint::from_bytes_be(&public_key.n().to_bytes_be());
+    let e = BigUint::from_bytes_be(&public_key.e().to_bytes_be());
+
+    // Perform RSA operation: signature^e mod n
+    let decrypted = signature_int.modpow(&e, &n);
+    let decrypted_bytes = decrypted.to_bytes_be();
+
+    // Verify PKCS#1 v1.5 padding
+    verify_pkcs1_v15_md5(&decrypted_bytes, &hash)
+}
+
+/// Legacy verify function (kept for backward compatibility)
 pub fn verify_weak_signature<R: Read>(
     mut reader: R,
     signature: &[u8],
@@ -331,10 +503,15 @@ mod tests {
 
     #[test]
     fn test_parse_weak_signature() {
-        let data = vec![0xFF; 100];
+        let mut data = vec![0x00; WEAK_SIGNATURE_FILE_SIZE];
+        // Fill signature area (bytes 8-71) with non-zero data
+        for item in data.iter_mut().skip(8).take(WEAK_SIGNATURE_SIZE) {
+            *item = 0xFF;
+        }
+
         let sig = parse_weak_signature(&data).unwrap();
         assert_eq!(sig.len(), WEAK_SIGNATURE_SIZE);
-        assert_eq!(sig, &data[..WEAK_SIGNATURE_SIZE]);
+        assert_eq!(sig, vec![0xFF; WEAK_SIGNATURE_SIZE]);
     }
 
     #[test]
@@ -342,6 +519,14 @@ mod tests {
         let data = vec![0xFF; 32];
         let result = parse_weak_signature(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_weak_signature_zero_signature() {
+        let data = vec![0x00; WEAK_SIGNATURE_FILE_SIZE]; // All zeros including signature area
+        let result = parse_weak_signature(&data);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("all zeros"));
     }
 
     #[test]
@@ -370,6 +555,17 @@ mod tests {
         let data = vec![0xFF; 100];
         let result = parse_strong_signature(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_strong_signature_zero_signature() {
+        let mut data = vec![0x00; STRONG_SIGNATURE_SIZE];
+        // Set the correct header but keep signature as zeros
+        data[0..4].copy_from_slice(&STRONG_SIGNATURE_HEADER);
+
+        let result = parse_strong_signature(&data);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("all zeros"));
     }
 
     #[test]

@@ -51,6 +51,17 @@ extern "C" {
 // - `handle` must be a valid pointer to write the output handle
 bool SFileOpenArchive(const char *filename, uint32_t _priority, uint32_t _flags, HANDLE *handle);
 
+// Create a new MPQ archive
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
+// - `handle` must be a valid pointer to write the output handle
+bool SFileCreateArchive(const char *filename,
+                        uint32_t creation_disposition,
+                        uint32_t hash_table_size,
+                        HANDLE *handle);
+
 // Close an MPQ archive
 bool SFileCloseArchive(HANDLE handle);
 
@@ -150,6 +161,27 @@ void SFileSetLastError(uint32_t error);
 //
 // - `buffer` must be a valid pointer with sufficient space for the filename
 bool SFileGetFileName(HANDLE file, char *buffer);
+
+// Extract a file from archive to disk
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
+// - `local_filename` must be a valid null-terminated C string
+bool SFileExtractFile(HANDLE archive,
+                      const char *filename,
+                      const char *local_filename,
+                      uint32_t _search_scope);
+
+// Verify file integrity
+//
+// # Safety
+//
+// - `filename` must be a valid null-terminated C string
+bool SFileVerifyFile(HANDLE archive, const char *filename, uint32_t flags);
+
+// Verify archive integrity
+bool SFileVerifyArchive(HANDLE archive, uint32_t flags);
 
 #ifdef __cplusplus
 }  // extern "C"

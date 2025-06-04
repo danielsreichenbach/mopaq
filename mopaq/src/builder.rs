@@ -3,12 +3,13 @@
 use crate::{
     compression::{compress, flags as compression_flags},
     crypto::{encrypt_block, hash_string, hash_type, jenkins_hash},
-    header::FormatVersion,
+    header::{FormatVersion, MpqHeaderV4Data},
     tables::{BetHeader, BlockEntry, BlockTable, HashEntry, HashTable, HetHeader, HiBlockTable},
     Error, Result,
 };
+use md5::{Digest, Md5};
 use std::fs::{self};
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
@@ -85,6 +86,8 @@ struct HeaderWriteParams {
     bet_table_pos: Option<u64>,
     _het_table_size: Option<u64>,
     _bet_table_size: Option<u64>,
+    // V4 specific fields
+    v4_data: Option<MpqHeaderV4Data>,
 }
 
 /// Options for listfile generation
@@ -302,16 +305,35 @@ impl ArchiveBuilder {
         let path = path.as_ref();
 
         // Create a temporary file in the same directory
-        let temp_file = NamedTempFile::new_in(path.parent().unwrap_or_else(|| Path::new(".")))?;
+        let mut temp_file = NamedTempFile::new_in(path.parent().unwrap_or_else(|| Path::new(".")))?;
 
         // Add listfile if needed
         self.prepare_listfile()?;
 
-        // Write the archive to the temp file
+        // Write the archive directly to the temp file
         {
-            let mut writer = BufWriter::new(temp_file.as_file());
-            self.write_archive(&mut writer)?;
-            writer.flush()?;
+            let file = temp_file.as_file_mut();
+            use std::io::{Seek as _, Write as _};
+
+            // For v3+ archives that need read-back support, we need to write everything
+            // to a buffer first, then copy to file
+            if self.version >= FormatVersion::V3 {
+                // Pre-allocate buffer with header space
+                let header_size = self.version.header_size() as usize;
+                let vec = vec![0u8; header_size];
+                let mut buffer = std::io::Cursor::new(vec);
+                buffer.seek(SeekFrom::Start(header_size as u64))?;
+
+                self.write_archive(&mut buffer)?;
+
+                // Write the buffer to file
+                file.write_all(buffer.get_ref())?;
+                file.flush()?;
+            } else {
+                // For v1/v2, we can write directly
+                self.write_archive(file)?;
+                file.flush()?;
+            }
         }
 
         // Atomically rename temp file to final destination
@@ -364,7 +386,7 @@ impl ArchiveBuilder {
     }
 
     /// Write the complete archive
-    fn write_archive<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
+    fn write_archive<W: Write + Seek + Read>(&self, writer: &mut W) -> Result<()> {
         // For v3+, we should create HET/BET tables instead of/in addition to hash/block
         let use_het_bet = self.version >= FormatVersion::V3;
 
@@ -480,20 +502,23 @@ impl ArchiveBuilder {
             bet_table_pos: None,
             _het_table_size: None,
             _bet_table_size: None,
+            v4_data: None, // V1/V2 don't use v4_data
         };
         self.write_header(writer, &header_params)?;
+
+        // TODO: For V4, implement proper MD5 calculation
 
         Ok(())
     }
 
     /// Write archive with HET/BET tables (v3+)
-    fn write_archive_with_het_bet<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
+    fn write_archive_with_het_bet<W: Write + Seek + Read>(&self, writer: &mut W) -> Result<()> {
         let block_table_size = self.pending_files.len() as u32;
 
         // Calculate sector size
         let sector_size = crate::calculate_sector_size(self.block_size);
 
-        // Reserve space for header (we'll write it at the end)
+        // Reserve space for header by seeking past it (we'll write it at the end)
         let header_size = self.version.header_size();
         writer.seek(SeekFrom::Start(header_size as u64))?;
 
@@ -548,12 +573,12 @@ impl ArchiveBuilder {
         // Create HET table
         let het_table_pos = writer.stream_position()?;
         let (het_data, _het_header) = self.create_het_table()?;
-        let het_table_size = self.write_het_table(writer, &het_data, true)?;
+        let (het_table_size, het_table_md5) = self.write_het_table(writer, &het_data, true)?;
 
         // Create BET table
         let bet_table_pos = writer.stream_position()?;
         let (bet_data, _bet_header) = self.create_bet_table(&block_table)?;
-        let bet_table_size = self.write_bet_table(writer, &bet_data, true)?;
+        let (bet_table_size, bet_table_md5) = self.write_bet_table(writer, &bet_data, true)?;
 
         // For compatibility, also write classic tables
         let hash_table_size = self.calculate_hash_table_size();
@@ -571,30 +596,58 @@ impl ArchiveBuilder {
 
         // Write hash table
         let hash_table_pos = writer.stream_position()?;
-        self.write_hash_table(writer, &hash_table)?;
+        let hash_table_md5 = self.write_hash_table(writer, &hash_table)?;
 
         // Write block table
         let block_table_pos = writer.stream_position()?;
-        self.write_block_table(writer, &block_table)?;
+        let block_table_md5 = self.write_block_table(writer, &block_table)?;
 
         // Write hi-block table if needed
-        let hi_block_table_pos = if let Some(ref hi_table) = hi_block_table {
+        let (hi_block_table_pos, hi_block_table_md5) = if let Some(ref hi_table) = hi_block_table {
             if hi_table.is_needed() {
                 let pos = writer.stream_position()?;
-                self.write_hi_block_table(writer, hi_table)?;
-                Some(pos)
+                let md5 = self.write_hi_block_table(writer, hi_table)?;
+                (Some(pos), md5)
             } else {
-                None
+                (None, [0u8; 16])
             }
         } else {
-            None
+            (None, [0u8; 16])
         };
 
         // Calculate archive size
         let archive_size = writer.stream_position()?;
 
+        // Save the current position (end of archive)
+        let _archive_end_pos = writer.stream_position()?;
+
         // Write header at the beginning
         writer.seek(SeekFrom::Start(0))?;
+
+        // For V4, we need to use the MD5 checksums calculated during table writes
+        let v4_data = if self.version == FormatVersion::V4 {
+            Some(MpqHeaderV4Data {
+                hash_table_size_64: hash_table_size as u64 * 16, // 16 bytes per hash entry
+                block_table_size_64: self.pending_files.len() as u64 * 16, // 16 bytes per block entry
+                hi_block_table_size_64: if hi_block_table.is_some() {
+                    self.pending_files.len() as u64 * 2 // 2 bytes per hi-block entry
+                } else {
+                    0
+                },
+                het_table_size_64: het_table_size,
+                bet_table_size_64: bet_table_size,
+                raw_chunk_size: 0x4000, // 16KB default as per StormLib
+                md5_block_table: block_table_md5,
+                md5_hash_table: hash_table_md5,
+                md5_hi_block_table: hi_block_table_md5,
+                md5_bet_table: bet_table_md5,
+                md5_het_table: het_table_md5,
+                md5_mpq_header: [0u8; 16], // Will be calculated after header write
+            })
+        } else {
+            None
+        };
+
         let header_params = HeaderWriteParams {
             archive_size,
             hash_table_pos,
@@ -606,8 +659,16 @@ impl ArchiveBuilder {
             bet_table_pos: Some(bet_table_pos),
             _het_table_size: Some(het_table_size),
             _bet_table_size: Some(bet_table_size),
+            v4_data,
         };
+
+        // Write header
         self.write_header(writer, &header_params)?;
+
+        // For V4, calculate and write the header MD5
+        if self.version == FormatVersion::V4 {
+            self.finalize_v4_header_md5(writer)?;
+        }
 
         Ok(())
     }
@@ -649,27 +710,19 @@ impl ArchiveBuilder {
                 );
                 let compressed = compress(file_data, *compression)?;
 
-                // Only use compression if it actually reduces size
-                if compressed.len() < file_data.len() {
+                // The compress function now handles the compression byte prefix
+                // and only returns compressed data if it's beneficial
+                if compressed != *file_data {
+                    // Compression was beneficial and the data now includes the method byte
                     log::debug!(
-                        "Compression successful: {} -> {} bytes",
+                        "Compression successful: {} -> {} bytes (including method byte)",
                         file_data.len(),
                         compressed.len()
                     );
                     flags |= BlockEntry::FLAG_COMPRESS;
-                    // For encrypted files, always prepend compression type byte
-                    // For unencrypted files, zlib can be stored without type byte for compatibility
-                    if *encrypt || *compression != compression_flags::ZLIB {
-                        let mut final_data = Vec::with_capacity(1 + compressed.len());
-                        final_data.push(*compression);
-                        final_data.extend_from_slice(&compressed);
-                        final_data
-                    } else {
-                        // Zlib can be stored without type byte for compatibility (unencrypted only)
-                        compressed
-                    }
+                    compressed
                 } else {
-                    // Don't compress if it doesn't help
+                    // Compression not beneficial, returned original data
                     log::debug!("Compression not beneficial, storing uncompressed");
                     file_data.to_vec()
                 }
@@ -750,20 +803,15 @@ impl ArchiveBuilder {
 
                 // Compress sector if needed
                 let compressed_sector = if *compression != 0 && !sector_bytes.is_empty() {
-                    // Check if compression actually helps
+                    // The compress function now handles the compression byte prefix
+                    // and only returns compressed data if it's beneficial
                     let compressed = compress(sector_bytes, *compression)?;
-                    if compressed.len() < sector_bytes.len() {
+                    if compressed != *sector_bytes {
+                        // Compression was beneficial and the data now includes the method byte
                         flags |= BlockEntry::FLAG_COMPRESS;
-                        // For encrypted files, always prepend compression type byte to each sector
-                        if *encrypt {
-                            let mut final_sector = Vec::with_capacity(1 + compressed.len());
-                            final_sector.push(*compression);
-                            final_sector.extend_from_slice(&compressed);
-                            final_sector
-                        } else {
-                            compressed
-                        }
+                        compressed
                     } else {
+                        // Compression not beneficial, returned original data
                         sector_bytes.to_vec()
                     }
                 } else {
@@ -887,7 +935,11 @@ impl ArchiveBuilder {
     }
 
     /// Write the hash table
-    fn write_hash_table<W: Write>(&self, writer: &mut W, hash_table: &HashTable) -> Result<()> {
+    fn write_hash_table<W: Write>(
+        &self,
+        writer: &mut W,
+        hash_table: &HashTable,
+    ) -> Result<[u8; 16]> {
         // Convert to bytes for encryption
         let mut table_data = Vec::new();
         for entry in hash_table.entries() {
@@ -902,14 +954,21 @@ impl ArchiveBuilder {
         let key = hash_string("(hash table)", hash_type::FILE_KEY);
         self.encrypt_data(&mut table_data, key);
 
+        // Calculate MD5 of encrypted data (for v4)
+        let md5 = self.calculate_md5(&table_data);
+
         // Write encrypted table
         writer.write_all(&table_data)?;
 
-        Ok(())
+        Ok(md5)
     }
 
     /// Write the block table
-    fn write_block_table<W: Write>(&self, writer: &mut W, block_table: &BlockTable) -> Result<()> {
+    fn write_block_table<W: Write>(
+        &self,
+        writer: &mut W,
+        block_table: &BlockTable,
+    ) -> Result<[u8; 16]> {
         // Convert to bytes for encryption
         let mut table_data = Vec::new();
         for entry in block_table.entries() {
@@ -923,10 +982,13 @@ impl ArchiveBuilder {
         let key = hash_string("(block table)", hash_type::FILE_KEY);
         self.encrypt_data(&mut table_data, key);
 
+        // Calculate MD5 of encrypted data (for v4)
+        let md5 = self.calculate_md5(&table_data);
+
         // Write encrypted table
         writer.write_all(&table_data)?;
 
-        Ok(())
+        Ok(md5)
     }
 
     /// Write the hi-block table
@@ -934,16 +996,28 @@ impl ArchiveBuilder {
         &self,
         writer: &mut W,
         hi_block_table: &HiBlockTable,
-    ) -> Result<()> {
+    ) -> Result<[u8; 16]> {
         // Hi-block table is not encrypted
+        let mut table_data = Vec::new();
         for &entry in hi_block_table.entries() {
-            writer.write_u16_le(entry)?;
+            table_data.write_u16_le(entry)?;
         }
-        Ok(())
+
+        // Calculate MD5 (for v4)
+        let md5 = self.calculate_md5(&table_data);
+
+        // Write table
+        writer.write_all(&table_data)?;
+
+        Ok(md5)
     }
 
     /// Write the MPQ header
-    fn write_header<W: Write>(&self, writer: &mut W, params: &HeaderWriteParams) -> Result<()> {
+    fn write_header<W: Write + Seek>(
+        &self,
+        writer: &mut W,
+        params: &HeaderWriteParams,
+    ) -> Result<()> {
         // Write signature
         writer.write_u32_le(crate::signatures::MPQ_ARCHIVE)?;
 
@@ -990,8 +1064,35 @@ impl ArchiveBuilder {
                 writer.write_u64_le(params.het_table_pos.unwrap_or(0))?; // het_table_pos
             }
             FormatVersion::V4 => {
-                // TODO: Implement V4 header with MD5 checksums
-                return Err(Error::invalid_format("V4 format not yet implemented"));
+                // V2 fields
+                writer.write_u64_le(params.hi_block_table_pos.unwrap_or(0))?; // hi_block_table_pos
+                writer.write_u16_le((params.hash_table_pos >> 32) as u16)?; // hash_table_pos_hi
+                writer.write_u16_le((params.block_table_pos >> 32) as u16)?; // block_table_pos_hi
+
+                // V3 fields
+                writer.write_u64_le(params.archive_size)?; // archive_size_64
+                writer.write_u64_le(params.bet_table_pos.unwrap_or(0))?; // bet_table_pos
+                writer.write_u64_le(params.het_table_pos.unwrap_or(0))?; // het_table_pos
+
+                // V4 fields
+                if let Some(v4_data) = &params.v4_data {
+                    writer.write_u64_le(v4_data.hash_table_size_64)?;
+                    writer.write_u64_le(v4_data.block_table_size_64)?;
+                    writer.write_u64_le(v4_data.hi_block_table_size_64)?;
+                    writer.write_u64_le(v4_data.het_table_size_64)?;
+                    writer.write_u64_le(v4_data.bet_table_size_64)?;
+                    writer.write_u32_le(v4_data.raw_chunk_size)?;
+
+                    // Write MD5 hashes (all except header MD5 which is calculated later)
+                    writer.write_all(&v4_data.md5_block_table)?;
+                    writer.write_all(&v4_data.md5_hash_table)?;
+                    writer.write_all(&v4_data.md5_hi_block_table)?;
+                    writer.write_all(&v4_data.md5_bet_table)?;
+                    writer.write_all(&v4_data.md5_het_table)?;
+                    writer.write_all(&v4_data.md5_mpq_header)?;
+                } else {
+                    return Err(Error::invalid_format("V4 format requires v4_data"));
+                }
             }
         }
 
@@ -1051,6 +1152,34 @@ impl ArchiveBuilder {
     /// Encrypt u32 data in place
     fn encrypt_data_u32(&self, data: &mut [u32], key: u32) {
         encrypt_block(data, key);
+    }
+
+    /// Calculate MD5 hash of data
+    fn calculate_md5(&self, data: &[u8]) -> [u8; 16] {
+        let mut hasher = Md5::new();
+        hasher.update(data);
+        hasher.finalize().into()
+    }
+
+    /// Finalize V4 header by calculating and writing the header MD5
+    fn finalize_v4_header_md5<W: Write + Seek + Read>(&self, writer: &mut W) -> Result<()> {
+        // Read the header data (excluding the MD5 field itself)
+        writer.seek(SeekFrom::Start(0))?;
+        let header_size = self.version.header_size() as usize;
+        let md5_size = 16;
+        let header_data_size = header_size - md5_size; // 208 - 16 = 192 bytes
+
+        let mut header_data = vec![0u8; header_data_size];
+        writer.read_exact(&mut header_data)?;
+
+        // Calculate MD5 of header data
+        let header_md5 = self.calculate_md5(&header_data);
+
+        // Write the MD5 at the end of the header (offset 0xC0 = 192)
+        writer.seek(SeekFrom::Start(192))?;
+        writer.write_all(&header_md5)?;
+
+        Ok(())
     }
 
     /// Create HET table data
@@ -1243,8 +1372,13 @@ impl ArchiveBuilder {
         }
     }
 
-    /// Write HET table to the archive, returns the written size
-    fn write_het_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<u64> {
+    /// Write HET table to the archive, returns the written size and MD5
+    fn write_het_table<W: Write>(
+        &self,
+        writer: &mut W,
+        data: &[u8],
+        encrypt: bool,
+    ) -> Result<(u64, [u8; 16])> {
         let mut table_data = data.to_vec();
 
         // Compress if enabled and this is a v3+ archive
@@ -1269,9 +1403,12 @@ impl ArchiveBuilder {
             self.encrypt_data(&mut table_data, key);
         }
 
+        // Calculate MD5 of final data (after compression and encryption)
+        let md5 = self.calculate_md5(&table_data);
+
         let written_size = table_data.len() as u64;
         writer.write_all(&table_data)?;
-        Ok(written_size)
+        Ok((written_size, md5))
     }
 
     /// Create BET table data
@@ -1297,7 +1434,11 @@ impl ArchiveBuilder {
         let bit_count_file_pos = Self::calculate_bits_needed(max_file_pos);
         let bit_count_file_size = Self::calculate_bits_needed(max_file_size);
         let bit_count_cmp_size = Self::calculate_bits_needed(max_compressed_size);
-        let bit_count_flag_index = Self::calculate_bits_needed(unique_flags.len() as u64 - 1);
+        let bit_count_flag_index = if unique_flags.is_empty() {
+            0
+        } else {
+            Self::calculate_bits_needed(unique_flags.len() as u64 - 1)
+        };
         let bit_count_unknown = 0; // Not used
 
         // Calculate bit positions
@@ -1441,8 +1582,13 @@ impl ArchiveBuilder {
         Ok((result, final_header))
     }
 
-    /// Write BET table to the archive, returns the written size
-    fn write_bet_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<u64> {
+    /// Write BET table to the archive, returns the written size and MD5
+    fn write_bet_table<W: Write>(
+        &self,
+        writer: &mut W,
+        data: &[u8],
+        encrypt: bool,
+    ) -> Result<(u64, [u8; 16])> {
         let mut table_data = data.to_vec();
 
         // Compress if enabled and this is a v3+ archive
@@ -1467,9 +1613,12 @@ impl ArchiveBuilder {
             self.encrypt_data(&mut table_data, key);
         }
 
+        // Calculate MD5 of final data (after compression and encryption)
+        let md5 = self.calculate_md5(&table_data);
+
         let written_size = table_data.len() as u64;
         writer.write_all(&table_data)?;
-        Ok(written_size)
+        Ok((written_size, md5))
     }
 }
 

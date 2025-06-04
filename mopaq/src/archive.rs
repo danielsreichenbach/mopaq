@@ -449,6 +449,113 @@ impl Archive {
         self.hi_block_table.as_ref()
     }
 
+    /// Validate MD5 checksums for v4 archives
+    fn validate_v4_md5_checksums(&mut self) -> Result<Option<Md5Status>> {
+        use md5::{Digest, Md5};
+
+        let v4_data = match &self.header.v4_data {
+            Some(data) => data,
+            None => return Ok(None),
+        };
+
+        // Helper function to calculate MD5 of raw table data
+        let mut validate_table_md5 =
+            |expected: &[u8; 16], offset: u64, size: u64| -> Result<bool> {
+                if size == 0 {
+                    return Ok(true); // Empty table is valid
+                }
+
+                // Read raw table data
+                self.reader
+                    .seek(SeekFrom::Start(self.archive_offset + offset))?;
+                let mut table_data = vec![0u8; size as usize];
+                self.reader.read_exact(&mut table_data)?;
+
+                // Calculate MD5
+                let mut hasher = Md5::new();
+                hasher.update(&table_data);
+                let actual_md5: [u8; 16] = hasher.finalize().into();
+
+                Ok(actual_md5 == *expected)
+            };
+
+        // Validate hash table MD5
+        let hash_table_valid = if self.header.hash_table_size > 0 {
+            let hash_offset = self.header.get_hash_table_pos();
+            let hash_size = v4_data.hash_table_size_64;
+            validate_table_md5(&v4_data.md5_hash_table, hash_offset, hash_size)?
+        } else {
+            true // No hash table to validate
+        };
+
+        // Validate block table MD5
+        let block_table_valid = if self.header.block_table_size > 0 {
+            let block_offset = self.header.get_block_table_pos();
+            let block_size = v4_data.block_table_size_64;
+            validate_table_md5(&v4_data.md5_block_table, block_offset, block_size)?
+        } else {
+            true // No block table to validate
+        };
+
+        // Validate hi-block table MD5 (if present)
+        let hi_block_table_valid = if let Some(hi_pos) = self.header.hi_block_table_pos {
+            if hi_pos != 0 {
+                let hi_size = v4_data.hi_block_table_size_64;
+                validate_table_md5(&v4_data.md5_hi_block_table, hi_pos, hi_size)?
+            } else {
+                true
+            }
+        } else {
+            true // No hi-block table
+        };
+
+        // Validate HET table MD5 (if present)
+        let het_table_valid = if let Some(het_pos) = self.header.het_table_pos {
+            if het_pos != 0 {
+                let het_size = v4_data.het_table_size_64;
+                validate_table_md5(&v4_data.md5_het_table, het_pos, het_size)?
+            } else {
+                true
+            }
+        } else {
+            true // No HET table
+        };
+
+        // Validate BET table MD5 (if present)
+        let bet_table_valid = if let Some(bet_pos) = self.header.bet_table_pos {
+            if bet_pos != 0 {
+                let bet_size = v4_data.bet_table_size_64;
+                validate_table_md5(&v4_data.md5_bet_table, bet_pos, bet_size)?
+            } else {
+                true
+            }
+        } else {
+            true // No BET table
+        };
+
+        // Validate header MD5 (first 192 bytes of header, excluding the MD5 field itself)
+        let header_valid = {
+            self.reader.seek(SeekFrom::Start(self.archive_offset))?;
+            let mut header_data = vec![0u8; 192];
+            self.reader.read_exact(&mut header_data)?;
+
+            let mut hasher = Md5::new();
+            hasher.update(&header_data);
+            let actual_md5: [u8; 16] = hasher.finalize().into();
+
+            actual_md5 == v4_data.md5_mpq_header
+        };
+
+        Ok(Some(Md5Status {
+            hash_table_valid,
+            block_table_valid,
+            hi_block_table_valid,
+            het_table_valid,
+            bet_table_valid,
+            header_valid,
+        }))
+    }
+
     /// Get detailed information about the archive
     pub fn get_info(&mut self) -> Result<ArchiveInfo> {
         // Ensure tables are loaded
@@ -640,16 +747,9 @@ impl Archive {
             data_size: ud.user_data_size,
         });
 
-        // TODO: Implement MD5 verification for v4 archives
+        // MD5 verification for v4 archives
         let md5_status = if self.header.v4_data.is_some() {
-            Some(Md5Status {
-                hash_table_valid: true, // Placeholder
-                block_table_valid: true,
-                hi_block_table_valid: true,
-                het_table_valid: true,
-                bet_table_valid: true,
-                header_valid: true,
-            })
+            self.validate_v4_md5_checksums()?
         } else {
             None
         };
@@ -1133,55 +1233,24 @@ impl Archive {
 
             // Decompress if needed
             if file_info.is_compressed() {
-                // Encrypted files always have compression type byte
-                // For unencrypted WoW MPQ files, try direct zlib first
-                if file_info.is_encrypted() {
-                    // Encrypted files always have compression type byte
-                    if !data.is_empty() {
-                        let compression_type = data[0];
-                        let compressed_data = &data[1..];
-                        log::debug!(
-                            "Decompressing encrypted file: type=0x{:02X}, compressed_size={}, expected_size={}",
-                            compression_type,
-                            compressed_data.len(),
-                            actual_file_size
-                        );
-                        compression::decompress(
-                            compressed_data,
-                            compression_type,
-                            actual_file_size as usize,
-                        )
-                    } else {
-                        Err(Error::compression("Empty compressed data"))
-                    }
-                } else {
-                    // For unencrypted files, try direct zlib first (common in WoW MPQs)
-                    match compression::decompress(
-                        &data,
-                        compression::flags::ZLIB,
+                // All compressed files should have a compression type byte prefix
+                // This matches StormLib's behavior
+                if !data.is_empty() {
+                    let compression_type = data[0];
+                    let compressed_data = &data[1..];
+                    log::debug!(
+                        "Decompressing file: type=0x{:02X}, compressed_size={}, expected_size={}",
+                        compression_type,
+                        compressed_data.len(),
+                        actual_file_size
+                    );
+                    compression::decompress(
+                        compressed_data,
+                        compression_type,
                         actual_file_size as usize,
-                    ) {
-                        Ok(decompressed) => Ok(decompressed),
-                        Err(e) => {
-                            // If direct zlib fails, try with compression type byte
-                            log::debug!(
-                                "Direct zlib decompression failed: {}, trying with type byte",
-                                e
-                            );
-
-                            if !data.is_empty() {
-                                let compression_type = data[0];
-                                let compressed_data = &data[1..];
-                                compression::decompress(
-                                    compressed_data,
-                                    compression_type,
-                                    actual_file_size as usize,
-                                )
-                            } else {
-                                Err(Error::compression("Empty compressed data"))
-                            }
-                        }
-                    }
+                    )
+                } else {
+                    Err(Error::compression("Empty compressed data"))
                 }
             } else {
                 Ok(data)
@@ -1311,11 +1380,10 @@ impl Archive {
             }
 
             // Decompress sector
-            let decompressed_sector = if file_info.is_compressed()
-                && sector_size_compressed < expected_size
-            {
-                // Encrypted sectors always have compression type byte
-                if file_info.is_encrypted() {
+            let decompressed_sector =
+                if file_info.is_compressed() && sector_size_compressed < expected_size {
+                    // All compressed sectors should have compression type byte prefix
+                    // This matches StormLib's behavior
                     if !sector_data.is_empty() {
                         let compression_type = sector_data[0];
                         let compressed_data = &sector_data[1..];
@@ -1324,27 +1392,9 @@ impl Archive {
                         return Err(Error::compression("Empty compressed sector data"));
                     }
                 } else {
-                    // For unencrypted sectors, check for compression type byte
-                    if !sector_data.is_empty() && sector_data[0] == compression::flags::ZLIB {
-                        let compressed = &sector_data[1..];
-                        compression::decompress(
-                            compressed,
-                            compression::flags::ZLIB,
-                            expected_size,
-                        )?
-                    } else {
-                        // Try raw zlib
-                        compression::decompress(
-                            &sector_data,
-                            compression::flags::ZLIB,
-                            expected_size,
-                        )?
-                    }
-                }
-            } else {
-                // Sector is not compressed
-                sector_data[..expected_size.min(sector_data.len())].to_vec()
-            };
+                    // Sector is not compressed
+                    sector_data[..expected_size.min(sector_data.len())].to_vec()
+                };
 
             // Validate CRC if present
             if let Some(ref crcs) = sector_crcs {
@@ -1497,17 +1547,24 @@ impl Archive {
         // Try to parse as weak signature
         match crate::crypto::parse_weak_signature(&signature_data) {
             Ok(weak_sig) => {
-                // Calculate archive size (up to the signature file)
-                let archive_size = signature_info.file_pos - self.archive_offset;
+                // Create signature info for StormLib-compatible hash calculation
+                let archive_size = self.header.archive_size as u64;
+                let sig_info = crate::crypto::SignatureInfo::new_weak(
+                    self.archive_offset,
+                    archive_size,
+                    signature_info.file_pos,
+                    signature_info.compressed_size,
+                    weak_sig.clone(),
+                );
 
                 // Seek to beginning of archive
                 self.reader.seek(SeekFrom::Start(self.archive_offset))?;
 
-                // Verify the weak signature
-                match crate::crypto::verify_weak_signature(
+                // Verify the weak signature using StormLib-compatible approach
+                match crate::crypto::verify_weak_signature_stormlib(
                     &mut self.reader,
                     &weak_sig,
-                    archive_size,
+                    &sig_info,
                 ) {
                     Ok(true) => Ok(SignatureStatus::WeakValid),
                     Ok(false) => Ok(SignatureStatus::WeakInvalid),
