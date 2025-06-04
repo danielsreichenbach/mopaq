@@ -533,13 +533,41 @@ impl Archive {
                 return None;
             }
 
-            let compressed_size = self.header.v4_data.as_ref().map(|v4| v4.het_table_size_64);
+            // For v4, use the size from v4 data
+            let mut compressed_size = self.header.v4_data.as_ref().map(|v4| v4.het_table_size_64);
+
+            // For v3 without v4 data, try to determine the size
+            if compressed_size.is_none() && self.header.format_version == header::FormatVersion::V3
+            {
+                // Make a copy of the reader to avoid interfering with the main archive
+                if let Ok(temp_reader) =
+                    std::fs::File::open(&self.path).map(std::io::BufReader::new)
+                {
+                    let mut temp_archive = Self {
+                        path: self.path.clone(),
+                        reader: temp_reader,
+                        archive_offset: self.archive_offset,
+                        user_data: self.user_data.clone(),
+                        header: self.header.clone(),
+                        hash_table: None,
+                        block_table: None,
+                        hi_block_table: None,
+                        het_table: None,
+                        bet_table: None,
+                        attributes: None,
+                    };
+
+                    if let Ok(size) = temp_archive.read_het_table_size(pos) {
+                        compressed_size = Some(size);
+                    }
+                }
+            }
 
             Some(TableInfo {
                 size: self.het_table.as_ref().map(|het| het.header.max_file_count),
                 offset: pos,
                 compressed_size,
-                failed_to_load: self.het_table.is_none() && compressed_size.unwrap_or(0) > 0,
+                failed_to_load: self.het_table.is_none(),
             })
         });
 
@@ -548,13 +576,41 @@ impl Archive {
                 return None;
             }
 
-            let compressed_size = self.header.v4_data.as_ref().map(|v4| v4.bet_table_size_64);
+            // For v4, use the size from v4 data
+            let mut compressed_size = self.header.v4_data.as_ref().map(|v4| v4.bet_table_size_64);
+
+            // For v3 without v4 data, try to determine the size
+            if compressed_size.is_none() && self.header.format_version == header::FormatVersion::V3
+            {
+                // Make a copy of the reader to avoid interfering with the main archive
+                if let Ok(temp_reader) =
+                    std::fs::File::open(&self.path).map(std::io::BufReader::new)
+                {
+                    let mut temp_archive = Self {
+                        path: self.path.clone(),
+                        reader: temp_reader,
+                        archive_offset: self.archive_offset,
+                        user_data: self.user_data.clone(),
+                        header: self.header.clone(),
+                        hash_table: None,
+                        block_table: None,
+                        hi_block_table: None,
+                        het_table: None,
+                        bet_table: None,
+                        attributes: None,
+                    };
+
+                    if let Ok(size) = temp_archive.read_bet_table_size(pos) {
+                        compressed_size = Some(size);
+                    }
+                }
+            }
 
             Some(TableInfo {
                 size: self.bet_table.as_ref().map(|bet| bet.header.file_count),
                 offset: pos,
                 compressed_size,
-                failed_to_load: self.bet_table.is_none() && compressed_size.unwrap_or(0) > 0,
+                failed_to_load: self.bet_table.is_none(),
             })
         });
 
@@ -1371,135 +1427,64 @@ impl Archive {
 
     /// Read HET table size from the table header for V3 archives
     fn read_het_table_size(&mut self, het_pos: u64) -> Result<u64> {
-        let absolute_pos = self.archive_offset + het_pos;
-        self.reader.seek(SeekFrom::Start(absolute_pos))?;
+        // For compressed tables, calculate the actual size based on the next table position
+        log::debug!("Determining HET table size from file structure");
 
-        // Read enough data to get the header (may be encrypted/compressed)
-        // We need at least the header size + potential compression byte
-        let mut buffer = vec![0u8; 128]; // Should be enough for header
-        self.reader.read_exact(&mut buffer)?;
-
-        // Decrypt if needed
-        let key = hash_string("(hash table)", hash_type::FILE_KEY);
-        if key != 0 {
-            // Ensure buffer is aligned to 4 bytes for decryption
-            let aligned_len = (buffer.len() / 4) * 4;
-
-            // Decrypt as u32 array (only the aligned portion)
-            let mut u32_buffer: Vec<u32> = buffer[..aligned_len]
-                .chunks_exact(4)
-                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect();
-            decrypt_block(&mut u32_buffer, key);
-
-            // Convert back to bytes
-            let remainder = buffer[aligned_len..].to_vec();
-            buffer.clear();
-            for val in u32_buffer {
-                buffer.extend_from_slice(&val.to_le_bytes());
-            }
-            buffer.extend_from_slice(&remainder);
-        }
-
-        // Check if compressed
-        let header_data = if buffer.len() >= 4 {
-            let signature = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
-            log::debug!("HET header signature after decryption: 0x{:08X}", signature);
-
-            if signature == 0x1A544548 {
-                // "HET\x1A"
-                // Not compressed
-                &buffer[..]
+        // Calculate the actual size based on what comes after HET table
+        let actual_size = if let Some(bet_pos) = self.header.bet_table_pos {
+            if bet_pos > het_pos {
+                // BET table comes after HET
+                bet_pos - het_pos
             } else {
-                // The tables we write are not compressed, just encrypted
-                // If we see something else, it's probably still encrypted or corrupted
-                log::warn!(
-                    "Unexpected HET signature: 0x{:08X}, expected 0x1A544548",
-                    signature
-                );
-                return Err(Error::invalid_format("Invalid HET table signature"));
+                // Calculate from hash table position
+                self.header.get_hash_table_pos() - het_pos
             }
         } else {
-            return Err(Error::invalid_format("HET table too small"));
+            // Calculate from hash table position
+            self.header.get_hash_table_pos() - het_pos
         };
 
-        // Parse table_size field (at offset 12)
-        if header_data.len() >= 16 {
-            let table_size = u32::from_le_bytes([
-                header_data[12],
-                header_data[13],
-                header_data[14],
-                header_data[15],
-            ]);
-            Ok(table_size as u64)
-        } else {
-            Err(Error::invalid_format("Failed to read HET table size"))
-        }
+        log::debug!(
+            "HET table position: 0x{:X}, calculated size: {} bytes",
+            het_pos,
+            actual_size
+        );
+
+        Ok(actual_size)
     }
 
     /// Read BET table size from the table header for V3 archives
     fn read_bet_table_size(&mut self, bet_pos: u64) -> Result<u64> {
-        let absolute_pos = self.archive_offset + bet_pos;
-        self.reader.seek(SeekFrom::Start(absolute_pos))?;
+        // For compressed tables, calculate the actual size based on the next table position
+        log::debug!("Determining BET table size from file structure");
 
-        // Read enough data to get the header
-        let mut buffer = vec![0u8; 128];
-        self.reader.read_exact(&mut buffer)?;
+        // Calculate the actual size based on what comes after BET table (usually hash table)
+        let actual_size = self.header.get_hash_table_pos() - bet_pos;
 
-        // Decrypt if needed
-        let key = hash_string("(block table)", hash_type::FILE_KEY);
-        if key != 0 {
-            // Decrypt as u32 array
-            let mut u32_buffer: Vec<u32> = buffer
-                .chunks_exact(4)
-                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect();
-            decrypt_block(&mut u32_buffer, key);
+        log::debug!(
+            "BET table position: 0x{:X}, calculated size: {} bytes",
+            bet_pos,
+            actual_size
+        );
 
-            // Convert back to bytes
-            buffer.clear();
-            for val in u32_buffer {
-                buffer.extend_from_slice(&val.to_le_bytes());
-            }
-        }
-
-        // Check if compressed
-        let header_data = if buffer.len() >= 4 {
-            let signature = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
-            log::debug!("BET header signature after decryption: 0x{:08X}", signature);
-
-            if signature == 0x1A544542 {
-                // "BET\x1A"
-                // Not compressed
-                &buffer[..]
-            } else {
-                // The tables we write are not compressed, just encrypted
-                log::warn!(
-                    "Unexpected BET signature: 0x{:08X}, expected 0x1A544542",
-                    signature
-                );
-                return Err(Error::invalid_format("Invalid BET table signature"));
-            }
-        } else {
-            return Err(Error::invalid_format("BET table too small"));
-        };
-
-        // Parse table_size field (at offset 12)
-        if header_data.len() >= 16 {
-            let table_size = u32::from_le_bytes([
-                header_data[12],
-                header_data[13],
-                header_data[14],
-                header_data[15],
-            ]);
-            Ok(table_size as u64)
-        } else {
-            Err(Error::invalid_format("Failed to read BET table size"))
-        }
+        Ok(actual_size)
     }
 
     /// Verify the digital signature of the archive
     pub fn verify_signature(&mut self) -> Result<SignatureStatus> {
+        // First check for strong signature (external to archive)
+        if let Ok(strong_status) = self.verify_strong_signature() {
+            if strong_status != SignatureStatus::None {
+                return Ok(strong_status);
+            }
+        }
+
+        // Then check for weak signature (inside archive)
+        self.verify_weak_signature()
+    }
+
+    /// Verify weak signature from (signature) file inside the archive
+    fn verify_weak_signature(&mut self) -> Result<SignatureStatus> {
         // Check if (signature) file exists
         let signature_info = match self.find_file("(signature)")? {
             Some(info) => info,
@@ -1509,7 +1494,7 @@ impl Archive {
         // Read the signature file
         let signature_data = self.read_file("(signature)")?;
 
-        // Try to parse as weak signature first
+        // Try to parse as weak signature
         match crate::crypto::parse_weak_signature(&signature_data) {
             Ok(weak_sig) => {
                 // Calculate archive size (up to the signature file)
@@ -1533,10 +1518,77 @@ impl Archive {
                 }
             }
             Err(_) => {
-                // Not a weak signature, might be strong signature
-                // For now, we don't support strong signatures
-                log::debug!("Signature file found but not a weak signature format");
-                Ok(SignatureStatus::StrongNoKey)
+                // Not a weak signature
+                log::debug!("Signature file found but not a valid weak signature format");
+                Ok(SignatureStatus::None)
+            }
+        }
+    }
+
+    /// Verify strong signature appended after the archive
+    fn verify_strong_signature(&mut self) -> Result<SignatureStatus> {
+        use crate::crypto::{
+            parse_strong_signature, verify_strong_signature, STRONG_SIGNATURE_SIZE,
+        };
+
+        // Get total file size
+        let file_size = self.reader.get_ref().metadata()?.len();
+
+        // Calculate expected archive end position
+        let archive_end = self.archive_offset + self.header.get_archive_size();
+
+        // Check if there's enough space for a strong signature after the archive
+        if file_size < archive_end + STRONG_SIGNATURE_SIZE as u64 {
+            log::debug!("File too small for strong signature");
+            return Ok(SignatureStatus::None);
+        }
+
+        // Seek to where the strong signature should be
+        let signature_pos = archive_end;
+        self.reader.seek(SeekFrom::Start(signature_pos))?;
+
+        // Read potential strong signature data
+        let mut signature_data = vec![0u8; STRONG_SIGNATURE_SIZE];
+        match self.reader.read_exact(&mut signature_data) {
+            Ok(()) => {
+                // Try to parse as strong signature
+                match parse_strong_signature(&signature_data) {
+                    Ok(strong_sig) => {
+                        log::debug!("Found strong signature at offset 0x{:X}", signature_pos);
+
+                        // Seek to beginning of archive for verification
+                        self.reader.seek(SeekFrom::Start(self.archive_offset))?;
+
+                        // Verify the strong signature
+                        match verify_strong_signature(
+                            &mut self.reader,
+                            &strong_sig,
+                            archive_end - self.archive_offset,
+                        ) {
+                            Ok(true) => {
+                                log::info!("Strong signature verification successful");
+                                Ok(SignatureStatus::StrongValid)
+                            }
+                            Ok(false) => {
+                                log::warn!("Strong signature verification failed");
+                                Ok(SignatureStatus::StrongInvalid)
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to verify strong signature: {}", e);
+                                Ok(SignatureStatus::StrongInvalid)
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Not a strong signature
+                        log::debug!("No valid strong signature found");
+                        Ok(SignatureStatus::None)
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!("Failed to read potential strong signature: {}", e);
+                Ok(SignatureStatus::None)
             }
         }
     }

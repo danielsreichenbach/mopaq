@@ -113,6 +113,10 @@ pub struct ArchiveBuilder {
     default_compression: u8,
     /// Whether to generate sector CRCs for files
     generate_crcs: bool,
+    /// Whether to compress HET/BET tables (v3+ only)
+    compress_tables: bool,
+    /// Compression method for tables
+    table_compression: u8,
 }
 
 impl ArchiveBuilder {
@@ -125,6 +129,8 @@ impl ArchiveBuilder {
             listfile_option: ListfileOption::Generate,
             default_compression: compression_flags::ZLIB,
             generate_crcs: false,
+            compress_tables: false, // Default to uncompressed for compatibility
+            table_compression: compression_flags::ZLIB,
         }
     }
 
@@ -155,6 +161,18 @@ impl ArchiveBuilder {
     /// Enable or disable sector CRC generation
     pub fn generate_crcs(mut self, generate: bool) -> Self {
         self.generate_crcs = generate;
+        self
+    }
+
+    /// Enable or disable HET/BET table compression (v3+ only)
+    pub fn compress_tables(mut self, compress: bool) -> Self {
+        self.compress_tables = compress;
+        self
+    }
+
+    /// Set compression method for tables (default: zlib)
+    pub fn table_compression(mut self, compression: u8) -> Self {
+        self.table_compression = compression;
         self
     }
 
@@ -530,14 +548,12 @@ impl ArchiveBuilder {
         // Create HET table
         let het_table_pos = writer.stream_position()?;
         let (het_data, _het_header) = self.create_het_table()?;
-        let het_table_size = het_data.len() as u64;
-        self.write_het_table(writer, &het_data, true)?;
+        let het_table_size = self.write_het_table(writer, &het_data, true)?;
 
         // Create BET table
         let bet_table_pos = writer.stream_position()?;
         let (bet_data, _bet_header) = self.create_bet_table(&block_table)?;
-        let bet_table_size = bet_data.len() as u64;
-        self.write_bet_table(writer, &bet_data, true)?;
+        let bet_table_size = self.write_bet_table(writer, &bet_data, true)?;
 
         // For compatibility, also write classic tables
         let hash_table_size = self.calculate_hash_table_size();
@@ -1187,10 +1203,11 @@ impl ArchiveBuilder {
             return Err(Error::invalid_format("Bit entry out of bounds"));
         }
 
-        // Read existing bits
+        // Read existing bits (limit to 8 bytes for u64)
         let mut existing = 0u64;
-        for i in 0..bytes_needed {
-            if byte_offset + i < data.len() {
+        let max_bytes = bytes_needed.min(8);
+        for i in 0..max_bytes {
+            if byte_offset + i < data.len() && i * 8 < 64 {
                 existing |= (data[byte_offset + i] as u64) << (i * 8);
             }
         }
@@ -1207,9 +1224,9 @@ impl ArchiveBuilder {
         // Write the new value
         existing |= (value & value_mask) << bit_shift;
 
-        // Write back
-        for i in 0..bytes_needed {
-            if byte_offset + i < data.len() {
+        // Write back (limit to 8 bytes for u64)
+        for i in 0..max_bytes {
+            if byte_offset + i < data.len() && i * 8 < 64 {
                 data[byte_offset + i] = (existing >> (i * 8)) as u8;
             }
         }
@@ -1226,17 +1243,35 @@ impl ArchiveBuilder {
         }
     }
 
-    /// Write HET table to the archive
-    fn write_het_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<()> {
-        if encrypt {
-            let mut encrypted = data.to_vec();
-            let key = hash_string("(hash table)", hash_type::FILE_KEY);
-            self.encrypt_data(&mut encrypted, key);
-            writer.write_all(&encrypted)?;
-        } else {
-            writer.write_all(data)?;
+    /// Write HET table to the archive, returns the written size
+    fn write_het_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<u64> {
+        let mut table_data = data.to_vec();
+
+        // Compress if enabled and this is a v3+ archive
+        if self.compress_tables && matches!(self.version, FormatVersion::V3 | FormatVersion::V4) {
+            log::debug!("Compressing HET table: {} -> ", table_data.len());
+            let compressed = compress(&table_data, self.table_compression)?;
+            log::debug!(
+                "{} bytes ({}% reduction)",
+                compressed.len(),
+                (100 * (table_data.len() - compressed.len()) / table_data.len())
+            );
+
+            // Prepend compression type byte
+            let mut compressed_with_type = Vec::with_capacity(1 + compressed.len());
+            compressed_with_type.push(self.table_compression);
+            compressed_with_type.extend_from_slice(&compressed);
+            table_data = compressed_with_type;
         }
-        Ok(())
+
+        if encrypt {
+            let key = hash_string("(hash table)", hash_type::FILE_KEY);
+            self.encrypt_data(&mut table_data, key);
+        }
+
+        let written_size = table_data.len() as u64;
+        writer.write_all(&table_data)?;
+        Ok(written_size)
     }
 
     /// Create BET table data
@@ -1406,17 +1441,35 @@ impl ArchiveBuilder {
         Ok((result, final_header))
     }
 
-    /// Write BET table to the archive
-    fn write_bet_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<()> {
-        if encrypt {
-            let mut encrypted = data.to_vec();
-            let key = hash_string("(block table)", hash_type::FILE_KEY);
-            self.encrypt_data(&mut encrypted, key);
-            writer.write_all(&encrypted)?;
-        } else {
-            writer.write_all(data)?;
+    /// Write BET table to the archive, returns the written size
+    fn write_bet_table<W: Write>(&self, writer: &mut W, data: &[u8], encrypt: bool) -> Result<u64> {
+        let mut table_data = data.to_vec();
+
+        // Compress if enabled and this is a v3+ archive
+        if self.compress_tables && matches!(self.version, FormatVersion::V3 | FormatVersion::V4) {
+            log::debug!("Compressing BET table: {} -> ", table_data.len());
+            let compressed = compress(&table_data, self.table_compression)?;
+            log::debug!(
+                "{} bytes ({}% reduction)",
+                compressed.len(),
+                (100 * (table_data.len() - compressed.len()) / table_data.len())
+            );
+
+            // Prepend compression type byte
+            let mut compressed_with_type = Vec::with_capacity(1 + compressed.len());
+            compressed_with_type.push(self.table_compression);
+            compressed_with_type.extend_from_slice(&compressed);
+            table_data = compressed_with_type;
         }
-        Ok(())
+
+        if encrypt {
+            let key = hash_string("(block table)", hash_type::FILE_KEY);
+            self.encrypt_data(&mut table_data, key);
+        }
+
+        let written_size = table_data.len() as u64;
+        writer.write_all(&table_data)?;
+        Ok(written_size)
     }
 }
 

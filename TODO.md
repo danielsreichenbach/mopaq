@@ -48,7 +48,7 @@
   - [X] Add Jenkins hash generation for new files ✅
   - [X] Implement bit-packing for file indices ✅
   - [X] Add HET table encryption during write ✅
-  - [ ] Add HET table compression during write
+  - [X] Add HET table compression during write ✅
 
 - [X] **BET Table Reading (v3+)** ✅
   - [X] Complete BET table header parsing
@@ -64,7 +64,7 @@
   - [X] Calculate optimal bit widths for fields ✅
   - [X] Implement bit-packing for table entries ✅
   - [X] Add BET table encryption during write ✅
-  - [ ] Add BET table compression during write
+  - [X] Add BET table compression during write ✅
 
 ### Medium Priority - Digital Signatures
 

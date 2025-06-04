@@ -24,3 +24,6 @@ __pycache__
 # MoPaQ
 *.mpq
 *.MPQ
+
+# test data extracted from original archives
+/real-data/

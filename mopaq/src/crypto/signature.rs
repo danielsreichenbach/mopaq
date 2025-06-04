@@ -10,6 +10,7 @@ use num_bigint::BigUint;
 use num_traits::Num;
 use rsa::traits::PublicKeyParts;
 use rsa::{BigUint as RsaBigUint, RsaPublicKey};
+use sha1::Sha1;
 use std::io::Read;
 
 /// Weak signature size (512-bit RSA)
@@ -37,7 +38,7 @@ pub mod public_keys {
     /// Blizzard weak signature public key (512-bit)
     /// This is the well-known public key used for weak signatures
     pub const BLIZZARD_WEAK_PUBLIC_KEY_N: &str =
-        "C20E0798D2889FBD71F78A37E5BCC4915C4C66EFD16AE9E27CFF68608E40C2875BE6EDC6D36134C0036837657AD78640BD0CF86FAD148B633B8044B5BA0ACC1B";
+        "92627704BFB882CC0523B90CB1AC0459272175968D025EDA47DD7C49371BF8FAEB0E0A92167557AD51B78CCB68C5426290EE9FB14BC118E430349EA4ED6AD837";
 
     /// Weak signature public exponent
     pub const BLIZZARD_WEAK_PUBLIC_KEY_E: u32 = 0x10001; // 65537
@@ -45,7 +46,7 @@ pub mod public_keys {
     /// Blizzard strong signature public key (2048-bit)
     /// This is the well-known public key used for strong signatures in WoW
     pub const BLIZZARD_STRONG_PUBLIC_KEY_N: &str =
-        "9563A70764E4CCCFE006576BC7B96FAE17E996BF7352F2106D84733BFF96CBB92C7AE87823B284F3C17E25159CEF96BE66235E4D59246445B4033C1186172D79E8C2C8D32F2D18D3AD0DDE2C513C5E11643DA631B416264B36A32B8D2ED8DD848374210EE95744047FE036D0154A062ABD099B7008C6BA92C17586629B9EC8BD3E14FA682AAE0151A8FA7831FC8019C07AD5EE94D005A84D6718D3DAD024955F9DC96B6D4A819175F246ED344F0C72F72C9F60CEE5DC9C9266E6C24B0AB545A2D5491CBEEF4BD1769EC325592E7CD4B76FC1423ACB693A968972ECA80FE26FDB6B60EC5BCB5E017A0ED48A58BD77CECAF80A96854A52E064F20A6F1233DF65";
+        "B1067ECE24F687C87E27F88C42981DB47D47689CCE044DDA823538C8C3DCAE2C5A3CE668038B7C6F07DECBBA9CCDF5B2C28718A37A657B2B4517E22E0F81C3165F4E5CDD52172BA94A0331D441999606C50289A76EAF4C409C8CA90B4C8510231608384E7752ED835BF893120042A991736A636F27FC45411C3E53B0CB9508BE7BF6021E9DBAFAD5D23DD830C4772EFDD08CC81B454A58B87F28E4DC4C97E60ECFFB1D04E41A8B955BE594B1F7A4BAA350A3B343F4306784B8CB8E9B71785136019A98700D5AA374BD2CDDC62F5B569555C5217F5CEDF5AA6954D0959DA836C23F011540A4E2B782B360AAFC07E98A156155E3349128E6C409B0FB1D57F86477";
 
     /// Strong signature public exponent
     pub const BLIZZARD_STRONG_PUBLIC_KEY_E: u32 = 0x10001; // 65537
@@ -83,6 +84,29 @@ pub fn parse_weak_signature(data: &[u8]) -> Result<Vec<u8>> {
 
     // Weak signatures are just the raw 512-bit RSA signature
     Ok(data[..WEAK_SIGNATURE_SIZE].to_vec())
+}
+
+/// Parse strong signature from data after the archive
+pub fn parse_strong_signature(data: &[u8]) -> Result<Vec<u8>> {
+    if data.len() < STRONG_SIGNATURE_SIZE {
+        return Err(Error::invalid_format(format!(
+            "Strong signature too small: {} bytes, expected {}",
+            data.len(),
+            STRONG_SIGNATURE_SIZE
+        )));
+    }
+
+    // Check the "NGIS" header
+    if &data[0..4] != STRONG_SIGNATURE_HEADER {
+        return Err(Error::invalid_format(format!(
+            "Invalid strong signature header: expected {:?}, got {:?}",
+            STRONG_SIGNATURE_HEADER,
+            &data[0..4]
+        )));
+    }
+
+    // Extract the 256-byte signature data (skip 4-byte header)
+    Ok(data[4..4 + 256].to_vec())
 }
 
 /// Verify a weak signature (512-bit RSA with MD5)
@@ -126,6 +150,49 @@ pub fn verify_weak_signature<R: Read>(
 
     // Verify PKCS#1 v1.5 padding
     verify_pkcs1_v15_md5(&decrypted_bytes, &hash)
+}
+
+/// Verify a strong signature (2048-bit RSA with SHA-1)
+pub fn verify_strong_signature<R: Read>(
+    mut reader: R,
+    signature: &[u8],
+    archive_size: u64,
+) -> Result<bool> {
+    // Get the public key
+    let public_key = public_keys::strong_public_key()?;
+
+    // Calculate SHA-1 hash of the archive (excluding the signature)
+    let mut hasher = Sha1::new();
+    let mut buffer = vec![0u8; 65536]; // 64KB buffer
+    let mut bytes_read = 0u64;
+
+    // Read up to archive_size (which should exclude the signature)
+    while bytes_read < archive_size {
+        let to_read = ((archive_size - bytes_read) as usize).min(buffer.len());
+        let n = reader.read(&mut buffer[..to_read])?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+        bytes_read += n as u64;
+    }
+
+    let hash = hasher.finalize();
+
+    // Convert signature from little-endian to big-endian
+    let signature_be = reverse_bytes(signature);
+
+    // Decrypt the signature using RSA
+    let signature_int = BigUint::from_bytes_be(&signature_be);
+    let n = BigUint::from_bytes_be(&public_key.n().to_bytes_be());
+    let e = BigUint::from_bytes_be(&public_key.e().to_bytes_be());
+
+    // Perform RSA operation: signature^e mod n
+    let decrypted = signature_int.modpow(&e, &n);
+    let decrypted_bytes = decrypted.to_bytes_be();
+
+    // Verify custom MPQ strong signature padding
+    verify_mpq_strong_signature_padding(&decrypted_bytes, &hash)
 }
 
 /// Verify PKCS#1 v1.5 padding for MD5
@@ -183,6 +250,51 @@ fn verify_pkcs1_v15_md5(decrypted: &[u8], expected_hash: &[u8]) -> Result<bool> 
     Ok(&decrypted[hash_start..] == expected_hash)
 }
 
+/// Verify MPQ strong signature custom padding format
+fn verify_mpq_strong_signature_padding(decrypted: &[u8], expected_hash: &[u8]) -> Result<bool> {
+    // MPQ strong signature structure (when decrypted):
+    // - 1 byte: padding type (must be 0x0B)
+    // - 235 bytes: padding bytes (must all be 0xBB)
+    // - 20 bytes: SHA-1 hash
+
+    if decrypted.len() != 256 {
+        // Strong signatures are always 2048 bits = 256 bytes when decrypted
+        return Ok(false);
+    }
+
+    // Check padding type
+    if decrypted[0] != 0x0B {
+        log::debug!(
+            "Invalid padding type: expected 0x0B, got 0x{:02X}",
+            decrypted[0]
+        );
+        return Ok(false);
+    }
+
+    // Check padding bytes (235 bytes of 0xBB)
+    for i in 1..236 {
+        if decrypted[i] != 0xBB {
+            log::debug!(
+                "Invalid padding byte at position {}: expected 0xBB, got 0x{:02X}",
+                i,
+                decrypted[i]
+            );
+            return Ok(false);
+        }
+    }
+
+    // Check SHA-1 hash (last 20 bytes)
+    let signature_hash = &decrypted[236..256];
+    if signature_hash != expected_hash {
+        log::debug!("Hash mismatch in strong signature");
+        log::debug!("Expected: {:02X?}", expected_hash);
+        log::debug!("Got:      {:02X?}", signature_hash);
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 /// Reverse byte order (little-endian to big-endian conversion)
 fn reverse_bytes(data: &[u8]) -> Vec<u8> {
     data.iter().rev().copied().collect()
@@ -230,5 +342,99 @@ mod tests {
         let data = vec![0xFF; 32];
         let result = parse_weak_signature(&data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_strong_signature() {
+        let mut data = vec![0xFF; 300];
+        // Set the correct header
+        data[0..4].copy_from_slice(&STRONG_SIGNATURE_HEADER);
+
+        let sig = parse_strong_signature(&data).unwrap();
+        assert_eq!(sig.len(), 256);
+        assert_eq!(sig, &data[4..260]);
+    }
+
+    #[test]
+    fn test_parse_strong_signature_invalid_header() {
+        let mut data = vec![0xFF; 300];
+        // Set wrong header
+        data[0..4].copy_from_slice(b"WXYZ");
+
+        let result = parse_strong_signature(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_strong_signature_too_small() {
+        let data = vec![0xFF; 100];
+        let result = parse_strong_signature(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_verify_mpq_strong_signature_padding() {
+        // Create a properly formatted strong signature
+        let mut decrypted = vec![0; 256];
+        decrypted[0] = 0x0B; // Padding type
+        for i in 1..236 {
+            decrypted[i] = 0xBB; // Padding bytes
+        }
+
+        // Add test SHA-1 hash
+        let test_hash = [
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB,
+            0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67,
+        ];
+        decrypted[236..256].copy_from_slice(&test_hash);
+
+        let result = verify_mpq_strong_signature_padding(&decrypted, &test_hash).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_verify_mpq_strong_signature_padding_wrong_type() {
+        let mut decrypted = vec![0; 256];
+        decrypted[0] = 0x01; // Wrong padding type
+        for i in 1..236 {
+            decrypted[i] = 0xBB;
+        }
+
+        let test_hash = [0; 20];
+        decrypted[236..256].copy_from_slice(&test_hash);
+
+        let result = verify_mpq_strong_signature_padding(&decrypted, &test_hash).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_verify_mpq_strong_signature_padding_wrong_padding() {
+        let mut decrypted = vec![0; 256];
+        decrypted[0] = 0x0B;
+        for i in 1..236 {
+            decrypted[i] = 0xCC; // Wrong padding bytes
+        }
+
+        let test_hash = [0; 20];
+        decrypted[236..256].copy_from_slice(&test_hash);
+
+        let result = verify_mpq_strong_signature_padding(&decrypted, &test_hash).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_verify_mpq_strong_signature_padding_wrong_hash() {
+        let mut decrypted = vec![0; 256];
+        decrypted[0] = 0x0B;
+        for i in 1..236 {
+            decrypted[i] = 0xBB;
+        }
+
+        let wrong_hash = [0xFF; 20];
+        decrypted[236..256].copy_from_slice(&wrong_hash);
+
+        let correct_hash = [0x00; 20];
+        let result = verify_mpq_strong_signature_padding(&decrypted, &correct_hash).unwrap();
+        assert!(!result);
     }
 }

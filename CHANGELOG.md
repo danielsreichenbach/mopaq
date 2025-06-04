@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ✅ Automatic fallback to classic hash/block tables
   - ✅ Transparent integration with existing Archive API
   - ✅ V3 archives now create both HET/BET and classic tables for compatibility
+  - ✅ HET/BET table compression support with configurable compression methods
 
 - **(attributes) File Support** - Complete implementation for file metadata
   - ✅ Full parsing of (attributes) special file format
@@ -131,7 +132,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Core Library (`mopaq`)
 
 - v4 format header writing with MD5 checksums
-- HET/BET table compression support (tables are currently written uncompressed)
 
 #### CLI Tool (`storm-cli`)
 

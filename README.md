@@ -123,6 +123,33 @@ fn main() -> mopaq::Result<()> {
 }
 ```
 
+### Advanced V3 Archive with Compressed Tables
+
+```rust
+use mopaq::{ArchiveBuilder, FormatVersion, compression::flags};
+
+fn main() -> mopaq::Result<()> {
+    // Create a V3 archive with compressed HET/BET tables for space efficiency
+    ArchiveBuilder::new()
+        .version(FormatVersion::V3)
+        .compress_tables(true)  // Enable HET/BET table compression
+        .table_compression(flags::ZLIB)  // Use zlib for table compression
+        .default_compression(flags::LZMA)  // Use LZMA for file compression
+        .generate_crcs(true)  // Enable sector CRC generation
+        .add_file("data/large_file.bin", "game/assets/large_file.bin")
+        .add_file("scripts/main.lua", "scripts/main.lua")
+        .build("optimized.mpq")?;
+
+    // The resulting archive will have:
+    // - Compressed files using LZMA
+    // - Compressed HET/BET tables using zlib
+    // - Sector CRC validation
+    // - Efficient storage for large file counts
+
+    Ok(())
+}
+```
+
 ### Crypto Example
 
 ```rust
@@ -185,6 +212,40 @@ println!("Hash B: 0x{:08X}", hash_b);
 println!("Table Index: 0x{:08X}", table_index);
 ```
 
+### Digital Signature Verification
+
+```rust
+use mopaq::Archive;
+
+fn main() -> mopaq::Result<()> {
+    let mut archive = Archive::open("signed_archive.mpq")?;
+
+    // Verify digital signature (checks both weak and strong signatures)
+    match archive.verify_signature()? {
+        mopaq::archive::SignatureStatus::None => {
+            println!("Archive has no digital signature");
+        }
+        mopaq::archive::SignatureStatus::WeakValid => {
+            println!("✅ Weak signature is valid (512-bit RSA + MD5)");
+        }
+        mopaq::archive::SignatureStatus::WeakInvalid => {
+            println!("❌ Weak signature is invalid");
+        }
+        mopaq::archive::SignatureStatus::StrongValid => {
+            println!("✅ Strong signature is valid (2048-bit RSA + SHA-1)");
+        }
+        mopaq::archive::SignatureStatus::StrongInvalid => {
+            println!("❌ Strong signature is invalid");
+        }
+        mopaq::archive::SignatureStatus::StrongNoKey => {
+            println!("Strong signature found but no public key available");
+        }
+    }
+
+    Ok(())
+}
+```
+
 ### CLI Usage
 
 storm-cli supports tab completion for bash, zsh, fish, and PowerShell.
@@ -202,7 +263,7 @@ storm-cli archive create my_mod.mpq ./mod_files
 # Verify archive integrity
 storm-cli archive verify WarCraft3.w3m
 
-# Show archive information
+# Show archive information (including compressed table sizes for v3+ archives)
 storm-cli archive info Diablo2.mpq
 
 # Display table contents
@@ -229,6 +290,9 @@ storm-cli hash compare "file1.txt" "file2.txt"
   - ✅ Sector-based file reading
   - ✅ CRC validation
   - ✅ Archive integrity verification
+  - ✅ Digital signature verification
+    - Weak signatures (512-bit RSA with MD5, v1+)
+    - Strong signatures (2048-bit RSA with SHA-1, v2+)
   - ✅ (attributes) file parsing
     - CRC32 checksums, MD5 hashes, timestamps, patch indicators
 
@@ -242,6 +306,7 @@ storm-cli hash compare "file1.txt" "file2.txt"
   - ✅ Sector CRC generation
   - ✅ Hi-block table writing for large archives (v2+)
   - ✅ HET/BET table creation (v3+)
+  - ✅ HET/BET table compression (v3+)
 
 - **Compression**
   - ✅ Zlib/Deflate
@@ -271,13 +336,11 @@ storm-cli hash compare "file1.txt" "file2.txt"
 ### In Progress 🚧
 
 - 🚧 v4 format creation with MD5 checksums
-- 🚧 HET/BET table compression (tables are currently written uncompressed)
 - 🚧 StormLib FFI compatibility layer
 
 ### Planned 📋
 
-- ✅ Digital signature support (weak signature verification complete)
-- 📋 Strong signature (v2+) verification
+- ✅ Digital signature support (weak and strong signature verification complete)
 - 📋 Digital signature generation
 - 📋 In-place archive modification
 - 📋 PKWare DCL compression
