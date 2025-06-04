@@ -34,12 +34,10 @@ pub fn list(
         } else {
             archive.list_all()?
         }
+    } else if show_hashes {
+        archive.list_with_hashes()?
     } else {
-        if show_hashes {
-            archive.list_with_hashes()?
-        } else {
-            archive.list()?
-        }
+        archive.list()?
     };
 
     let mut file_entries = file_entries;

@@ -920,7 +920,7 @@ impl Archive {
         // Enumerate all hash table entries
         let mut block_indices_seen = std::collections::HashSet::new();
 
-        for (_i, hash_entry) in hash_table.entries().iter().enumerate() {
+        for hash_entry in hash_table.entries().iter() {
             if hash_entry.is_valid() {
                 let block_index = hash_entry.block_index as usize;
 
@@ -1008,7 +1008,7 @@ impl Archive {
         // Enumerate all hash table entries - here we can get the actual hashes!
         let mut block_indices_seen = std::collections::HashSet::new();
 
-        for (_i, hash_entry) in hash_table.entries().iter().enumerate() {
+        for hash_entry in hash_table.entries().iter() {
             if hash_entry.is_valid() {
                 let block_index = hash_entry.block_index as usize;
 

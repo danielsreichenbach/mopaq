@@ -97,7 +97,7 @@ pub fn parse_strong_signature(data: &[u8]) -> Result<Vec<u8>> {
     }
 
     // Check the "NGIS" header
-    if &data[0..4] != STRONG_SIGNATURE_HEADER {
+    if data[0..4] != STRONG_SIGNATURE_HEADER {
         return Err(Error::invalid_format(format!(
             "Invalid strong signature header: expected {:?}, got {:?}",
             STRONG_SIGNATURE_HEADER,
@@ -213,11 +213,11 @@ fn verify_pkcs1_v15_md5(decrypted: &[u8], expected_hash: &[u8]) -> Result<bool> 
 
     // Find 0x00 separator after padding
     let mut separator_pos = None;
-    for i in 2..decrypted.len() {
-        if decrypted[i] == 0x00 {
+    for (i, &byte) in decrypted.iter().enumerate().skip(2) {
+        if byte == 0x00 {
             separator_pos = Some(i);
             break;
-        } else if decrypted[i] != 0xFF {
+        } else if byte != 0xFF {
             return Ok(false); // Invalid padding byte
         }
     }
@@ -241,7 +241,7 @@ fn verify_pkcs1_v15_md5(decrypted: &[u8], expected_hash: &[u8]) -> Result<bool> 
         return Ok(false);
     }
 
-    if &decrypted[digest_start..digest_start + md5_digest_info.len()] != md5_digest_info {
+    if decrypted[digest_start..digest_start + md5_digest_info.len()] != md5_digest_info {
         return Ok(false);
     }
 
@@ -272,12 +272,12 @@ fn verify_mpq_strong_signature_padding(decrypted: &[u8], expected_hash: &[u8]) -
     }
 
     // Check padding bytes (235 bytes of 0xBB)
-    for i in 1..236 {
-        if decrypted[i] != 0xBB {
+    for (i, &byte) in decrypted.iter().enumerate().take(236).skip(1) {
+        if byte != 0xBB {
             log::debug!(
                 "Invalid padding byte at position {}: expected 0xBB, got 0x{:02X}",
                 i,
-                decrypted[i]
+                byte
             );
             return Ok(false);
         }
@@ -377,8 +377,8 @@ mod tests {
         // Create a properly formatted strong signature
         let mut decrypted = vec![0; 256];
         decrypted[0] = 0x0B; // Padding type
-        for i in 1..236 {
-            decrypted[i] = 0xBB; // Padding bytes
+        for byte in decrypted.iter_mut().take(236).skip(1) {
+            *byte = 0xBB; // Padding bytes
         }
 
         // Add test SHA-1 hash
@@ -396,8 +396,8 @@ mod tests {
     fn test_verify_mpq_strong_signature_padding_wrong_type() {
         let mut decrypted = vec![0; 256];
         decrypted[0] = 0x01; // Wrong padding type
-        for i in 1..236 {
-            decrypted[i] = 0xBB;
+        for byte in decrypted.iter_mut().take(236).skip(1) {
+            *byte = 0xBB;
         }
 
         let test_hash = [0; 20];
@@ -411,8 +411,8 @@ mod tests {
     fn test_verify_mpq_strong_signature_padding_wrong_padding() {
         let mut decrypted = vec![0; 256];
         decrypted[0] = 0x0B;
-        for i in 1..236 {
-            decrypted[i] = 0xCC; // Wrong padding bytes
+        for byte in decrypted.iter_mut().take(236).skip(1) {
+            *byte = 0xCC; // Wrong padding bytes
         }
 
         let test_hash = [0; 20];
@@ -426,8 +426,8 @@ mod tests {
     fn test_verify_mpq_strong_signature_padding_wrong_hash() {
         let mut decrypted = vec![0; 256];
         decrypted[0] = 0x0B;
-        for i in 1..236 {
-            decrypted[i] = 0xBB;
+        for byte in decrypted.iter_mut().take(236).skip(1) {
+            *byte = 0xBB;
         }
 
         let wrong_hash = [0xFF; 20];
