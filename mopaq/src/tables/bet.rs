@@ -19,15 +19,10 @@ pub struct BetTable {
 }
 
 /// Block Entry Table (BET) header structure for MPQ v3+
+/// This follows the extended header in the file
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct BetHeader {
-    /// Signature 'BET\x1A' (0x1A544542)
-    pub signature: u32,
-    /// Version (always 1)
-    pub version: u32,
-    /// Size of the contained table data
-    pub data_size: u32,
     /// Size of the entire table including header
     pub table_size: u32,
     /// Number of files in BET table
@@ -84,40 +79,89 @@ impl BetTable {
         let mut data = vec![0u8; compressed_size as usize];
         reader.read_exact(&mut data)?;
 
-        // Decrypt if needed
-        if key != 0 {
-            decrypt_table_data(&mut data, key);
+        // Check if we have at least the extended header (12 bytes)
+        if data.len() < 12 {
+            return Err(Error::invalid_format(
+                "BET table too small for extended header",
+            ));
         }
 
-        // Check for compression
-        let decompressed_data = if data.len() >= 4 {
-            let first_dword = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-            if first_dword == Self::SIGNATURE {
-                // Not compressed
-                data
-            } else {
-                // Compressed
-                let compression_type = data[0];
-                decompress(&data[1..], compression_type, 0)?
+        // Parse the extended header (first 12 bytes - never encrypted)
+        let ext_signature = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        let ext_version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        let ext_data_size = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+
+        log::debug!(
+            "BET extended header: sig=0x{:08X}, ver={}, data_size={}",
+            ext_signature,
+            ext_version,
+            ext_data_size
+        );
+
+        // Verify extended header
+        if ext_signature != Self::SIGNATURE {
+            return Err(Error::invalid_format("Invalid BET extended signature"));
+        }
+
+        // The data after the extended header may be encrypted
+        if key != 0 && data.len() > 12 {
+            log::debug!(
+                "Decrypting BET data after extended header with key 0x{:08X}",
+                key
+            );
+            let data_portion = &mut data[12..];
+            decrypt_table_data(data_portion, key);
+        }
+
+        // Check for compression by comparing sizes
+        let total_size = data.len();
+        let expected_uncompressed_size = ext_data_size as usize + 12; // data_size + header
+
+        log::debug!(
+            "BET table total_size={}, expected_uncompressed_size={}",
+            total_size,
+            expected_uncompressed_size
+        );
+
+        let table_data = if expected_uncompressed_size > total_size {
+            // Table is compressed - the data after extended header contains compressed data
+            log::debug!("BET table is compressed");
+
+            if data.len() <= 12 {
+                return Err(Error::invalid_format(
+                    "No compressed data after BET extended header",
+                ));
             }
+
+            // First byte after extended header is compression type
+            let compression_type = data[12];
+            log::debug!("BET compression type: 0x{:02X}", compression_type);
+
+            // Decompress the data (skip extended header and compression byte)
+            let compressed_data = &data[13..];
+            let mut decompressed =
+                decompress(compressed_data, compression_type, ext_data_size as usize)?;
+
+            // Reconstruct the full table with extended header
+            let mut full_table = Vec::with_capacity(12 + decompressed.len());
+            full_table.extend_from_slice(&data[..12]); // Extended header
+            full_table.append(&mut decompressed); // Decompressed data
+            full_table
         } else {
-            return Err(Error::invalid_format("BET table too small"));
+            // Table is not compressed
+            log::debug!("BET table is NOT compressed");
+            data
         };
 
-        // Parse header
-        let header = Self::parse_header(&decompressed_data)?;
+        // Parse header - skip the extended header (first 12 bytes)
+        let header = Self::parse_header(&table_data[12..])?;
 
-        // Validate header
-        if header.signature != Self::SIGNATURE {
-            return Err(Error::invalid_format("Invalid BET signature"));
-        }
-        if header.version != 1 {
-            return Err(Error::invalid_format("Unsupported BET version"));
-        }
+        // No need to validate signature/version - they're in the extended header
+        // which we already validated above
 
-        // Parse the rest of the table
-        let mut cursor =
-            std::io::Cursor::new(&decompressed_data[std::mem::size_of::<BetHeader>()..]);
+        // Parse the rest of the table - data starts after extended header + BET header
+        let data_start = 12 + std::mem::size_of::<BetHeader>();
+        let mut cursor = std::io::Cursor::new(&table_data[data_start..]);
 
         // Read file flags
         let mut file_flags = Vec::with_capacity(header.flag_count as usize);
@@ -154,9 +198,6 @@ impl BetTable {
 
         let mut cursor = std::io::Cursor::new(data);
         Ok(BetHeader {
-            signature: cursor.read_u32_le()?,
-            version: cursor.read_u32_le()?,
-            data_size: cursor.read_u32_le()?,
             table_size: cursor.read_u32_le()?,
             file_count: cursor.read_u32_le()?,
             unknown_08: cursor.read_u32_le()?,

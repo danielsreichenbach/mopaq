@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+
 permissions:
   contents: write
   deployments: write
@@ -23,6 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'benchmarks'
+          cache-on-failure: true
 
       # Run benchmarks
       - name: Run benchmarks
@@ -44,10 +50,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'criterion'
+          cache-on-failure: true
+
+      # Cache critcmp installation
+      - name: Cache critcmp
+        id: cache-critcmp
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/critcmp
+          key: critcmp-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       # Install critcmp for comparing results
       - name: Install critcmp
-        run: cargo install critcmp
+        if: steps.cache-critcmp.outputs.cache-hit != 'true'
+        run: |
+          # Try cargo-binstall first for faster installation
+          if command -v cargo-binstall >/dev/null 2>&1; then
+            cargo binstall --no-confirm critcmp
+          else
+            cargo install critcmp
+          fi
 
       # Checkout base branch
       - name: Checkout base branch

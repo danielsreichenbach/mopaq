@@ -1,12 +1,12 @@
-//! Error types for the MoPaQ library
+//! Error types for the MPQ library
 
 use std::io;
 use thiserror::Error;
 
-/// Result type alias for MoPaQ operations
+/// Result type alias for MPQ operations
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Main error type for MoPaQ operations
+/// Main error type for MPQ operations
 #[derive(Error, Debug)]
 pub enum Error {
     /// I/O error occurred
@@ -72,7 +72,6 @@ pub enum Error {
     },
 
     /// Memory mapping error
-    #[cfg(feature = "mmap")]
     #[error("Memory mapping error: {0}")]
     MemoryMap(String),
 

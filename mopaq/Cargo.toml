@@ -25,6 +25,7 @@ tempfile = { workspace = true }
 sha1 = "0.10"
 md-5 = "0.10"
 crc32fast = "1.4"
+adler = "1.0"
 rsa = "0.9"
 num-bigint = "0.4"
 num-traits = "0.2"
@@ -33,6 +34,7 @@ num-traits = "0.2"
 flate2 = "1.1"
 bzip2 = "0.5"
 lzma-rs = "0.3"
+pklib = "0.1"
 
 # I/O and performance
 memmap2 = { version = "0.9", optional = true }
@@ -51,6 +53,8 @@ criterion = { version = "0.6", features = ["html_reports"] }
 proptest = "1.6"
 pretty_assertions = "1.4"
 env_logger = { workspace = true }
+tempfile = "3.20"
+rand = "0.9"
 
 [[bench]]
 name = "hash"
@@ -66,6 +70,14 @@ harness = false
 
 [[bench]]
 name = "builder"
+harness = false
+
+[[bench]]
+name = "archive_creation"
+harness = false
+
+[[bench]]
+name = "archive_extraction"
 harness = false
 
 [features]

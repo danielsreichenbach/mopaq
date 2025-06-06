@@ -102,6 +102,46 @@ pub enum ListfileOption {
 }
 
 /// Builder for creating new MPQ archives
+///
+/// `ArchiveBuilder` provides a fluent interface for creating MPQ archives with
+/// complete control over format version, compression, encryption, and file organization.
+///
+/// # Examples
+///
+/// ## Basic archive creation
+///
+/// ```no_run
+/// use mopaq::{ArchiveBuilder, FormatVersion};
+///
+/// // Create a simple archive with default settings
+/// ArchiveBuilder::new()
+///     .add_file("readme.txt", "README.txt")
+///     .add_file_data(b"Hello world".to_vec(), "hello.txt")
+///     .build("my_archive.mpq")?;
+/// # Ok::<(), mopaq::Error>(())
+/// ```
+///
+/// ## Advanced archive creation
+///
+/// ```no_run
+/// use mopaq::{ArchiveBuilder, FormatVersion, compression, ListfileOption};
+///
+/// ArchiveBuilder::new()
+///     .version(FormatVersion::V2)
+///     .block_size(7)  // 64KB sectors for better performance
+///     .default_compression(compression::flags::BZIP2)
+///     .listfile_option(ListfileOption::Generate)
+///     .generate_crcs(true)
+///     .add_file_data_with_options(
+///         b"secret data".to_vec(),
+///         "encrypted.dat",
+///         compression::flags::ZLIB,
+///         true,  // encrypt
+///         0,     // locale
+///     )
+///     .build("advanced.mpq")?;
+/// # Ok::<(), mopaq::Error>(())
+/// ```
 #[derive(Debug)]
 pub struct ArchiveBuilder {
     /// Target MPQ version
@@ -144,6 +184,26 @@ impl ArchiveBuilder {
     }
 
     /// Set the block size (sector size = 512 * 2^block_size)
+    ///
+    /// The block size determines the sector size used for file storage.
+    /// Larger block sizes can improve compression efficiency for large files
+    /// but increase overhead for small files.
+    ///
+    /// # Parameters
+    /// - `block_size`: Power of 2 exponent (0-31). Final sector size = 512 * 2^block_size
+    ///   - Common values: 3 (4KB sectors), 4 (8KB), 5 (16KB), 6 (32KB), 7 (64KB)
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::ArchiveBuilder;
+    ///
+    /// // Create archive with 64KB sectors (good for large files)
+    /// let builder = ArchiveBuilder::new().block_size(7);
+    ///
+    /// // Create archive with 4KB sectors (good for small files)
+    /// let builder = ArchiveBuilder::new().block_size(3);
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
     pub fn block_size(mut self, block_size: u16) -> Self {
         self.block_size = block_size;
         self
@@ -162,24 +222,110 @@ impl ArchiveBuilder {
     }
 
     /// Enable or disable sector CRC generation
+    ///
+    /// When enabled, CRC32 checksums are generated for each sector of each file,
+    /// providing integrity verification during file extraction. This adds security
+    /// but increases archive size and creation time.
+    ///
+    /// # Parameters
+    /// - `generate`: If `true`, sector CRCs are generated. If `false`, no CRCs.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::ArchiveBuilder;
+    ///
+    /// // Enable CRC generation for data integrity
+    /// let builder = ArchiveBuilder::new().generate_crcs(true);
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
+    ///
+    /// # Notes
+    /// CRC generation is recommended for archives containing critical data
+    /// where integrity verification is important.
     pub fn generate_crcs(mut self, generate: bool) -> Self {
         self.generate_crcs = generate;
         self
     }
 
     /// Enable or disable HET/BET table compression (v3+ only)
+    ///
+    /// For MPQ format version 3 and 4, the HET (Hash Extended Table) and BET
+    /// (Block Extended Table) can be compressed to reduce archive size. This
+    /// only applies to v3+ archives; v1/v2 archives ignore this setting.
+    ///
+    /// # Parameters
+    /// - `compress`: If `true`, HET/BET tables are compressed. If `false`, stored uncompressed.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::{ArchiveBuilder, FormatVersion};
+    ///
+    /// // Enable table compression for v3 archive
+    /// let builder = ArchiveBuilder::new()
+    ///     .version(FormatVersion::V3)
+    ///     .compress_tables(true);
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
+    ///
+    /// # Notes
+    /// Table compression can significantly reduce archive size for large archives
+    /// with many files, but may slightly increase archive opening time.
     pub fn compress_tables(mut self, compress: bool) -> Self {
         self.compress_tables = compress;
         self
     }
 
     /// Set compression method for tables (default: zlib)
+    ///
+    /// Specifies which compression algorithm to use when compressing HET/BET tables
+    /// in v3+ archives. Only used when `compress_tables` is enabled.
+    ///
+    /// # Parameters
+    /// - `compression`: Compression method flag from `compression::flags`
+    ///   - `compression::flags::ZLIB` (default): Fast and widely compatible
+    ///   - `compression::flags::BZIP2`: Better compression ratio but slower
+    ///   - `compression::flags::LZMA`: Best compression but slowest
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::{ArchiveBuilder, FormatVersion, compression};
+    ///
+    /// // Use BZIP2 for table compression
+    /// let builder = ArchiveBuilder::new()
+    ///     .version(FormatVersion::V3)
+    ///     .compress_tables(true)
+    ///     .table_compression(compression::flags::BZIP2);
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
     pub fn table_compression(mut self, compression: u8) -> Self {
         self.table_compression = compression;
         self
     }
 
-    /// Add a file from disk
+    /// Add a file from disk to the archive
+    ///
+    /// Reads a file from the filesystem and adds it to the archive with default
+    /// compression and no encryption. The file will use the builder's default
+    /// compression method and neutral locale.
+    ///
+    /// # Parameters
+    /// - `path`: Path to the source file on disk
+    /// - `archive_name`: Name the file will have inside the archive
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::ArchiveBuilder;
+    ///
+    /// let builder = ArchiveBuilder::new()
+    ///     .add_file("data/config.txt", "config.txt")
+    ///     .add_file("assets/image.jpg", "images/image.jpg");
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
+    ///
+    /// # Notes
+    /// - The source file is read when `build()` is called, not when `add_file()` is called
+    /// - Archive name should use forward slashes as path separators
+    /// - Use `add_file_with_options()` for custom compression or encryption settings
     pub fn add_file<P: AsRef<Path>>(mut self, path: P, archive_name: &str) -> Self {
         self.pending_files.push(PendingFile {
             source: FileSource::Path(path.as_ref().to_path_buf()),
@@ -192,7 +338,32 @@ impl ArchiveBuilder {
         self
     }
 
-    /// Add a file from disk with specific options
+    /// Add a file from disk with custom compression and encryption options
+    ///
+    /// Provides full control over how the file is stored in the archive,
+    /// including compression method, encryption, and locale settings.
+    ///
+    /// # Parameters
+    /// - `path`: Path to the source file on disk
+    /// - `archive_name`: Name the file will have inside the archive
+    /// - `compression`: Compression method from `compression::flags` (0 = no compression)
+    /// - `encrypt`: Whether to encrypt the file
+    /// - `locale`: Locale code for the file (0 = neutral locale)
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::{ArchiveBuilder, compression};
+    ///
+    /// let builder = ArchiveBuilder::new()
+    ///     .add_file_with_options(
+    ///         "secret.txt",
+    ///         "hidden/secret.txt",
+    ///         compression::flags::BZIP2,
+    ///         true,  // encrypt
+    ///         0      // neutral locale
+    ///     );
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
     pub fn add_file_with_options<P: AsRef<Path>>(
         mut self,
         path: P,
@@ -212,7 +383,31 @@ impl ArchiveBuilder {
         self
     }
 
-    /// Add a file from memory
+    /// Add a file from in-memory data
+    ///
+    /// Creates a file in the archive from data already loaded in memory.
+    /// Useful for dynamically generated content or when you already have
+    /// the file data loaded.
+    ///
+    /// # Parameters
+    /// - `data`: Raw file data to store in the archive
+    /// - `archive_name`: Name the file will have inside the archive
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::ArchiveBuilder;
+    ///
+    /// let config_data = b"version=1.0\ndebug=false".to_vec();
+    /// let builder = ArchiveBuilder::new()
+    ///     .add_file_data(config_data, "config.ini")
+    ///     .add_file_data(b"Hello, World!".to_vec(), "readme.txt");
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
+    ///
+    /// # Notes
+    /// - Uses the builder's default compression method and neutral locale
+    /// - More memory efficient than `add_file()` when data is already in memory
+    /// - Use `add_file_data_with_options()` for custom compression or encryption
     pub fn add_file_data(mut self, data: Vec<u8>, archive_name: &str) -> Self {
         self.pending_files.push(PendingFile {
             source: FileSource::Data(data),
@@ -225,7 +420,33 @@ impl ArchiveBuilder {
         self
     }
 
-    /// Add a file from memory with specific options
+    /// Add a file from memory with custom compression and encryption options
+    ///
+    /// Creates a file in the archive from in-memory data with full control
+    /// over compression, encryption, and locale settings.
+    ///
+    /// # Parameters
+    /// - `data`: Raw file data to store in the archive
+    /// - `archive_name`: Name the file will have inside the archive
+    /// - `compression`: Compression method from `compression::flags` (0 = no compression)
+    /// - `encrypt`: Whether to encrypt the file
+    /// - `locale`: Locale code for the file (0 = neutral locale)
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use mopaq::{ArchiveBuilder, compression};
+    ///
+    /// let secret_data = b"TOP SECRET INFORMATION".to_vec();
+    /// let builder = ArchiveBuilder::new()
+    ///     .add_file_data_with_options(
+    ///         secret_data,
+    ///         "classified.txt",
+    ///         compression::flags::LZMA,
+    ///         true,  // encrypt
+    ///         0      // neutral locale
+    ///     );
+    /// # Ok::<(), mopaq::Error>(())
+    /// ```
     pub fn add_file_data_with_options(
         mut self,
         data: Vec<u8>,
@@ -750,7 +971,8 @@ impl ArchiveBuilder {
 
             // Write CRC if enabled
             if self.generate_crcs {
-                let crc = crc32fast::hash(file_data);
+                // MPQ uses ADLER32 for sector checksums
+                let crc = adler::adler32_slice(file_data);
                 writer.write_u32_le(crc)?;
                 log::debug!(
                     "Generated CRC for single unit file {}: 0x{:08X}",
@@ -797,7 +1019,8 @@ impl ArchiveBuilder {
 
                 // Calculate CRC for uncompressed sector if enabled
                 if self.generate_crcs {
-                    let crc = crc32fast::hash(sector_bytes);
+                    // MPQ uses ADLER32 for sector checksums
+                    let crc = adler::adler32_slice(sector_bytes);
                     sector_crcs.push(crc);
                 }
 
@@ -1216,11 +1439,8 @@ impl ArchiveBuilder {
         let total_index_size = hash_table_entries * index_size;
         let index_size_extra = 0; // No extra bits for now
 
-        // Create header
+        // Create header (without extended header fields)
         let header = HetHeader {
-            signature: 0x1A544548, // "HET\x1A"
-            version: 1,
-            data_size: 0,  // Will be calculated later
             table_size: 0, // Will be calculated later
             max_file_count,
             hash_table_size,
@@ -1278,21 +1498,22 @@ impl ArchiveBuilder {
             }
         }
 
-        // Combine all data
-        let header_size = std::mem::size_of::<HetHeader>();
-        let data_size = hash_table_size + file_indices_size as u32;
-        let table_size = header_size as u32 + data_size;
+        // Calculate sizes
+        let het_header_size = std::mem::size_of::<HetHeader>();
+        let data_size = het_header_size as u32 + hash_table_size + file_indices_size as u32;
+        let table_size = 12 + data_size; // Extended header (12 bytes) + data
 
-        // Update header with final sizes
+        // Update header with final size
         let mut final_header = header;
-        final_header.data_size = data_size;
         final_header.table_size = table_size;
 
-        // Serialize header and combine with table data
-        let mut result = Vec::with_capacity(table_size as usize);
-        result.write_u32_le(final_header.signature)?;
-        result.write_u32_le(final_header.version)?;
-        result.write_u32_le(final_header.data_size)?;
+        // Write extended header first
+        let mut result = Vec::with_capacity((12 + data_size) as usize);
+        result.write_u32_le(0x1A544548)?; // "HET\x1A"
+        result.write_u32_le(1)?; // version
+        result.write_u32_le(data_size)?; // data_size
+
+        // Then write the HET header
         result.write_u32_le(final_header.table_size)?;
         result.write_u32_le(final_header.max_file_count)?;
         result.write_u32_le(final_header.hash_table_size)?;
@@ -1326,8 +1547,13 @@ impl ArchiveBuilder {
 
         if byte_offset + bytes_needed > data.len() {
             log::error!(
-                "Bit entry out of bounds: index={}, bit_size={}, bit_offset={}, byte_offset={}, bytes_needed={}, data.len()={}", 
-                index, bit_size, bit_offset, byte_offset, bytes_needed, data.len()
+                "Bit entry out of bounds: index={}, bit_size={}, bit_offset={}, byte_offset={}, bytes_needed={}, data.len()={}",
+                index,
+                bit_size,
+                bit_offset,
+                byte_offset,
+                bytes_needed,
+                data.len()
             );
             return Err(Error::invalid_format("Bit entry out of bounds"));
         }
@@ -1379,35 +1605,51 @@ impl ArchiveBuilder {
         data: &[u8],
         encrypt: bool,
     ) -> Result<(u64, [u8; 16])> {
-        let mut table_data = data.to_vec();
+        // HET table structure:
+        // - Extended header (12 bytes) - NEVER encrypted
+        // - Table data (rest) - can be compressed and/or encrypted
+
+        if data.len() < 12 {
+            return Err(Error::invalid_format("HET table data too small"));
+        }
+
+        // Split extended header and table data
+        let (extended_header, table_data) = data.split_at(12);
+        let mut processed_data = table_data.to_vec();
 
         // Compress if enabled and this is a v3+ archive
         if self.compress_tables && matches!(self.version, FormatVersion::V3 | FormatVersion::V4) {
-            log::debug!("Compressing HET table: {} -> ", table_data.len());
-            let compressed = compress(&table_data, self.table_compression)?;
+            log::debug!("Compressing HET table data: {} -> ", processed_data.len());
+            let compressed = compress(&processed_data, self.table_compression)?;
             log::debug!(
                 "{} bytes ({}% reduction)",
                 compressed.len(),
-                (100 * (table_data.len() - compressed.len()) / table_data.len())
+                (100 * (processed_data.len() - compressed.len()) / processed_data.len())
             );
 
             // Prepend compression type byte
             let mut compressed_with_type = Vec::with_capacity(1 + compressed.len());
             compressed_with_type.push(self.table_compression);
             compressed_with_type.extend_from_slice(&compressed);
-            table_data = compressed_with_type;
+            processed_data = compressed_with_type;
         }
 
+        // Encrypt the data portion (after extended header)
         if encrypt {
             let key = hash_string("(hash table)", hash_type::FILE_KEY);
-            self.encrypt_data(&mut table_data, key);
+            self.encrypt_data(&mut processed_data, key);
         }
 
-        // Calculate MD5 of final data (after compression and encryption)
-        let md5 = self.calculate_md5(&table_data);
+        // Combine extended header with processed data
+        let mut final_data = Vec::with_capacity(extended_header.len() + processed_data.len());
+        final_data.extend_from_slice(extended_header);
+        final_data.extend_from_slice(&processed_data);
 
-        let written_size = table_data.len() as u64;
-        writer.write_all(&table_data)?;
+        // Calculate MD5 of final data
+        let md5 = self.calculate_md5(&final_data);
+
+        let written_size = final_data.len() as u64;
+        writer.write_all(&final_data)?;
         Ok((written_size, md5))
     }
 
@@ -1472,11 +1714,8 @@ impl ArchiveBuilder {
         let bet_hash_size_extra = 0;
         let bet_hash_array_size = total_bet_hash_size.div_ceil(8);
 
-        // Create header
+        // Create header (without extended header fields)
         let header = BetHeader {
-            signature: 0x1A544542, // "BET\x1A"
-            version: 1,
-            data_size: 0,  // Will be calculated later
             table_size: 0, // Will be calculated later
             file_count,
             unknown_08: 0x10,
@@ -1527,23 +1766,25 @@ impl ArchiveBuilder {
         }
 
         // Calculate final sizes
-        let header_size = std::mem::size_of::<BetHeader>();
+        let bet_header_size = std::mem::size_of::<BetHeader>();
         let flag_array_size = flag_count * 4;
-        let data_size = flag_array_size + file_table_size + bet_hash_array_size;
-        let table_size = header_size as u32 + data_size;
+        let data_size =
+            bet_header_size as u32 + flag_array_size + file_table_size + bet_hash_array_size;
+        let table_size = 12 + data_size; // Extended header (12 bytes) + data
 
-        // Update header with final sizes
+        // Update header with final size
         let mut final_header = header;
-        final_header.data_size = data_size;
         final_header.table_size = table_size;
 
         // Serialize everything
-        let mut result = Vec::with_capacity(table_size as usize);
+        let mut result = Vec::with_capacity((12 + data_size) as usize);
 
-        // Write header
-        result.write_u32_le(final_header.signature)?;
-        result.write_u32_le(final_header.version)?;
-        result.write_u32_le(final_header.data_size)?;
+        // Write extended header first
+        result.write_u32_le(0x1A544542)?; // "BET\x1A"
+        result.write_u32_le(1)?; // version
+        result.write_u32_le(data_size)?; // data_size
+
+        // Then write the BET header
         result.write_u32_le(final_header.table_size)?;
         result.write_u32_le(final_header.file_count)?;
         result.write_u32_le(final_header.unknown_08)?;
@@ -1589,35 +1830,51 @@ impl ArchiveBuilder {
         data: &[u8],
         encrypt: bool,
     ) -> Result<(u64, [u8; 16])> {
-        let mut table_data = data.to_vec();
+        // BET table structure:
+        // - Extended header (12 bytes) - NEVER encrypted
+        // - Table data (rest) - can be compressed and/or encrypted
+
+        if data.len() < 12 {
+            return Err(Error::invalid_format("BET table data too small"));
+        }
+
+        // Split extended header and table data
+        let (extended_header, table_data) = data.split_at(12);
+        let mut processed_data = table_data.to_vec();
 
         // Compress if enabled and this is a v3+ archive
         if self.compress_tables && matches!(self.version, FormatVersion::V3 | FormatVersion::V4) {
-            log::debug!("Compressing BET table: {} -> ", table_data.len());
-            let compressed = compress(&table_data, self.table_compression)?;
+            log::debug!("Compressing BET table data: {} -> ", processed_data.len());
+            let compressed = compress(&processed_data, self.table_compression)?;
             log::debug!(
                 "{} bytes ({}% reduction)",
                 compressed.len(),
-                (100 * (table_data.len() - compressed.len()) / table_data.len())
+                (100 * (processed_data.len() - compressed.len()) / processed_data.len())
             );
 
             // Prepend compression type byte
             let mut compressed_with_type = Vec::with_capacity(1 + compressed.len());
             compressed_with_type.push(self.table_compression);
             compressed_with_type.extend_from_slice(&compressed);
-            table_data = compressed_with_type;
+            processed_data = compressed_with_type;
         }
 
+        // Encrypt the data portion (after extended header)
         if encrypt {
             let key = hash_string("(block table)", hash_type::FILE_KEY);
-            self.encrypt_data(&mut table_data, key);
+            self.encrypt_data(&mut processed_data, key);
         }
 
-        // Calculate MD5 of final data (after compression and encryption)
-        let md5 = self.calculate_md5(&table_data);
+        // Combine extended header with processed data
+        let mut final_data = Vec::with_capacity(extended_header.len() + processed_data.len());
+        final_data.extend_from_slice(extended_header);
+        final_data.extend_from_slice(&processed_data);
 
-        let written_size = table_data.len() as u64;
-        writer.write_all(&table_data)?;
+        // Calculate MD5 of final data
+        let md5 = self.calculate_md5(&final_data);
+
+        let written_size = final_data.len() as u64;
+        writer.write_all(&final_data)?;
         Ok((written_size, md5))
     }
 }

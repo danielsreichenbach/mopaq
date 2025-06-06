@@ -181,6 +181,13 @@ bool SFileExtractFile(HANDLE archive,
 bool SFileVerifyFile(HANDLE archive, const char *filename, uint32_t flags);
 
 // Verify archive integrity
+//
+// # Safety
+//
+// This function is unsafe because it:
+// - Dereferences raw pointers passed as HANDLE arguments
+// - Calls other unsafe functions that manipulate raw pointers
+// - Must be called with valid archive handles obtained from `SFileOpenArchive`
 bool SFileVerifyArchive(HANDLE archive, uint32_t flags);
 
 #ifdef __cplusplus

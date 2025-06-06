@@ -39,8 +39,10 @@ fn compress_internal(data: &[u8], method: u8) -> Result<Vec<u8>> {
         CompressionMethod::Sparse => algorithms::sparse::compress(data),
         CompressionMethod::AdpcmMono => algorithms::adpcm::compress_mono(data, 5), // Default compression level
         CompressionMethod::AdpcmStereo => algorithms::adpcm::compress_stereo(data, 5), // Default compression level
+        CompressionMethod::PKWare => algorithms::pkware::compress(data),
+        CompressionMethod::Implode => algorithms::implode::compress(data),
+        CompressionMethod::Huffman => algorithms::huffman::compress(data),
         CompressionMethod::Multiple(flags) => compress_multiple(data, flags),
-        _ => Err(Error::compression("Compression method not yet implemented")),
     }
 }
 
@@ -86,9 +88,7 @@ fn compress_multiple(data: &[u8], flags: u8) -> Result<Vec<u8>> {
 
     // Apply the single remaining compression
     if has_huffman {
-        return Err(Error::compression(
-            "Huffman compression not yet implemented",
-        ));
+        current_data = algorithms::huffman::compress(&current_data)?;
     } else if has_zlib {
         current_data = algorithms::zlib::compress(&current_data)?;
     } else if has_bzip2 {
@@ -96,7 +96,7 @@ fn compress_multiple(data: &[u8], flags: u8) -> Result<Vec<u8>> {
     } else if has_sparse {
         current_data = algorithms::sparse::compress(&current_data)?;
     } else if has_pkware {
-        return Err(Error::compression("PKWare compression not yet implemented"));
+        current_data = algorithms::pkware::compress(&current_data)?;
     }
 
     Ok(current_data)

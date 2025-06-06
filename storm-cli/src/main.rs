@@ -408,6 +408,7 @@ enum CompressionMethod {
     Bzip2,
     Lzma,
     Sparse,
+    Pkware,
     AdpcmMono,
     AdpcmStereo,
 }
@@ -484,74 +485,69 @@ fn main() -> Result<()> {
                 follow_symlinks,
                 ignore_patterns,
             } => {
-                let mut options = commands::archive::CreateOptions::default();
-
-                // Set version - use config default if not specified
-                options.version = if let Some(v) = version {
-                    match v {
-                        1 => FormatVersion::V1,
-                        2 => FormatVersion::V2,
-                        3 => FormatVersion::V3,
-                        4 => FormatVersion::V4,
-                        _ => unreachable!(),
-                    }
-                } else if let Some(v) = config.default_version {
-                    match v {
-                        1 => FormatVersion::V1,
-                        2 => FormatVersion::V2,
-                        3 => FormatVersion::V3,
-                        4 => FormatVersion::V4,
-                        _ => FormatVersion::V1, // fallback to V1 for invalid values
-                    }
-                } else {
-                    FormatVersion::V1
-                };
-
-                // Set compression - use config default if not specified
-                options.compression = if let Some(comp) = compression {
-                    match comp {
-                        CompressionMethod::None => 0,
-                        CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
-                        CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
-                        CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
-                        CompressionMethod::Sparse => mopaq::compression::flags::SPARSE as u16,
-                        CompressionMethod::AdpcmMono => {
-                            mopaq::compression::flags::ADPCM_MONO as u16
+                let mut options = commands::archive::CreateOptions {
+                    version: if let Some(v) = version {
+                        match v {
+                            1 => FormatVersion::V1,
+                            2 => FormatVersion::V2,
+                            3 => FormatVersion::V3,
+                            4 => FormatVersion::V4,
+                            _ => unreachable!(),
                         }
-                        CompressionMethod::AdpcmStereo => {
-                            mopaq::compression::flags::ADPCM_STEREO as u16
+                    } else if let Some(v) = config.default_version {
+                        match v {
+                            1 => FormatVersion::V1,
+                            2 => FormatVersion::V2,
+                            3 => FormatVersion::V3,
+                            4 => FormatVersion::V4,
+                            _ => FormatVersion::V1, // fallback to V1 for invalid values
                         }
-                    }
-                } else if let Some(comp_str) = &config.default_compression {
-                    match comp_str.as_str() {
-                        "none" => 0,
-                        "zlib" => mopaq::compression::flags::ZLIB as u16,
-                        "bzip2" => mopaq::compression::flags::BZIP2 as u16,
-                        "lzma" => mopaq::compression::flags::LZMA as u16,
-                        "sparse" => mopaq::compression::flags::SPARSE as u16,
-                        "adpcm-mono" => mopaq::compression::flags::ADPCM_MONO as u16,
-                        "adpcm-stereo" => mopaq::compression::flags::ADPCM_STEREO as u16,
-                        _ => mopaq::compression::flags::ZLIB as u16, // fallback to zlib
-                    }
-                } else {
-                    mopaq::compression::flags::ZLIB as u16
+                    } else {
+                        FormatVersion::V1
+                    },
+                    compression: if let Some(comp) = compression {
+                        match comp {
+                            CompressionMethod::None => 0,
+                            CompressionMethod::Zlib => mopaq::compression::flags::ZLIB as u16,
+                            CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
+                            CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
+                            CompressionMethod::Sparse => mopaq::compression::flags::SPARSE as u16,
+                            CompressionMethod::Pkware => mopaq::compression::flags::PKWARE as u16,
+                            CompressionMethod::AdpcmMono => {
+                                mopaq::compression::flags::ADPCM_MONO as u16
+                            }
+                            CompressionMethod::AdpcmStereo => {
+                                mopaq::compression::flags::ADPCM_STEREO as u16
+                            }
+                        }
+                    } else if let Some(comp_str) = &config.default_compression {
+                        match comp_str.as_str() {
+                            "none" => 0,
+                            "zlib" => mopaq::compression::flags::ZLIB as u16,
+                            "bzip2" => mopaq::compression::flags::BZIP2 as u16,
+                            "lzma" => mopaq::compression::flags::LZMA as u16,
+                            "sparse" => mopaq::compression::flags::SPARSE as u16,
+                            "pkware" => mopaq::compression::flags::PKWARE as u16,
+                            "adpcm-mono" => mopaq::compression::flags::ADPCM_MONO as u16,
+                            "adpcm-stereo" => mopaq::compression::flags::ADPCM_STEREO as u16,
+                            _ => mopaq::compression::flags::ZLIB as u16, // fallback to zlib
+                        }
+                    } else {
+                        mopaq::compression::flags::ZLIB as u16
+                    },
+                    block_size: block_size.or(config.default_block_size).unwrap_or(3),
+                    listfile: if no_listfile {
+                        ListfileOption::None
+                    } else if let Some(lf) = listfile {
+                        ListfileOption::External(lf.into())
+                    } else {
+                        ListfileOption::Generate
+                    },
+                    recursive: !no_recursive,
+                    follow_symlinks,
+                    ..Default::default()
                 };
 
-                // Set block size - use config default if not specified
-                options.block_size = block_size.or(config.default_block_size).unwrap_or(3);
-
-                // Set listfile option
-                options.listfile = if no_listfile {
-                    ListfileOption::None
-                } else if let Some(lf) = listfile {
-                    ListfileOption::External(lf.into())
-                } else {
-                    ListfileOption::Generate
-                };
-
-                // Set other options
-                options.recursive = !no_recursive;
-                options.follow_symlinks = follow_symlinks;
                 if !ignore_patterns.is_empty() {
                     options.ignore_patterns.extend(ignore_patterns);
                 }
@@ -631,6 +627,7 @@ fn main() -> Result<()> {
                     CompressionMethod::Bzip2 => mopaq::compression::flags::BZIP2 as u16,
                     CompressionMethod::Lzma => mopaq::compression::flags::LZMA as u16,
                     CompressionMethod::Sparse => mopaq::compression::flags::SPARSE as u16,
+                    CompressionMethod::Pkware => mopaq::compression::flags::PKWARE as u16,
                     CompressionMethod::AdpcmMono => mopaq::compression::flags::ADPCM_MONO as u16,
                     CompressionMethod::AdpcmStereo => {
                         mopaq::compression::flags::ADPCM_STEREO as u16
@@ -777,11 +774,11 @@ fn handle_config_command(
                 "default_compression" => {
                     // Validate compression method
                     match value.as_str() {
-                        "none" | "zlib" | "bzip2" | "lzma" | "sparse" | "adpcm-mono" | "adpcm-stereo" => {
+                        "none" | "zlib" | "bzip2" | "lzma" | "sparse" | "pkware" | "adpcm-mono" | "adpcm-stereo" => {
                             config.default_compression = Some(value.clone());
                         }
                         _ => anyhow::bail!(
-                            "Invalid compression method. Valid values: none, zlib, bzip2, lzma, sparse, adpcm-mono, adpcm-stereo"
+                            "Invalid compression method. Valid values: none, zlib, bzip2, lzma, sparse, pkware, adpcm-mono, adpcm-stereo"
                         ),
                     }
                 }

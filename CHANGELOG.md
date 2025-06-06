@@ -160,9 +160,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Extended format capabilities
 
 - **Strong signature verification** - Enhanced digital signature support
-  - 2048-bit RSA with SHA-1 hashing implementation
-  - Complete PKCS#1 v1.5 padding verification for strong signatures
-  - Custom Blizzard padding format (0x0B + 0xBB) support
+  - ✅ 2048-bit RSA with SHA-1 hashing implementation
+  - ✅ Complete PKCS#1 v1.5 padding verification for strong signatures
+  - ✅ Custom Blizzard padding format (0x0B + 0xBB) support
+
+- **Compression Support**
+  - ✅ PKWare DCL compression and decompression
+  - ✅ IMA ADPCM mono/stereo compression and decompression with channel validation
+  - ✅ Multi-compression support (ADPCM + one other algorithm)
+  - 🔨 Huffman decompression (compression not implemented)
+  - 🔨 PKWare Implode decompression (compression not implemented)
+
+- **HET/BET Table Fixes**
+  - ✅ Fixed extended header structure handling (12-byte header)
+  - ✅ Fixed encryption key mismatch between writer and reader
+  - ✅ Fixed bit shift overflow for 64-bit hash entry sizes
+  - ✅ Full compatibility with WoW 4.3.4+ archives
 
 ### ❌ Missing Features (Critical for 100% StormLib Compatibility)
 
@@ -174,11 +187,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ❌ File renaming within archives
   - ❌ Archive compacting (remove deleted entries)
 
-- **Missing Compression Algorithms** (15% gap - **Critical for WoW 4.x+ compatibility**)
-  - ❌ **PKWare Implode compression** - **CRITICAL: Required for WoW 4.x+ HET/BET table access**
-  - ❌ **PKWare DCL compression** (Data Compression Library)
-  - ❌ **Huffman compression** (used in WAVE files)
-  - ❌ **Multiple compression combinations** (ADPCM + PKWare/Implode, complex flag 0xC9)
+- **Incomplete Compression Support**
+  - ❌ **Huffman compression** (decompression works, compression not implemented)
+  - ❌ **PKWare Implode compression** (decompression works, compression not implemented)
+  - ❌ **Multiple compression combinations** (3+ algorithms in sequence)
 
 - **Advanced Features** (30% gap)
   - ❌ **Streaming API** for large file operations
@@ -209,13 +221,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Progress bars for long operations
 
-### Scripts
+### Test Utilities (Rust)
 
-- **Test Data Generator** (`scripts/generate_test_data.py`)
-  - ✅ Generate raw test data for storm-cli archive creation testing
+- **Test Data Generator** (`mopaq::test_utils::data_generator`)
+  - ✅ Generate raw test data for archive creation testing
   - ✅ Multiple test configurations (simple, game assets, nested, mixed sizes, special names)
   - ✅ Support for text, binary, and empty files
   - ✅ Configurable file sizes and directory structures
+  - ✅ Type-safe Rust implementation with better performance
 
 #### FFI Library (`storm-ffi`)
 
@@ -292,10 +305,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Compression
 
-- ✅ **Zlib/Deflate** - Full support
-- ✅ **BZip2** - Full support (v2+)
-- ✅ **LZMA** - Full support with lzma-rs (v3+)
-- ✅ **Sparse/RLE** - Full decompression support (v3+)
+- ✅ **Zlib/Deflate** - Full compression and decompression
+- ✅ **BZip2** - Full compression and decompression (v2+)
+- ✅ **LZMA** - Full compression and decompression with lzma-rs (v3+)
+- ✅ **Sparse/RLE** - Full compression and decompression (v3+)
+- ✅ **PKWare DCL** - Full compression and decompression
+- ✅ **IMA ADPCM** - Full mono/stereo compression and decompression
+- 🔨 **Huffman** - Decompression only (used in WAVE files)
+- 🔨 **PKWare Implode** - Decompression only
+- ✅ Multi-compression: ADPCM + one other algorithm
 - ✅ Multiple compression detection and handling
 - ✅ Compression method auto-detection
 

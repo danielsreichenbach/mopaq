@@ -132,16 +132,49 @@ pub struct Md5Status {
 }
 
 /// Options for opening MPQ archives
+///
+/// This struct provides configuration options for how MPQ archives are opened
+/// and initialized. It follows the builder pattern for easy configuration.
+///
+/// # Examples
+///
+/// ```no_run
+/// use mopaq::{Archive, OpenOptions};
+///
+/// // Open with default options
+/// let archive = Archive::open("data.mpq")?;
+///
+/// // Open with custom options
+/// let archive = OpenOptions::new()
+///     .load_tables(false)  // Defer table loading for faster startup
+///     .open("data.mpq")?;
+/// # Ok::<(), mopaq::Error>(())
+/// ```
 #[derive(Debug, Clone)]
 pub struct OpenOptions {
-    /// Load tables immediately when opening
+    /// Whether to load and parse all tables immediately when opening the archive.
+    ///
+    /// When `true` (default), all tables (hash, block, HET/BET) are loaded and
+    /// validated during archive opening. This provides immediate error detection
+    /// but slower startup for large archives.
+    ///
+    /// When `false`, tables are loaded on-demand when first accessed. This
+    /// provides faster startup but may defer error detection.
     pub load_tables: bool,
-    /// Version for new archives
+
+    /// MPQ format version to use when creating new archives.
+    ///
+    /// This field is only used when creating new archives via `create()`.
+    /// If `None`, defaults to MPQ version 1 for maximum compatibility.
     version: Option<crate::header::FormatVersion>,
 }
 
 impl OpenOptions {
     /// Create new default options
+    ///
+    /// Returns an `OpenOptions` instance with default settings:
+    /// - `load_tables = true` (immediate table loading)
+    /// - `version = None` (defaults to MPQ v1 for new archives)
     pub fn new() -> Self {
         Self {
             load_tables: true,
@@ -149,24 +182,64 @@ impl OpenOptions {
         }
     }
 
-    /// Set whether to load tables immediately
+    /// Set whether to load tables immediately when opening
+    ///
+    /// # Parameters
+    /// - `load`: If `true`, tables are loaded immediately during open.
+    ///   If `false`, tables are loaded on first access.
+    ///
+    /// # Returns
+    /// Self for method chaining
     pub fn load_tables(mut self, load: bool) -> Self {
         self.load_tables = load;
         self
     }
 
     /// Set the MPQ version for new archives
+    ///
+    /// This setting only affects archives created with `create()`, not
+    /// archives opened with `open()`.
+    ///
+    /// # Parameters
+    /// - `version`: The MPQ format version to use (V1, V2, V3, or V4)
+    ///
+    /// # Returns
+    /// Self for method chaining
     pub fn version(mut self, version: crate::header::FormatVersion) -> Self {
         self.version = Some(version);
         self
     }
 
-    /// Open an existing MPQ archive
+    /// Open an existing MPQ archive with these options
+    ///
+    /// # Parameters
+    /// - `path`: Path to the MPQ archive file
+    ///
+    /// # Returns
+    /// `Ok(Archive)` on success, `Err(Error)` on failure
+    ///
+    /// # Errors
+    /// - `Error::Io` if the file cannot be opened
+    /// - `Error::InvalidFormat` if the file is not a valid MPQ archive
+    /// - `Error::Corruption` if table validation fails (when `load_tables = true`)
     pub fn open<P: AsRef<Path>>(self, path: P) -> Result<Archive> {
         Archive::open_with_options(path, self)
     }
 
-    /// Create a new MPQ archive
+    /// Create a new empty MPQ archive with these options
+    ///
+    /// Creates a new MPQ archive file with the specified format version.
+    /// The archive will be empty but properly formatted.
+    ///
+    /// # Parameters
+    /// - `path`: Path where the new archive should be created
+    ///
+    /// # Returns
+    /// `Ok(Archive)` on success, `Err(Error)` on failure
+    ///
+    /// # Errors
+    /// - `Error::Io` if the file cannot be created
+    /// - `Error::InvalidFormat` if archive creation fails
     pub fn create<P: AsRef<Path>>(self, path: P) -> Result<Archive> {
         let path = path.as_ref();
 
@@ -1219,7 +1292,8 @@ impl Archive {
                     data.clone()
                 };
 
-                let actual_crc = crc32fast::hash(&data_to_check);
+                // MPQ uses ADLER32 for sector checksums, not CRC32 despite the name
+                let actual_crc = adler::adler32_slice(&data_to_check);
                 if actual_crc != expected_crc {
                     return Err(Error::ChecksumMismatch {
                         file: name.to_string(),
@@ -1379,6 +1453,24 @@ impl Archive {
                 decrypt_file_data(&mut sector_data, sector_key);
             }
 
+            // Validate CRC if present - MUST be done AFTER decryption but BEFORE decompression
+            if let Some(ref crcs) = sector_crcs {
+                let expected_crc = crcs[i];
+                // MPQ uses ADLER32 for sector checksums, calculated on the raw (possibly compressed) data
+                let actual_crc = adler::adler32_slice(&sector_data);
+
+                if actual_crc != expected_crc {
+                    log::error!(
+                        "CRC mismatch for sector {}: expected {:08x}, got {:08x}",
+                        i,
+                        expected_crc,
+                        actual_crc
+                    );
+                    // For now, just log the error and continue
+                    // Some MPQ files have incorrect CRCs
+                }
+            }
+
             // Decompress sector
             let decompressed_sector =
                 if file_info.is_compressed() && sector_size_compressed < expected_size {
@@ -1396,23 +1488,6 @@ impl Archive {
                     sector_data[..expected_size.min(sector_data.len())].to_vec()
                 };
 
-            // Validate CRC if present
-            if let Some(ref crcs) = sector_crcs {
-                let expected_crc = crcs[i];
-                let actual_crc = crc32fast::hash(&decompressed_sector);
-
-                if actual_crc != expected_crc {
-                    log::error!(
-                        "CRC mismatch for sector {}: expected {:08x}, got {:08x}",
-                        i,
-                        expected_crc,
-                        actual_crc
-                    );
-                    // For now, just log the error and continue
-                    // Some MPQ files have incorrect CRCs
-                }
-            }
-
             decompressed_data.extend_from_slice(&decompressed_sector);
         }
 
@@ -1428,7 +1503,7 @@ impl Archive {
 
         // Try to read the (attributes) file
         match self.read_file("(attributes)") {
-            Ok(data) => {
+            Ok(mut data) => {
                 // Get block count for parsing
                 let block_count = if let Some(ref block_table) = self.block_table {
                     block_table.entries().len()
@@ -1439,6 +1514,40 @@ impl Archive {
                         "No block/BET table available for attributes",
                     ));
                 };
+
+                // Check if attributes data needs additional decompression
+                // Some MPQ files have doubly-compressed attributes
+                if data.len() >= 4 {
+                    let first_dword = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+
+                    // Check if this looks like compressed data instead of version 100
+                    if first_dword != 100 && data[0] != 0x64 {
+                        log::debug!(
+                            "Attributes file may be compressed, first dword: 0x{:08X} ({}), first byte: 0x{:02X}",
+                            first_dword,
+                            first_dword,
+                            data[0]
+                        );
+
+                        // Try to decompress if it looks like compression flags
+                        if data[0] & 0x0F != 0 || data[0] == 0x02 {
+                            log::info!(
+                                "Attempting to decompress attributes file with method 0x{:02X}",
+                                data[0]
+                            );
+                            match compression::decompress(&data[1..], data[0], block_count * 100) {
+                                Ok(decompressed) => {
+                                    log::info!("Successfully decompressed attributes file");
+                                    data = decompressed;
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to decompress attributes file: {}", e);
+                                    // Continue with original data
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Parse attributes
                 let attributes = special_files::Attributes::parse(&data.into(), block_count)?;
@@ -1471,7 +1580,7 @@ impl Archive {
     /// Add a file to the archive
     pub fn add_file(&mut self, _name: &str, _data: &[u8]) -> Result<()> {
         Err(Error::invalid_format(
-            "In-place file addition not yet implemented. Use ArchiveBuilder to create new archives."
+            "In-place file addition not yet implemented. Use ArchiveBuilder to create new archives.",
         ))
     }
 
@@ -1896,11 +2005,12 @@ mod tests {
 
     #[test]
     fn test_crc_calculation() {
-        // Test that we're using the correct CRC algorithm (CRC-32)
+        // Test that we're using the correct checksum algorithm (ADLER32)
+        // MPQ uses ADLER32 for sector checksums, not CRC32 despite the name "SECTOR_CRC"
         let test_data = b"Hello, World!";
-        let crc = crc32fast::hash(test_data);
+        let crc = adler::adler32_slice(test_data);
 
-        // This is the expected CRC-32 value for "Hello, World!"
-        assert_eq!(crc, 0xEC4AC3D0);
+        // This is the expected ADLER32 value for "Hello, World!"
+        assert_eq!(crc, 0x1F9E046A);
     }
 }

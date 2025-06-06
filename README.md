@@ -19,8 +19,9 @@ A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format 
 - 🔒 **Security First**: Safe Rust implementation with comprehensive error handling
 - ⚡ **High Performance**: Memory-mapped I/O, zero-copy operations, and efficient caching
 - 🔧 **StormLib Compatible**: Drop-in replacement via FFI bindings (in development)
-- 🗜️ **Compression Support**: Multiple compression methods (zlib, bzip2, LZMA, sparse)
+- 🗜️ **Compression Support**: Multiple compression methods (zlib, bzip2, LZMA, sparse, PKWare DCL, IMA ADPCM)
 - 🔐 **Encryption Support**: Full encryption/decryption for protected archives
+- 📚 **HET/BET Tables**: Support for v3+ hash/block extended tables used in WoW 4.3.4+
 - 🛠️ **Rich CLI Tool**: Comprehensive command-line interface with debugging capabilities
 - 📊 **Well Tested**: Extensive test suite with fuzzing and benchmarks
 - 🦀 **Pure Rust**: No system dependencies required (using lzma-rs for LZMA support)
@@ -354,15 +355,17 @@ storm-cli archive analyze archive.mpq --output json > analysis.json
   - ❌ **Archive compacting** (remove deleted entries)
 
 - **Compression** (85% complete)
-  - ✅ Zlib/Deflate (full support)
-  - ✅ BZip2 (full support)
-  - ✅ LZMA (using pure Rust lzma-rs)
-  - ✅ Sparse/RLE (full support)
-  - ✅ ADPCM Mono/Stereo (complete implementation with channel validation)
-  - ❌ **Huffman compression** (used in WAVE files)
-  - ❌ **PKWare DCL compression** (Data Compression Library)
-  - ❌ **PKWare Implode compression**
-  - ✅ Multiple compression detection and automatic decompression
+  - ✅ Zlib/Deflate (compression + decompression)
+  - ✅ BZip2 (compression + decompression)
+  - ✅ LZMA (compression + decompression, using pure Rust lzma-rs)
+  - ✅ Sparse/RLE (compression + decompression)
+  - ✅ PKWare DCL (compression + decompression)
+  - ✅ IMA ADPCM Mono/Stereo (compression + decompression with channel validation)
+  - 🔨 **Huffman** (decompression only - can read but not create)
+  - 🔨 **PKWare Implode** (decompression only - can read but not create)
+  - ✅ Multi-compression: ADPCM + one other algorithm
+  - ❌ Multi-compression: 3+ algorithms in sequence
+  - ✅ Automatic decompression of all supported formats
 
 - **Cryptography** (95% complete)
   - ✅ Encryption table generation (compile-time constants)
@@ -399,11 +402,10 @@ storm-cli archive analyze archive.mpq --output json > analysis.json
 **High Priority (Required for StormLib Parity):**
 
 - 📋 **In-place archive modification** - Add/remove/rename files in existing archives
-- 📋 **Missing compression algorithms** (Critical for WoW 4.x+ compatibility):
-  - **PKWare Implode compression** - Required for WoW 4.x+ HET/BET table access
-  - **PKWare DCL compression** (PKWARE Data Compression Library)
-  - **Huffman compression** (used in WAVE files)
-  - **Multiple compression combinations** (ADPCM + PKWare/Implode)
+- 📋 **Complete compression support**:
+  - **Huffman compression** (decompression works, compression not implemented)
+  - **PKWare Implode compression** (decompression works, compression not implemented)
+  - **Multiple compression combinations** (3+ algorithms in sequence)
 - 📋 **Digital signature generation** - Create weak and strong signatures (verification is complete)
 - 📋 **Streaming API** - Support for large file operations with progress callbacks
 - 📋 **Archive compacting** - Remove deleted entries and optimize layout

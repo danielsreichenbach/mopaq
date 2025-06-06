@@ -14,12 +14,70 @@ env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
+  # Performance improvements
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Generate test data once and cache it
+  generate-test-data:
+    name: Generate Test Data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.86.0
+      
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'test-data-gen'
+          cache-on-failure: false
+
+      # Cache test data based on script hashes
+      - name: Cache test data
+        id: test-data-cache
+        uses: actions/cache@v4
+        with:
+          path: test-data
+          key: test-data-${{ hashFiles('mopaq/src/test_utils/**', 'mopaq/examples/generate_test_data.rs', 'mopaq/examples/create_test_mpq.rs') }}-${{ hashFiles('test-data/**/*.mpq') }}
+          restore-keys: |
+            test-data-${{ hashFiles('mopaq/src/test_utils/**', 'mopaq/examples/generate_test_data.rs', 'mopaq/examples/create_test_mpq.rs') }}-
+            test-data-
+
+      - name: Generate test archives
+        if: steps.test-data-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          echo "::group::Building test utilities"
+          cargo build --release --example generate_test_data
+          cargo build --release --example create_test_mpq
+          echo "::endgroup::"
+          
+          echo "::group::Creating test archives"
+          # Create all test archives using Rust utilities
+          ./target/release/examples/create_test_mpq all --output-dir test-data
+          
+          # Generate raw data for testing
+          ./target/release/examples/generate_test_data all
+
+          # List generated test data
+          echo "Generated test data:"
+          find test-data -name "*.mpq" -type f | sort
+          echo "::endgroup::"
+
+      - name: Upload test data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-data
+          path: test-data
+          retention-days: 1
+
   # Quick checks that should fail fast
   quick-checks:
     name: Quick Checks
@@ -33,6 +91,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'quick-checks'
+          cache-on-failure: true
 
       # Format check (fastest)
       - name: Check formatting
@@ -46,17 +105,25 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-features --all-targets -- -D warnings
 
-  # Main test suite
+  # Main test suite with optimized matrix
   test:
     name: Test (${{ matrix.rust }} on ${{ matrix.os }})
-    needs: quick-checks
+    needs: [quick-checks, generate-test-data]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [1.86.0, stable]
         include:
-          # Add beta on Linux only
+          # MSRV check on Linux only
+          - os: ubuntu-latest
+            rust: 1.86.0
+          # Stable on all platforms
+          - os: ubuntu-latest
+            rust: stable
+          - os: windows-latest
+            rust: stable
+          - os: macos-latest
+            rust: stable
+          # Beta on Linux only
           - os: ubuntu-latest
             rust: beta
     runs-on: ${{ matrix.os }}
@@ -68,29 +135,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'tests-${{ matrix.os }}-${{ matrix.rust }}'
+          cache-on-failure: true
+          cache-all-crates: true
 
-      # Setup Python for test archive generation
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # Download pre-generated test data
+      - name: Download test data
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
-
-      # Generate test archives before running tests
-      - name: Generate test archives
-        shell: bash
-        run: |
-          echo "::group::Creating test archives"
-          # Create all test archives using mpq_tools.py
-          python3 scripts/mpq_tools.py create edge-cases --output-dir test-data
-          python3 scripts/mpq_tools.py create comprehensive --all-versions --output-dir test-data
-          python3 scripts/mpq_tools.py create compressed --compression all --output-dir test-data
-          python3 scripts/mpq_tools.py create crc --output-dir test-data
-          python3 scripts/mpq_tools.py create minimal --all-versions --output-dir test-data
-
-          # List generated test data
-          echo "Generated test data:"
-          find test-data -name "*.mpq" -type f | sort
-          echo "::endgroup::"
+          name: test-data
+          path: test-data
 
       # Test with all features
       - name: Test all features
@@ -100,17 +153,16 @@ jobs:
       - name: Test no default features
         run: cargo test --no-default-features --workspace
 
-      # Test each feature individually
+      # Test each feature individually (only on stable Linux)
       - name: Test feature combinations
         if: matrix.os == 'ubuntu-latest' && matrix.rust == 'stable'
         run: |
           cargo test --features mmap
           cargo test --features async
 
-  # Documentation build
+  # Documentation build - runs in parallel
   docs:
     name: Documentation
-    needs: quick-checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,6 +172,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'docs'
+          cache-on-failure: true
       - name: Build documentation
         run: cargo doc --all-features --no-deps
         env:
@@ -127,10 +180,10 @@ jobs:
       - name: Check for broken links
         run: cargo doc --all-features --no-deps --document-private-items
 
-  # Coverage collection
+  # Coverage collection - runs in parallel
   coverage:
     name: Code Coverage
-    needs: quick-checks
+    needs: generate-test-data
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,30 +194,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: 'coverage'
+          cache-on-failure: true
       - uses: taiki-e/install-action@cargo-llvm-cov
 
-      # Setup Python for test archive generation
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # Download pre-generated test data
+      - name: Download test data
+        uses: actions/download-artifact@v4
         with:
-          python-version: '3.12'
-
-      # Generate test archives before running tests
-      - name: Generate test archives
-        shell: bash
-        run: |
-          echo "::group::Creating test archives"
-          # Create all test archives using mpq_tools.py
-          python3 scripts/mpq_tools.py create edge-cases --output-dir test-data
-          python3 scripts/mpq_tools.py create comprehensive --all-versions --output-dir test-data
-          python3 scripts/mpq_tools.py create compressed --compression all --output-dir test-data
-          python3 scripts/mpq_tools.py create crc --output-dir test-data
-          python3 scripts/mpq_tools.py create minimal --all-versions --output-dir test-data
-
-          # List generated test data
-          echo "Generated test data:"
-          find test-data -name "*.mpq" -type f | sort
-          echo "::endgroup::"
+          name: test-data
+          path: test-data
 
       - name: Collect coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info

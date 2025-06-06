@@ -99,10 +99,10 @@ const OPEN_ALWAYS: u32 = 4;
 const TRUNCATE_EXISTING: u32 = 5;
 
 // MPQ format version flags
-const MPQ_CREATE_ARCHIVE_V1: u32 = 0x00000000;
-const MPQ_CREATE_ARCHIVE_V2: u32 = 0x01000000;
-const MPQ_CREATE_ARCHIVE_V3: u32 = 0x02000000;
-const MPQ_CREATE_ARCHIVE_V4: u32 = 0x03000000;
+const _MPQ_CREATE_ARCHIVE_V1: u32 = 0x00000000;
+const _MPQ_CREATE_ARCHIVE_V2: u32 = 0x01000000;
+const _MPQ_CREATE_ARCHIVE_V3: u32 = 0x02000000;
+const _MPQ_CREATE_ARCHIVE_V4: u32 = 0x03000000;
 
 // Helper functions
 fn set_last_error(error: u32) {
@@ -989,7 +989,7 @@ pub unsafe extern "C" fn SFileExtractFile(
             // Create parent directories if they don't exist
             let dest_path = Path::new(dest_filename);
             if let Some(parent) = dest_path.parent() {
-                if let Err(_) = fs::create_dir_all(parent) {
+                if fs::create_dir_all(parent).is_err() {
                     set_last_error(ERROR_ACCESS_DENIED);
                     return false;
                 }
@@ -1157,8 +1157,15 @@ pub unsafe extern "C" fn SFileVerifyFile(
 }
 
 /// Verify archive integrity
+///
+/// # Safety
+///
+/// This function is unsafe because it:
+/// - Dereferences raw pointers passed as HANDLE arguments
+/// - Calls other unsafe functions that manipulate raw pointers
+/// - Must be called with valid archive handles obtained from `SFileOpenArchive`
 #[no_mangle]
-pub extern "C" fn SFileVerifyArchive(archive: HANDLE, flags: u32) -> bool {
+pub unsafe extern "C" fn SFileVerifyArchive(archive: HANDLE, flags: u32) -> bool {
     let Some(archive_id) = handle_to_id(archive) else {
         set_last_error(ERROR_INVALID_HANDLE);
         return false;
@@ -1301,7 +1308,7 @@ mod tests {
             assert!(!SFileExtractFile(
                 ptr::null_mut(),
                 ptr::null(),
-                b"output.txt\0".as_ptr() as *const c_char,
+                c"output.txt".as_ptr(),
                 0
             ));
             assert_eq!(SFileGetLastError(), ERROR_INVALID_PARAMETER);
@@ -1309,7 +1316,7 @@ mod tests {
             // Null local filename should fail
             assert!(!SFileExtractFile(
                 ptr::null_mut(),
-                b"test.txt\0".as_ptr() as *const c_char,
+                c"test.txt".as_ptr(),
                 ptr::null(),
                 0
             ));
@@ -1318,8 +1325,8 @@ mod tests {
             // Invalid handle should fail
             assert!(!SFileExtractFile(
                 ptr::null_mut(),
-                b"test.txt\0".as_ptr() as *const c_char,
-                b"output.txt\0".as_ptr() as *const c_char,
+                c"test.txt".as_ptr(),
+                c"output.txt".as_ptr(),
                 0
             ));
             assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
@@ -1341,7 +1348,7 @@ mod tests {
             // Invalid handle should fail
             assert!(!SFileVerifyFile(
                 ptr::null_mut(),
-                b"test.txt\0".as_ptr() as *const c_char,
+                c"test.txt".as_ptr(),
                 SFILE_VERIFY_ALL
             ));
             assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
@@ -1352,7 +1359,9 @@ mod tests {
     fn test_verify_archive_invalid_params() {
         // Test SFileVerifyArchive with invalid parameters
         // Invalid handle should fail
-        assert!(!SFileVerifyArchive(ptr::null_mut(), SFILE_VERIFY_SIGNATURE));
+        unsafe {
+            assert!(!SFileVerifyArchive(ptr::null_mut(), SFILE_VERIFY_SIGNATURE));
+        }
         assert_eq!(SFileGetLastError(), ERROR_INVALID_HANDLE);
     }
 
@@ -1373,7 +1382,7 @@ mod tests {
 
             // Null handle should fail
             assert!(!SFileCreateArchive(
-                b"test.mpq\0".as_ptr() as *const c_char,
+                c"test.mpq".as_ptr(),
                 CREATE_ALWAYS,
                 16,
                 ptr::null_mut()
@@ -1382,7 +1391,7 @@ mod tests {
 
             // Invalid hash table size (not power of 2) should fail
             assert!(!SFileCreateArchive(
-                b"test.mpq\0".as_ptr() as *const c_char,
+                c"test.mpq".as_ptr(),
                 CREATE_ALWAYS,
                 15, // Not a power of 2
                 &mut handle
@@ -1391,7 +1400,7 @@ mod tests {
 
             // Hash table size too small should fail
             assert!(!SFileCreateArchive(
-                b"test.mpq\0".as_ptr() as *const c_char,
+                c"test.mpq".as_ptr(),
                 CREATE_ALWAYS,
                 2, // Less than minimum of 4
                 &mut handle

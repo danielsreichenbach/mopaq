@@ -9,13 +9,13 @@
 - **Archive Reading**: 98% complete - Excellent StormLib compatibility
 - **Archive Creation**: 90% complete - HET/BET tables fully implemented, not 85% as previously thought
 - **Cryptography**: 95% complete - Signature verification is 100% StormLib compatible
-- **Compression**: 85% complete - 5 of 8 algorithms implemented
+- **Compression**: 85% complete - All algorithms have decompression, 2 lack compression
 - **Testing**: 95% complete - Comprehensive coverage with real MPQ files
 
 ### ❌ **Critical Gaps (Blocking 100% Compatibility)**
 
 - **Archive Modification**: 0% complete - Major gap, no in-place operations
-- **Missing Compressions**: 3 algorithms (Huffman, PKWare DCL/Implode)
+- **Incomplete Compressions**: 2 algorithms lack compression (Huffman, PKWare Implode)
 - **Advanced Features**: Streaming, callbacks, patch support, protection
 - **Signature Creation**: Only verification implemented
 
@@ -115,32 +115,34 @@
   - [ ] Private key handling
   - [ ] Signature writing to archives
 
-### ❌ **Missing Compression Algorithms (Critical Gap - 15%)**
+### 🔨 **Incomplete Compression Support (15% gap)**
 
-**Analysis Update:** Only 3 algorithms missing, but they're important for full compatibility.
+**Analysis Update:** All algorithms support decompression, but 2 lack compression.
 
-- [ ] **Huffman compression (0x01)** ❌ **HIGH PRIORITY**
+- [ ] **Huffman compression (0x01)** 🔨 **MEDIUM PRIORITY**
+  - ✅ Decompression implemented and working
+  - ❌ Compression not implemented
   - Used in WAVE files in many Blizzard games
   - Required for complete audio file support
-  - Explicitly marked as "not yet implemented" in codebase
 
-- [ ] **PKWare DCL (0x08)** ❌ **MEDIUM PRIORITY**
-  - PKWare Data Compression Library
+- [ ] **PKWare Implode (0x00000100)** 🔨 **MEDIUM PRIORITY**
+  - ✅ Decompression implemented and working
+  - ❌ Compression not implemented
   - Legacy compression method
-  - Returns "not yet implemented" error
-
-- [ ] **PKWare Implode (0x00000100)** ❌ **MEDIUM PRIORITY**
-  - Legacy compression method
-  - Returns "not yet implemented" error
   - Required for some older MPQ archives
 
 - [X] **All Other Algorithms Complete** ✅
-  - [X] ADPCM mono (0x40) ✅ **COMPLETE** (full implementation with channel validation)
-  - [X] ADPCM stereo (0x80) ✅ **COMPLETE** (full implementation with channel validation)
-  - [X] Zlib/Deflate ✅
-  - [X] BZip2 ✅
-  - [X] LZMA ✅
-  - [X] Sparse/RLE ✅
+  - [X] Zlib/Deflate ✅ (compression + decompression)
+  - [X] BZip2 ✅ (compression + decompression)
+  - [X] LZMA ✅ (compression + decompression)
+  - [X] Sparse/RLE ✅ (compression + decompression)
+  - [X] PKWare DCL (0x08) ✅ (compression + decompression)
+  - [X] ADPCM mono (0x40) ✅ (compression + decompression)
+  - [X] ADPCM stereo (0x80) ✅ (compression + decompression)
+
+- [ ] **Multi-compression limitations**
+  - ✅ ADPCM + one other algorithm supported
+  - ❌ 3+ algorithms in sequence not supported
 
 ### ❌ **Archive Modification - CRITICAL GAP (0% Complete)**
 
@@ -414,10 +416,10 @@ These design decisions are postponed until core functionality is complete:
    - Archive compacting
    - This is the largest gap blocking 100% compatibility
 
-2. **Missing Compression Algorithms** ❌ **HIGH PRIORITY**
-   - Huffman compression (used in WAVE files)
-   - PKWare DCL and PKWare Implode
-   - Essential for full file format support
+2. **Incomplete Compression Support** 🔨 **MEDIUM PRIORITY**
+   - Huffman compression (decompression works, compression missing)
+   - PKWare Implode (decompression works, compression missing)
+   - Multi-compression with 3+ algorithms
 
 3. **Streaming API** ❌ **HIGH PRIORITY**
    - Large file operations

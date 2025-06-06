@@ -17,16 +17,24 @@ pub struct HetTable {
     pub file_indices: Vec<u8>,
 }
 
-/// Hash Entry Table (HET) header structure for MPQ v3+
+/// Extended header that precedes HET/BET tables
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
-pub struct HetHeader {
-    /// Signature 'HET\x1A' (0x1A544548)
+#[allow(dead_code)]
+pub(super) struct ExtendedHeader {
+    /// Signature 'HET\x1A' (0x1A544548) or 'BET\x1A' (0x1A544542)
     pub signature: u32,
     /// Version (always 1)
     pub version: u32,
-    /// Size of the contained table data
+    /// Size of the contained table data (excluding this header)
     pub data_size: u32,
+}
+
+/// Hash Entry Table (HET) header structure for MPQ v3+
+/// This follows the extended header in the file
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct HetHeader {
     /// Size of the entire hash table including header
     pub table_size: u32,
     /// Maximum number of files in the MPQ
@@ -61,52 +69,135 @@ impl HetTable {
         let mut data = vec![0u8; compressed_size as usize];
         reader.read_exact(&mut data)?;
 
-        // Decrypt if needed
-        if key != 0 {
-            decrypt_table_data(&mut data, key);
+        // Check if we have at least the extended header (12 bytes)
+        if data.len() < 12 {
+            return Err(Error::invalid_format(
+                "HET table too small for extended header",
+            ));
         }
 
-        // Check for compression
-        let decompressed_data = if data.len() >= 4 {
-            let first_dword = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-            if first_dword == Self::SIGNATURE {
-                // Not compressed
-                data
-            } else {
-                // Compressed - first byte is compression type
-                let compression_type = data[0];
-                decompress(&data[1..], compression_type, 0)?
+        // Parse the extended header (first 12 bytes - never encrypted)
+        let ext_signature = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        let ext_version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
+        let ext_data_size = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+
+        log::debug!(
+            "HET extended header: sig=0x{:08X}, ver={}, data_size={}",
+            ext_signature,
+            ext_version,
+            ext_data_size
+        );
+
+        // Verify extended header
+        if ext_signature != Self::SIGNATURE {
+            return Err(Error::invalid_format("Invalid HET extended signature"));
+        }
+
+        // The data after the extended header may be encrypted
+        if key != 0 && data.len() > 12 {
+            log::debug!(
+                "Decrypting HET data after extended header with key 0x{:08X}",
+                key
+            );
+            let data_portion = &mut data[12..];
+            decrypt_table_data(data_portion, key);
+        }
+
+        // Check for compression by comparing sizes
+        let total_size = data.len();
+        let expected_uncompressed_size = ext_data_size as usize + 12; // data_size + header
+
+        log::debug!(
+            "HET table total_size={}, expected_uncompressed_size={}",
+            total_size,
+            expected_uncompressed_size
+        );
+
+        let table_data = if expected_uncompressed_size > total_size {
+            // Table is compressed - the data after extended header contains compressed data
+            log::debug!("HET table is compressed");
+
+            if data.len() <= 12 {
+                return Err(Error::invalid_format(
+                    "No compressed data after HET extended header",
+                ));
             }
+
+            // First byte after extended header is compression type
+            let compression_type = data[12];
+            log::debug!("HET compression type: 0x{:02X}", compression_type);
+
+            // Decompress the data (skip extended header and compression byte)
+            let compressed_data = &data[13..];
+            let mut decompressed =
+                decompress(compressed_data, compression_type, ext_data_size as usize)?;
+
+            // Reconstruct the full table with extended header
+            let mut full_table = Vec::with_capacity(12 + decompressed.len());
+            full_table.extend_from_slice(&data[..12]); // Extended header
+            full_table.append(&mut decompressed); // Decompressed data
+            full_table
         } else {
-            return Err(Error::invalid_format("HET table too small"));
+            // Table is not compressed
+            log::debug!("HET table is NOT compressed");
+            data
         };
 
-        // Parse header
-        let header = Self::parse_header(&decompressed_data)?;
+        // Parse header - skip the extended header (first 12 bytes)
+        let header = Self::parse_header(&table_data[12..])?;
 
-        // Validate header
-        if header.signature != Self::SIGNATURE {
-            return Err(Error::invalid_format("Invalid HET signature"));
-        }
-        if header.version != 1 {
-            return Err(Error::invalid_format("Unsupported HET version"));
-        }
+        // Copy values from packed struct to avoid alignment issues
+        let table_size = header.table_size;
+        let max_file_count = header.max_file_count;
+        let hash_table_size = header.hash_table_size;
+        let hash_entry_size = header.hash_entry_size;
+        let total_index_size = header.total_index_size;
+        let index_size = header.index_size;
 
-        // Extract hash table and file indices
+        log::debug!(
+            "HET header parsed: table_size={}, max_file_count={}, hash_table_size={}, hash_entry_size={}, total_index_size={}, index_size={}",
+            table_size,
+            max_file_count,
+            hash_table_size,
+            hash_entry_size,
+            total_index_size,
+            index_size
+        );
+
+        // No need to validate signature/version - they're in the extended header
+        // which we already validated above
+
+        // Extract hash table and file indices - data starts after extended header
+        let data_start = 12; // Extended header size
         let header_size = std::mem::size_of::<HetHeader>();
-        let hash_table_start = header_size;
+        let hash_table_start = data_start + header_size;
         let hash_table_end = hash_table_start + header.hash_table_size as usize;
 
         let file_indices_start = hash_table_end;
         let file_indices_size = (header.total_index_size as usize).div_ceil(8); // Convert bits to bytes
         let file_indices_end = file_indices_start + file_indices_size;
 
-        if decompressed_data.len() < file_indices_end {
-            return Err(Error::invalid_format("HET table data too small"));
+        log::debug!(
+            "HET table layout: data_start={}, header_size={}, hash_table: {}..{}, indices: {}..{}, total_needed={}",
+            data_start,
+            header_size,
+            hash_table_start,
+            hash_table_end,
+            file_indices_start,
+            file_indices_end,
+            file_indices_end
+        );
+
+        if table_data.len() < file_indices_end {
+            return Err(Error::invalid_format(format!(
+                "HET table data too small: have {} bytes, need {} bytes",
+                table_data.len(),
+                file_indices_end
+            )));
         }
 
-        let hash_table = decompressed_data[hash_table_start..hash_table_end].to_vec();
-        let file_indices = decompressed_data[file_indices_start..file_indices_end].to_vec();
+        let hash_table = table_data[hash_table_start..hash_table_end].to_vec();
+        let file_indices = table_data[file_indices_start..file_indices_end].to_vec();
 
         Ok(Self {
             header,
@@ -123,9 +214,6 @@ impl HetTable {
 
         let mut cursor = std::io::Cursor::new(data);
         Ok(HetHeader {
-            signature: cursor.read_u32_le()?,
-            version: cursor.read_u32_le()?,
-            data_size: cursor.read_u32_le()?,
             table_size: cursor.read_u32_le()?,
             max_file_count: cursor.read_u32_le()?,
             hash_table_size: cursor.read_u32_le()?,
@@ -140,8 +228,16 @@ impl HetTable {
     /// Find a file in the HET table
     pub fn find_file(&self, filename: &str) -> Option<u32> {
         let hash = jenkins_hash(filename);
-        let hash_mask = (1u64 << self.header.hash_entry_size) - 1;
-        let index_mask = (1u64 << self.header.index_size) - 1;
+        let hash_mask = if self.header.hash_entry_size >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.header.hash_entry_size) - 1
+        };
+        let index_mask = if self.header.index_size >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.header.index_size) - 1
+        };
 
         // Calculate hash table index
         let hash_table_entries = self.header.hash_table_size * 8 / self.header.hash_entry_size;
@@ -185,7 +281,12 @@ impl HetTable {
         }
 
         // Shift and mask to get the actual entry
-        let entry = (value >> bit_shift) & ((1u64 << self.header.hash_entry_size) - 1);
+        let mask = if self.header.hash_entry_size >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << self.header.hash_entry_size) - 1
+        };
+        let entry = (value >> bit_shift) & mask;
         Some(entry)
     }
 }

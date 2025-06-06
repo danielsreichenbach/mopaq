@@ -8,7 +8,7 @@ fn main() -> mopaq::Result<()> {
 
     if !Path::new(source_dir).exists() {
         eprintln!("Source directory {} does not exist", source_dir);
-        eprintln!("Please run 'python3 scripts/generate_test_data.py all' first");
+        eprintln!("Please run 'cargo run --example generate_test_data -- all' first");
         return Ok(());
     }
 

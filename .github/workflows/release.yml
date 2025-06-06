@@ -11,6 +11,12 @@ on:
         required: true
         type: string
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+  RUST_BACKTRACE: 1
+
 permissions:
   contents: write
   packages: write
@@ -46,6 +52,7 @@ jobs:
           draft: true
           prerelease: false
 
+  # Build all binaries in parallel
   build-binaries:
     name: Build (${{ matrix.target }})
     needs: create-release
@@ -53,50 +60,74 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux
+          # Linux builds using cross for better compatibility
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             binary: storm-cli
+            use_cross: true
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             binary: storm-cli
+            use_cross: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             binary: storm-cli
+            use_cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            binary: storm-cli
+            use_cross: true
 
           # Windows
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             binary: storm-cli.exe
+            use_cross: false
 
           # macOS
           - target: aarch64-apple-darwin
             os: macos-latest
             binary: storm-cli
+            use_cross: false
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            binary: storm-cli
+            use_cross: false
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          case "${{ matrix.target }}" in
-            aarch64-unknown-linux-gnu)
-              sudo apt-get install -y gcc-aarch64-linux-gnu
-              ;;
-            x86_64-unknown-linux-musl)
-              sudo apt-get install -y musl-tools
-              ;;
-          esac
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'release-${{ matrix.target }}'
+          cache-on-failure: true
 
+      # Install cross for Linux builds
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: |
+          # Use cargo-binstall for faster installation if available
+          if command -v cargo-binstall >/dev/null 2>&1; then
+            cargo binstall --no-confirm cross
+          else
+            cargo install cross --git https://github.com/cross-rs/cross
+          fi
+
+      # Build using cross or cargo
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --package storm-cli
+        run: |
+          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
+            cross build --release --target ${{ matrix.target }} --package storm-cli
+          else
+            cargo build --release --target ${{ matrix.target }} --package storm-cli
+          fi
+        shell: bash
 
       - name: Package binary
         shell: bash
@@ -118,6 +149,7 @@ jobs:
           asset_name: storm-cli-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
           asset_content_type: ${{ matrix.os == 'windows-latest' && 'application/zip' || 'application/gzip' }}
 
+  # Build FFI libraries in parallel
   build-ffi:
     name: Build FFI (${{ matrix.target }})
     needs: create-release
@@ -127,21 +159,53 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            use_cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            use_cross: false
           - target: x86_64-apple-darwin
             os: macos-latest
+            use_cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            use_cross: false
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'release-ffi-${{ matrix.target }}'
+          cache-on-failure: true
+
+      # Install cross for Linux builds
+      - name: Install cross
+        if: matrix.use_cross == true
+        run: |
+          if command -v cargo-binstall >/dev/null 2>&1; then
+            cargo binstall --no-confirm cross
+          else
+            cargo install cross --git https://github.com/cross-rs/cross
+          fi
+
+      # Build FFI library
       - name: Build FFI library
-        run: cargo build --release --target ${{ matrix.target }} --package storm-ffi
+        run: |
+          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
+            cross build --release --target ${{ matrix.target }} --package storm-ffi
+          else
+            cargo build --release --target ${{ matrix.target }} --package storm-ffi
+          fi
+        shell: bash
 
       - name: Package library
         shell: bash
@@ -171,33 +235,61 @@ jobs:
           asset_name: storm-ffi-${{ matrix.target }}.${{ matrix.os == 'windows-latest' && 'zip' || 'tar.gz' }}
           asset_content_type: ${{ matrix.os == 'windows-latest' && 'application/zip' || 'application/gzip' }}
 
+  # Publish to crates.io after binaries are built
   publish-crates:
     name: Publish to crates.io
     needs: [build-binaries, build-ffi]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: 'publish'
+          cache-on-failure: true
+
+      # Publish in dependency order
       - name: Publish mopaq
-        run: cargo publish --package mopaq
+        run: cargo publish --package mopaq --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        continue-on-error: true
 
-      - name: Wait for crates.io
-        run: sleep 30
+      - name: Wait for crates.io propagation
+        run: |
+          echo "Waiting for mopaq to be available on crates.io..."
+          for i in {1..60}; do
+            if cargo search mopaq --limit 1 | grep -q "^mopaq "; then
+              echo "mopaq is now available!"
+              break
+            fi
+            echo "Attempt $i/60: Waiting..."
+            sleep 5
+          done
 
       - name: Publish storm-ffi
-        run: cargo publish --package storm-ffi
+        run: cargo publish --package storm-ffi --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        continue-on-error: true
 
-      - name: Wait for crates.io
-        run: sleep 30
+      - name: Wait for crates.io propagation
+        run: |
+          echo "Waiting for storm-ffi to be available on crates.io..."
+          for i in {1..60}; do
+            if cargo search storm-ffi --limit 1 | grep -q "^storm-ffi "; then
+              echo "storm-ffi is now available!"
+              break
+            fi
+            echo "Attempt $i/60: Waiting..."
+            sleep 5
+          done
 
       - name: Publish storm-cli
-        run: cargo publish --package storm-cli
+        run: cargo publish --package storm-cli --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
