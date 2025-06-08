@@ -2,14 +2,14 @@
 
 A high-performance, safe Rust implementation of the MPQ (Mo'PaQ) archive format used by Blizzard Entertainment games.
 
+This project is moving into a new collection of crates to deal with WoW 1.x to 5.x file formats.
+
+See [warcraft-rs](https://github.com/wowemulation-dev/warcraft-rs)!
+
 <div align="center">
 
-[![Crates.io](https://img.shields.io/crates/v/mopaq.svg)](https://crates.io/crates/mopaq)
-[![Documentation](https://docs.rs/mopaq/badge.svg)](https://docs.rs/mopaq)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE-APACHE)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
-[![CI Status](https://github.com/danielsreichenbach/mopaq/workflows/CI/badge.svg)](https://github.com/danielsreichenbach/mopaq/actions)
-[![codecov](https://img.shields.io/codecov/c/github/danielsreichenbach/mopaq?logo=codecov&style=flat-square&token=BAQ8SOKEST&color=C43AC3)](https://codecov.io/gh/danielsreichenbach/mopaq)
 
 </div>
 
